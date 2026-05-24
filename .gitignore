@@ -1,0 +1,39 @@
+# dependencies
+/node_modules
+.pnpm-store
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# testing
+/coverage
+/playwright-report
+/test-results
+/blob-report
+/playwright/.cache
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# env files (keep .env.example tracked)
+.env
+.env*.local
+
+# supabase local
+/supabase/.branches
+/supabase/.temp
+
+# misc
+.DS_Store
+.vercel
+*.pem
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.idea
+.vscode

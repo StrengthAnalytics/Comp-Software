@@ -1,0 +1,2 @@
+-- Seed data for local development. Loaded by `pnpm db:seed` (and `supabase db reset`).
+-- Populated once the schema migrations land.
