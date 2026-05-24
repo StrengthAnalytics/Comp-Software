@@ -28,7 +28,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.5",
     "@next/eslint-plugin-next": "^16.2.6",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4.3.0",
@@ -41,7 +40,6 @@
     "@vitejs/plugin-react": "^6.0.2",
     "@vitest/coverage-v8": "^4.1.7",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.6",
     "eslint-plugin-unicorn": "^64.0.0",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.15",
