@@ -28,6 +28,7 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 
 ### Changed
 - The `@sentry/cli` install build script is currently unapproved (pnpm `onlyBuiltDependencies`). It must be approved before the first production deploy, since Sentry source-map upload runs at build time and depends on the `sentry-cli` binary.
+- Email delivery: Supabase default SMTP service used in development until a production domain is registered. Resend integration (per CLAUDE.md and ARCHITECTURE.md) deferred until then. No code changes required at switchover; only Supabase Auth SMTP settings.
 
 ### Deprecated
 
