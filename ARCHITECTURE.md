@@ -79,6 +79,8 @@ Source of truth lives in `/lib/permissions/matrix.ts`. This table mirrors it for
 | referee_decisions | R/W | R/W | R | R | R |
 | comp_roles | R/W | R | R | R | - |
 
+Public read on `lifters` is scoped: a public user can read a lifter row only if that lifter has an entry in a published competition. The full lifter directory remains private to staff (any comp_roles row). This is enforced in RLS and reflected in `/lib/permissions/matrix.ts` as a custom predicate, not a simple R/W flag.
+
 v2 roles:
 
 - **referee**: read all, write own referee_decisions only
