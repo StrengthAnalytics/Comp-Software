@@ -31,17 +31,6 @@ create type public.ref_position as enum ('left', 'head', 'right');
 
 create type public.ref_decision as enum ('white', 'red');
 
--- referee and jury are v2 roles, included now so the enum is stable across versions.
-create type public.comp_role as enum (
-  'meet_director',
-  'scorekeeper',
-  'table_loader',
-  'referee',
-  'jury',
-  'announcer',
-  'viewer'
-);
-
 -- Shared trigger to keep updated_at columns current on UPDATE.
 create or replace function public.set_updated_at()
 returns trigger

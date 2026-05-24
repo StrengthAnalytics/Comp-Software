@@ -57,7 +57,7 @@ Before opening a PR:
 - [ ] `pnpm test:e2e` passes for any touched user flow
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`
 - [ ] If the data model changed: migration committed, `types/database.types.ts` hand-updated to match, RLS policies updated, all in the same commit
-- [ ] If a new role permission added: permission matrix tests updated and `ARCHITECTURE.md` table refreshed
+- [ ] If the auth/access model changed: `/lib/auth` tests updated and `ARCHITECTURE.md` sections 3 and 5 refreshed
 - [ ] Screenshots or screen recordings attached for any UI change
 - [ ] One reviewer minimum before merge to `main`
 

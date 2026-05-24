@@ -10,7 +10,7 @@ The platform supports:
 - Competition setup (divisions, weight classes, platforms, sessions, flights)
 - Lifter registration and weigh-in
 - Live scorekeeping (attempts, referee decisions, real-time scoreboard)
-- Role-based multi-user access during a meet (meet director, scorekeeper, table loader, referees, jury, announcer)
+- Admin-operated live scorekeeping during a meet (attempts, referee decisions, flight management)
 - OBS-ready broadcast overlays consuming the same real-time data
 - Public live scoreboard and final results
 
@@ -21,7 +21,7 @@ We host and run 4-6 comps per year. The system must run reliably across multiple
 - Next.js 16.2.6+ (App Router, Turbopack default bundler)
 - TypeScript (strict mode)
 - Supabase (Postgres, auth, real-time)
-- Supabase Auth: password sign-in for staff roles, 6-digit OTP for public accounts
+- Supabase Auth: 6-digit OTP sign-in for admins (allowlisted via `ADMIN_EMAILS`); public has no accounts
 - Vercel deployment
 - Resend API as Supabase SMTP provider for auth emails
 - Tailwind CSS v4 with CSS custom property tokens
@@ -64,7 +64,7 @@ This project is developed online-only against the hosted Supabase dev project an
 /lib/supabase                   ← typed Supabase client setup
 /lib/realtime                   ← Supabase real-time subscription helpers
 /lib/scoring                    ← IPF scoring formulas (IPF GL, Wilks, DOTS) — pure functions
-/lib/permissions                ← role-based permission checks
+/lib/auth                       ← admin allowlist (ADMIN_EMAILS) and requireAdmin()
 /actions                        ← server actions, one file per domain
 /types                          ← shared TypeScript types and Zod schemas
 /tests/unit                     ← Vitest
@@ -99,7 +99,7 @@ This app is real-time first. Non-negotiable.
 
 ## Optimistic update pattern
 
-At the head table the scorekeeper cannot wait for a round-trip. Standard pattern for all live mutations:
+At the head table the operator cannot wait for a round-trip. Standard pattern for all live mutations:
 
 1. Update local state immediately on user action.
 2. Fire the server action in the background.
@@ -111,11 +111,11 @@ Use React `useOptimistic` where it fits. Otherwise hand-roll with local state pl
 ## Supabase conventions
 
 - Row Level Security (RLS) on every table. No exceptions.
-- Permissions model: a user can read or write a row when they have a `comp_roles` row matching the resource's `competition_id` with a role permitted for that operation. The permission matrix lives in `/lib/permissions/matrix.ts`.
+- Permissions model: admins (email in `ADMIN_EMAILS`) can read and write everything; anon can read data belonging to publicly visible competitions only. There are no per-comp roles.
 - Typed Supabase client generated from the database schema. Regenerate types after every migration.
 - Anon key used in client-side Supabase client only.
 - Service role key only in server-side admin actions. Never exposed to the client.
-- Always check auth session server-side before any mutation. Helper: `requireRole(competitionId, allowedRoles)` in `/lib/permissions`.
+- Always check auth session server-side before any mutation. Helper: `requireAdmin()` in `/lib/auth`. Writes rely on this as the sole gate, which is safe only while public sign-ups stay disabled.
 - Migration files are the source of truth for schema. Never edit the database via the Supabase dashboard in a way that diverges from migrations.
 
 ## Sentry conventions
@@ -123,17 +123,17 @@ Use React `useOptimistic` where it fits. Otherwise hand-roll with local state pl
 - Initialise Sentry in `sentry/client.ts`, `sentry/server.ts`, `sentry/edge.ts`.
 - Wrap all server actions in `Sentry.withServerActionInstrumentation`.
 - Use `Sentry.captureException` for caught errors.
-- Set user context on Sentry after successful auth (user id plus role for the current comp).
+- Set user context on Sentry after successful auth (user id and email).
 - Source maps uploaded to Sentry on every Vercel deployment.
 
 ## Testing conventions
 
 - Scoring formulas in `/lib/scoring` must have 100% unit test coverage. Non-negotiable.
-- Permission matrix in `/lib/permissions/matrix.ts` must have 100% unit test coverage. Wrong permissions equal wrong people writing to live attempts during a meet.
+- The admin allowlist in `/lib/auth/admin.ts` must have 100% unit test coverage. It is the only gate on who can write during a meet.
 - Vitest for unit and integration tests.
 - React Testing Library for component tests. Test behaviour not implementation.
 - Playwright for end-to-end tests covering critical flows:
-  1. Sign in (password and OTP paths)
+  1. Sign in (OTP)
   2. Create a comp, add weight classes and divisions
   3. Register a lifter
   4. Check in and assign to flight
@@ -166,15 +166,6 @@ Use React `useOptimistic` where it fits. Otherwise hand-roll with local state pl
 - Total = best squat + best bench + best deadlift.
 - Placement by total within (weight class × division × gender × kit type).
 - IPF GL points, Wilks, DOTS as parallel ranking metrics. Pure functions in `/lib/scoring`.
-
-### Roles
-- `meet_director`: full read/write on their comps.
-- `scorekeeper`: read/write on attempts, referee_decisions, entry status during a session.
-- `table_loader`: read/write on attempt declarations and rack heights.
-- `referee`: read/write on their own referee_decisions only (v2).
-- `jury`: read everything, write referee_decisions overrides (v2).
-- `announcer`: read-only on flight and entry state.
-- `viewer`: public read-only.
 
 ## Operational guardrails
 

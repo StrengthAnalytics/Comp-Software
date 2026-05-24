@@ -46,8 +46,6 @@ export type Database = {
           status: Database['public']['Enums']['comp_status'];
           starts_on: string | null;
           ends_on: string | null;
-          overlay_key: string;
-          created_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -61,8 +59,6 @@ export type Database = {
           status?: Database['public']['Enums']['comp_status'];
           starts_on?: string | null;
           ends_on?: string | null;
-          overlay_key?: string;
-          created_by?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -76,8 +72,6 @@ export type Database = {
           status?: Database['public']['Enums']['comp_status'];
           starts_on?: string | null;
           ends_on?: string | null;
-          overlay_key?: string;
-          created_by?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -395,43 +389,25 @@ export type Database = {
         };
         Relationships: [];
       };
-      comp_roles: {
+    };
+    Views: {
+      // Public-safe lifter projection (no DOB, no IPF member ID). Columns are nullable to match
+      // what Supabase's type generator emits for views. See migration 11.
+      public_lifters: {
         Row: {
-          id: string;
-          competition_id: string;
-          user_id: string;
-          role: Database['public']['Enums']['comp_role'];
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          competition_id: string;
-          user_id: string;
-          role: Database['public']['Enums']['comp_role'];
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          competition_id?: string;
-          user_id?: string;
-          role?: Database['public']['Enums']['comp_role'];
-          created_at?: string;
+          id: string | null;
+          first_name: string | null;
+          surname: string | null;
+          gender: string | null;
+          club: string | null;
+          country: string | null;
         };
         Relationships: [];
       };
     };
-    Views: Record<string, never>;
     Functions: Record<string, never>;
     Enums: {
       attempt_result: 'pending' | 'good_lift' | 'no_lift' | 'not_taken' | 'withdrawn';
-      comp_role:
-        | 'meet_director'
-        | 'scorekeeper'
-        | 'table_loader'
-        | 'referee'
-        | 'jury'
-        | 'announcer'
-        | 'viewer';
       comp_status: 'draft' | 'published' | 'active' | 'completed';
       entry_status:
         | 'registered'
