@@ -32,6 +32,7 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 - `.gitignore` and a `supabase/` directory with `migrations/` and a seed placeholder
 
 ### Changed
+- Documentation updated to reflect online-only, hosted-first development workflow (no local Next.js or Supabase; migrations applied via the Supabase SQL editor; `types/database.types.ts` hand-authored to match)
 - Public read on `lifters` is scoped to lifters with an entry in a published competition, rather than exposing the full lifter directory. The directory remains staff-only (any `comp_roles` row). Enforced in RLS (`lifter_in_public_comp`) and represented in `/lib/permissions/matrix.ts` as a custom predicate rather than a plain R/W flag.
 - The `@sentry/cli` install build script is currently unapproved (pnpm `onlyBuiltDependencies`). It must be approved before the first production deploy, since Sentry source-map upload runs at build time and depends on the `sentry-cli` binary.
 - Email delivery: Supabase default SMTP service used in development until a production domain is registered. Resend integration (per CLAUDE.md and ARCHITECTURE.md) deferred until then. No code changes required at switchover; only Supabase Auth SMTP settings.

@@ -32,6 +32,8 @@ We host and run 4-6 comps per year. The system must run reliably across multiple
 - ESLint with @typescript-eslint and eslint-plugin-unicorn
 - proxy.ts for middleware (middleware.ts is deprecated in v16)
 
+This project is developed online-only against the hosted Supabase dev project and Vercel preview deployments. There is no local Next.js server or local Supabase instance — ever. See `CONTRIBUTING.md` for the workflow.
+
 ## Project structure
 
 ```

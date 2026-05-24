@@ -130,6 +130,8 @@ Subscriptions inherit RLS: if a user can't read a row via a regular query, they 
 - **Sentry**: errors and performance traces. One project per environment, source maps uploaded on every Vercel deployment.
 - **GitHub**: repo host. PRs trigger Vercel previews and Sentry release tagging.
 
+There is no local development environment: all work runs against the hosted Supabase dev project and Vercel preview deployments, never a local Next.js or Supabase instance.
+
 Environment variables documented in `.env.example`.
 
 ---
