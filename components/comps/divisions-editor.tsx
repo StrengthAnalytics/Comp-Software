@@ -73,7 +73,11 @@ function DivisionRow({ competitionId, division }: { competitionId: string; divis
       <button type="button" onClick={remove} disabled={pending} className={GHOST_BUTTON}>
         Delete
       </button>
-      {error ? <p className="w-full text-sm text-red-600">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="w-full text-sm text-red-600">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -150,7 +154,11 @@ export function DivisionsEditor({
           Add division
         </button>
       </div>
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          {error}
+        </p>
+      ) : null}
     </section>
   );
 }

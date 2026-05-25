@@ -152,6 +152,10 @@ Original model assumed multi-organisation use with a per-comp role matrix (`comp
 
 Overlays run in OBS on the admin's own machine, which already holds an admin session. That removes the need for a per-comp overlay key or signed URL: the overlay browser sources read the same data the admin can, through the existing session. Revisit if overlays ever need to run on an untrusted machine.
 
+### Competition setup stays editable at any status
+
+Setup writes (competition metadata, divisions, weight classes) are not gated on `status`: an operator can edit a `completed` comp's details, not just a `draft` one. The "no writes to a completed comp" rule is a meet-time concern for attempts, referee decisions, and results — not for the setup tables, where late corrections (a misspelled name, a wrong date) are legitimate. `requireAdmin()` remains the gate. The attempt/result write paths, when built, should enforce their own status checks.
+
 ### Password sign-in for the initial build, OTP for production
 
 The auth model targets 6-digit OTP sign-in, but the initial build ships email + password instead. The dev SMTP provider is heavily rate-limited (a couple of emails per hour) and email deliverability is unreliable until a production sending domain is registered with Resend, which makes OTP painful to operate and test at this stage. Password sign-in needs no email round-trip and works immediately for the two manually-provisioned admin accounts. This is purely an authentication-ceremony choice: `requireAdmin()` against `ADMIN_EMAILS` remains the authorization gate, RLS is unchanged, and public sign-ups stay disabled, so the security posture is the same either way. Supabase supports both methods simultaneously, so switching to (or adding) OTP for production is a matter of swapping the sign-in action — no other code changes. Production should move to OTP, and admin passwords should be strengthened before the app is exposed publicly.

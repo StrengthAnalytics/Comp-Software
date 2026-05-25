@@ -24,7 +24,11 @@ function FieldError({ messages }: { messages?: string[] }) {
   if (!messages || messages.length === 0) {
     return null;
   }
-  return <p className="mt-1 text-sm text-red-600">{messages[0]}</p>;
+  return (
+    <p role="alert" className="mt-1 text-sm text-red-600">
+      {messages[0]}
+    </p>
+  );
 }
 
 export function SignInForm() {
@@ -63,7 +67,9 @@ export function SignInForm() {
         <FieldError messages={fieldErrors?.password} />
       </div>
       {state?.status === 'error' && !hasFieldErrors ? (
-        <p className="text-sm text-red-600">{state.message}</p>
+        <p role="alert" className="text-sm text-red-600">
+          {state.message}
+        </p>
       ) : null}
       <SubmitButton />
     </form>

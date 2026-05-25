@@ -39,7 +39,11 @@ function FieldError({ messages }: { messages?: string[] }) {
   if (!messages || messages.length === 0) {
     return null;
   }
-  return <p className="mt-1 text-sm text-red-600">{messages[0]}</p>;
+  return (
+    <p role="alert" className="mt-1 text-sm text-red-600">
+      {messages[0]}
+    </p>
+  );
 }
 
 function SaveButton({ label, pendingLabel }: { label: string; pendingLabel: string }) {
@@ -189,8 +193,16 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
         </div>
       </div>
 
-      {state?.status === 'error' ? <p className="text-sm text-red-600">{state.message}</p> : null}
-      {state?.status === 'ok' ? <p className="text-sm text-green-700">Saved.</p> : null}
+      {state?.status === 'error' ? (
+        <p role="alert" className="text-sm text-red-600">
+          {state.message}
+        </p>
+      ) : null}
+      {state?.status === 'ok' ? (
+        <p role="status" className="text-sm text-green-700">
+          Saved.
+        </p>
+      ) : null}
 
       <div className="flex items-center gap-3">
         <SaveButton

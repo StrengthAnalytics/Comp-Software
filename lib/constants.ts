@@ -31,6 +31,8 @@ export const GENDER_LABELS: Record<Gender, string> = {
   female: 'Female',
 };
 
+// Object.keys() widens to string[], but each label map is keyed by exactly its enum's members,
+// so narrowing the result back to the enum union is sound.
 export const KIT_TYPES = Object.keys(KIT_TYPE_LABELS) as KitType[];
 export const EVENT_TYPES = Object.keys(EVENT_TYPE_LABELS) as EventType[];
 export const COMP_STATUSES = Object.keys(COMP_STATUS_LABELS) as CompStatus[];
