@@ -370,7 +370,10 @@ function EntryCard({
           <span className={LABEL_CLASS}>Status</span>
           <select
             value={status}
-            onChange={(event) => setStatus(event.target.value as EntryStatus)}
+            onChange={(event) => {
+              // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
+              setStatus(event.target.value as EntryStatus);
+            }}
             className={INPUT_CLASS}
           >
             {ENTRY_STATUSES.map((value) => (

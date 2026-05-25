@@ -49,6 +49,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
         .from('lifters')
         .select('id, first_name, surname, gender, date_of_birth, ipf_member_id, club, country')
         .in('id', lifterIds)
+    // No entries → skip the lookup; the assertion just types the empty default to the query shape.
     : { data: [] as EntryLifter[] };
 
   const lifterById = new Map((lifterRows ?? []).map((lifter) => [lifter.id, lifter]));
