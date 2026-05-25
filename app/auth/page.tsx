@@ -1,9 +1,15 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { isSupabaseConfigured } from '@/lib/supabase/config';
 import { isAdmin } from '@/lib/auth/admin';
+import { ConfigNotice } from '@/components/config-notice';
 import { SignInForm } from '@/components/auth/sign-in-form';
 
 export default async function AuthPage() {
+  if (!isSupabaseConfigured()) {
+    return <ConfigNotice />;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

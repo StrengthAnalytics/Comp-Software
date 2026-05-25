@@ -2,10 +2,16 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/server';
+import { isSupabaseConfigured } from '@/lib/supabase/config';
 import { isAdmin } from '@/lib/auth/admin';
+import { ConfigNotice } from '@/components/config-notice';
 import { signOutAction } from '@/actions/auth';
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
+  if (!isSupabaseConfigured()) {
+    return <ConfigNotice />;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
