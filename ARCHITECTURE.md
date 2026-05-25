@@ -8,8 +8,8 @@ This document captures the system design. Read it alongside `CLAUDE.md` before s
 
 Three user-facing surfaces share one backend.
 
-- **Admin** (`/(admin)`): staff interfaces with full chrome. Auth required. Meet directors set up comps, scorekeepers run flights, table loaders manage declarations. Role-gated server-side via `requireRole()` and at the database via RLS.
-- **Overlay** (`/(overlay)`): OBS browser sources. Transparent background, fixed pixel dimensions (typically 1920×1080 or sub-regions). No chrome, no navigation. Read-only access via per-comp overlay key in the URL. Each overlay subscribes to real-time and renders one piece of data.
+- **Admin** (`/(admin)`): staff interfaces with full chrome. Auth required. Admins set up comps, run flights, and manage declarations. Gated server-side via `requireAdmin()` and at the database via RLS.
+- **Overlay** (`/(overlay)`): OBS browser sources. Transparent background, fixed pixel dimensions (typically 1920×1080 or sub-regions). No chrome, no navigation. Run on the admin's machine using the admin session — no separate overlay auth. Each overlay subscribes to real-time and renders one piece of data.
 - **Public** (`/(public)`): comp landing pages, live scoreboard for venue TVs and social shares, final results. Read-only.
 
 Backend services:
@@ -142,7 +142,7 @@ Admin, overlay, and public surfaces have radically different chrome, transparenc
 
 ### Server actions for all writes
 
-No direct Supabase writes from the client. Every mutation passes through a server action wrapped in `Sentry.withServerActionInstrumentation`, validated by Zod, and authorised via `requireRole()`. The cost is a slightly chattier request layer; the benefit is one unambiguous audit and validation point per mutation.
+No direct Supabase writes from the client. Every mutation passes through a server action wrapped in `Sentry.withServerActionInstrumentation`, validated by Zod, and authorised via `requireAdmin()`. The cost is a slightly chattier request layer; the benefit is one unambiguous audit and validation point per mutation.
 
 ### Simplified from role-based permissions to admin allowlist + anon read
 

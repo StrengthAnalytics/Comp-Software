@@ -45,7 +45,7 @@ Examples:
 - `feat(scorekeeper): add optimistic update for attempt result`
 - `fix(realtime): scope subscriptions to current session`
 - `chore(deps): bump @sentry/nextjs to 9.3.0`
-- `docs(architecture): add v2 referee role to permission matrix`
+- `docs(architecture): document the admin-allowlist auth model`
 
 ## PR checklist
 
@@ -74,7 +74,7 @@ Before opening a PR:
 Non-negotiable coverage:
 
 - `/lib/scoring` must hit 100% unit test coverage
-- `/lib/permissions/matrix.ts` must hit 100% unit test coverage
+- `/lib/auth/admin.ts` (the admin allowlist) must hit 100% unit test coverage
 
 ## Database changes
 
@@ -85,8 +85,8 @@ Schema changes follow the online-only workflow:
 1. Claude Code adds a new timestamped migration file in `/supabase/migrations/` (RLS policy changes included in the same file).
 2. The operator applies it by hand via the Supabase SQL editor against the hosted dev project.
 3. Claude Code hand-updates `types/database.types.ts` to match the new schema.
-4. Claude Code updates the permission matrix and its tests if the change affects access.
-5. Migration, types, and any matrix/test changes are committed together.
+4. Claude Code updates `/lib/auth` and its tests if the change affects who can read or write.
+5. Migration, types, and any auth/test changes are committed together.
 
 ## Working with AI coding assistants
 
