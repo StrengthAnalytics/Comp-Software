@@ -154,7 +154,7 @@ Overlays run in OBS on the admin's own machine, which already holds an admin ses
 
 ### Competition setup stays editable at any status
 
-Setup writes (competition metadata, divisions, weight classes) are not gated on `status`: an operator can edit a `completed` comp's details, not just a `draft` one. The "no writes to a completed comp" rule is a meet-time concern for attempts, referee decisions, and results — not for the setup tables, where late corrections (a misspelled name, a wrong date) are legitimate. `requireAdmin()` remains the gate. The attempt/result write paths, when built, should enforce their own status checks.
+Setup writes (competition metadata, divisions, weight classes, and lifter registration / weigh-in entries) are not gated on `status`: an operator can edit a `completed` comp's details, not just a `draft` one. The "no writes to a completed comp" rule is a meet-time concern for attempts, referee decisions, and results — not for the setup tables, where late corrections (a misspelled name, a wrong date, a weigh-in adjustment) are legitimate. `requireAdmin()` remains the gate. The attempt/result write paths, when built, should enforce their own status checks.
 
 ### Password sign-in for the initial build, OTP for production
 

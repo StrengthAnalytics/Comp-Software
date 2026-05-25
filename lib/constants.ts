@@ -3,6 +3,7 @@ import type { Database } from '@/types/database.types';
 type KitType = Database['public']['Enums']['kit_type'];
 type EventType = Database['public']['Enums']['event_type'];
 type CompStatus = Database['public']['Enums']['comp_status'];
+type EntryStatus = Database['public']['Enums']['entry_status'];
 
 export type Gender = 'male' | 'female';
 
@@ -31,12 +32,34 @@ export const GENDER_LABELS: Record<Gender, string> = {
   female: 'Female',
 };
 
+// Entry lifecycle, in the order an entry moves through a meet day.
+export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
+  registered: 'Registered',
+  checked_in: 'Checked in',
+  weighed_in: 'Weighed in',
+  lifting: 'Lifting',
+  finished: 'Finished',
+  withdrawn: 'Withdrawn',
+  disqualified: 'Disqualified',
+};
+
+// Which of the three lifts a competition contests, by event type. Drives which opener and rack
+// fields a registration screen shows. Bench-only and deadlift-only meets omit the others.
+export type Lifts = { squat: boolean; bench: boolean; deadlift: boolean };
+
+export const LIFTS_FOR_EVENT: Record<EventType, Lifts> = {
+  full_power: { squat: true, bench: true, deadlift: true },
+  bench_only: { squat: false, bench: true, deadlift: false },
+  deadlift_only: { squat: false, bench: false, deadlift: true },
+};
+
 // Object.keys() widens to string[], but each label map is keyed by exactly its enum's members,
 // so narrowing the result back to the enum union is sound.
 export const KIT_TYPES = Object.keys(KIT_TYPE_LABELS) as KitType[];
 export const EVENT_TYPES = Object.keys(EVENT_TYPE_LABELS) as EventType[];
 export const COMP_STATUSES = Object.keys(COMP_STATUS_LABELS) as CompStatus[];
 export const GENDERS = Object.keys(GENDER_LABELS) as Gender[];
+export const ENTRY_STATUSES = Object.keys(ENTRY_STATUS_LABELS) as EntryStatus[];
 
 // Default IPF age divisions, in competition running order. Used by the "seed defaults" action.
 export const DEFAULT_DIVISIONS: readonly string[] = [

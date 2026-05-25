@@ -40,6 +40,12 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{comp.name}</h1>
         <p className="mt-1 text-sm text-neutral-600">/{comp.slug}</p>
+        <Link
+          href={`/${comp.slug}/entries`}
+          className="mt-3 inline-block text-sm font-medium text-neutral-900 underline"
+        >
+          Entries &amp; weigh-in →
+        </Link>
       </div>
 
       <div className="rounded-lg border border-neutral-200 bg-white p-6">
