@@ -16,7 +16,7 @@ Backend services:
 
 - **Supabase** (Postgres, Auth, Realtime) is the only data store. RLS on every table.
 - **Vercel** hosts Next.js (production plus preview deployments per PR).
-- **Resend** is the SMTP provider for Supabase auth emails (OTP, password reset).
+- **Resend** is the SMTP provider for Supabase auth emails (password reset, and OTP once production sign-in switches to it).
 - **Sentry** receives client, server, and edge errors plus performance traces.
 
 ---
@@ -89,7 +89,7 @@ Subscriptions inherit RLS: if a user can't read a row via a regular query, they 
 ## 5. Auth model
 
 - Supabase Auth handles sessions.
-- 6-digit OTP sign-in for admins. Public sign-ups are disabled, so the only accounts that can hold a session are the admin emails listed in `ADMIN_EMAILS`.
+- Email + password sign-in for admins in the initial build; production switches to 6-digit OTP (see the ADR in section 7). Either way the sign-in method only changes the authentication ceremony — `requireAdmin()` against `ADMIN_EMAILS` stays the authorization gate. Public sign-ups are disabled, so the only accounts that can hold a session are the admin emails listed in `ADMIN_EMAILS`.
 - The public has no accounts and no sign-in — they read published-comp data anonymously.
 - `requireAdmin()` (in `/lib/auth`) is the authorization gate at the server-action boundary; it checks the session's email against `ADMIN_EMAILS`. Because RLS grants writes to any authenticated session, this helper is the real write gate — and that is only safe while public sign-ups stay disabled.
 - RLS policies on Postgres enforce row-level access: anon reads publicly visible competitions only; authenticated (admin) sessions read and write everything.
@@ -151,3 +151,11 @@ Original model assumed multi-organisation use with a per-comp role matrix (`comp
 ### Overlays on the admin session, no separate overlay auth
 
 Overlays run in OBS on the admin's own machine, which already holds an admin session. That removes the need for a per-comp overlay key or signed URL: the overlay browser sources read the same data the admin can, through the existing session. Revisit if overlays ever need to run on an untrusted machine.
+
+### Competition setup stays editable at any status
+
+Setup writes (competition metadata, divisions, weight classes) are not gated on `status`: an operator can edit a `completed` comp's details, not just a `draft` one. The "no writes to a completed comp" rule is a meet-time concern for attempts, referee decisions, and results — not for the setup tables, where late corrections (a misspelled name, a wrong date) are legitimate. `requireAdmin()` remains the gate. The attempt/result write paths, when built, should enforce their own status checks.
+
+### Password sign-in for the initial build, OTP for production
+
+The auth model targets 6-digit OTP sign-in, but the initial build ships email + password instead. The dev SMTP provider is heavily rate-limited (a couple of emails per hour) and email deliverability is unreliable until a production sending domain is registered with Resend, which makes OTP painful to operate and test at this stage. Password sign-in needs no email round-trip and works immediately for the two manually-provisioned admin accounts. This is purely an authentication-ceremony choice: `requireAdmin()` against `ADMIN_EMAILS` remains the authorization gate, RLS is unchanged, and public sign-ups stay disabled, so the security posture is the same either way. Supabase supports both methods simultaneously, so switching to (or adding) OTP for production is a matter of swapping the sign-in action — no other code changes. Production should move to OTP, and admin passwords should be strengthened before the app is exposed publicly.

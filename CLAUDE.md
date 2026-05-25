@@ -21,7 +21,7 @@ We host and run 4-6 comps per year. The system must run reliably across multiple
 - Next.js 16.2.6+ (App Router, Turbopack default bundler)
 - TypeScript (strict mode)
 - Supabase (Postgres, auth, real-time)
-- Supabase Auth: 6-digit OTP sign-in for admins (allowlisted via `ADMIN_EMAILS`); public has no accounts
+- Supabase Auth: email + password sign-in for admins (allowlisted via `ADMIN_EMAILS`) in the initial build; switch to 6-digit OTP for production. Public has no accounts
 - Vercel deployment
 - Resend API as Supabase SMTP provider for auth emails
 - Tailwind CSS v4 with CSS custom property tokens
@@ -55,7 +55,7 @@ This project is developed online-only against the hosted Supabase dev project an
     /[comp-slug]                ← comp landing page
     /[comp-slug]/live           ← live scoreboard for venue TVs and socials
     /[comp-slug]/results        ← final results
-  /auth                         ← sign-in, OTP entry, password reset
+  /auth                         ← sign-in (email + password; OTP for production)
   /account                      ← profile management
 /components                     ← shared UI
 /components/overlay             ← overlay-specific components
@@ -133,7 +133,7 @@ Use React `useOptimistic` where it fits. Otherwise hand-roll with local state pl
 - Vitest for unit and integration tests.
 - React Testing Library for component tests. Test behaviour not implementation.
 - Playwright for end-to-end tests covering critical flows:
-  1. Sign in (OTP)
+  1. Sign in (email + password; OTP for production)
   2. Create a comp, add weight classes and divisions
   3. Register a lifter
   4. Check in and assign to flight

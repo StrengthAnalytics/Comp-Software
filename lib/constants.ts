@@ -1,0 +1,78 @@
+import type { Database } from '@/types/database.types';
+
+type KitType = Database['public']['Enums']['kit_type'];
+type EventType = Database['public']['Enums']['event_type'];
+type CompStatus = Database['public']['Enums']['comp_status'];
+
+export type Gender = 'male' | 'female';
+
+// Human-readable labels for the comp enums. Used by selects and read-only displays so the
+// label text lives in one place rather than being re-derived per screen.
+export const KIT_TYPE_LABELS: Record<KitType, string> = {
+  classic: 'Classic',
+  equipped: 'Equipped',
+};
+
+export const EVENT_TYPE_LABELS: Record<EventType, string> = {
+  full_power: 'Full Power (SBD)',
+  bench_only: 'Bench Only',
+  deadlift_only: 'Deadlift Only',
+};
+
+export const COMP_STATUS_LABELS: Record<CompStatus, string> = {
+  draft: 'Draft',
+  published: 'Published',
+  active: 'Active',
+  completed: 'Completed',
+};
+
+export const GENDER_LABELS: Record<Gender, string> = {
+  male: 'Male',
+  female: 'Female',
+};
+
+// Object.keys() widens to string[], but each label map is keyed by exactly its enum's members,
+// so narrowing the result back to the enum union is sound.
+export const KIT_TYPES = Object.keys(KIT_TYPE_LABELS) as KitType[];
+export const EVENT_TYPES = Object.keys(EVENT_TYPE_LABELS) as EventType[];
+export const COMP_STATUSES = Object.keys(COMP_STATUS_LABELS) as CompStatus[];
+export const GENDERS = Object.keys(GENDER_LABELS) as Gender[];
+
+// Default IPF age divisions, in competition running order. Used by the "seed defaults" action.
+export const DEFAULT_DIVISIONS: readonly string[] = [
+  'Sub-Junior',
+  'Junior',
+  'Open',
+  'Masters 1',
+  'Masters 2',
+  'Masters 3',
+  'Masters 4',
+];
+
+export type WeightClassSeed = {
+  name: string;
+  gender: Gender;
+  // lower_kg is an exclusive lower bound, upper_kg an inclusive upper bound. upper_kg null = unlimited.
+  lower_kg: number;
+  upper_kg: number | null;
+};
+
+// Default IPF classic open weight classes, in running order per gender.
+export const DEFAULT_WEIGHT_CLASSES: readonly WeightClassSeed[] = [
+  { name: '-59 kg', gender: 'male', lower_kg: 0, upper_kg: 59 },
+  { name: '-66 kg', gender: 'male', lower_kg: 59, upper_kg: 66 },
+  { name: '-74 kg', gender: 'male', lower_kg: 66, upper_kg: 74 },
+  { name: '-83 kg', gender: 'male', lower_kg: 74, upper_kg: 83 },
+  { name: '-93 kg', gender: 'male', lower_kg: 83, upper_kg: 93 },
+  { name: '-105 kg', gender: 'male', lower_kg: 93, upper_kg: 105 },
+  { name: '-120 kg', gender: 'male', lower_kg: 105, upper_kg: 120 },
+  { name: '120 kg+', gender: 'male', lower_kg: 120, upper_kg: null },
+  { name: '-47 kg', gender: 'female', lower_kg: 0, upper_kg: 47 },
+  { name: '-52 kg', gender: 'female', lower_kg: 47, upper_kg: 52 },
+  { name: '-57 kg', gender: 'female', lower_kg: 52, upper_kg: 57 },
+  { name: '-63 kg', gender: 'female', lower_kg: 57, upper_kg: 63 },
+  { name: '-69 kg', gender: 'female', lower_kg: 63, upper_kg: 69 },
+  { name: '-76 kg', gender: 'female', lower_kg: 69, upper_kg: 76 },
+  { name: '-84 kg', gender: 'female', lower_kg: 76, upper_kg: 84 },
+  { name: '84 kg+', gender: 'female', lower_kg: 84, upper_kg: null },
+];
