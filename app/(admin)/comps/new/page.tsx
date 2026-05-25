@@ -1,0 +1,19 @@
+import Link from 'next/link';
+import { CompForm } from '@/components/comps/comp-form';
+
+export default function NewCompPage() {
+  return (
+    <div className="max-w-2xl">
+      <Link href="/comps" className="text-sm text-neutral-500 hover:text-neutral-800">
+        ← Competitions
+      </Link>
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight">New competition</h1>
+      <p className="mt-1 text-sm text-neutral-600">
+        Create the meet first, then add divisions and weight classes.
+      </p>
+      <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-6">
+        <CompForm />
+      </div>
+    </div>
+  );
+}

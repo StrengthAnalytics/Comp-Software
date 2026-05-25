@@ -1,8 +1,18 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-// Skeleton: refresh and pass through the Supabase session cookie on every request.
-// Role-based redirects and route protection land in a later session.
+// Admin URL prefixes that require a signed-in session. Route groups (admin) are invisible in the
+// URL, so we match concrete prefixes here; requireAdmin() and the admin layout are the real gate.
+const PROTECTED_PREFIXES = ['/comps'] as const;
+
+function isProtectedPath(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
+// Refresh and pass through the Supabase session cookie on every request, and bounce
+// unauthenticated visitors away from protected admin routes.
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -31,7 +41,14 @@ export async function proxy(request: NextRequest) {
   });
 
   // Touch the session so Supabase can rotate an expired token into the response cookies.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user && isProtectedPath(request.nextUrl.pathname)) {
+    const signInUrl = new URL('/auth', request.url);
+    return NextResponse.redirect(signInUrl);
+  }
 
   return response;
 }

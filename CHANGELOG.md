@@ -15,6 +15,12 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 ## [Unreleased]
 
 ### Added
+- Admin OTP sign-in at `/auth`: two-step email + 6-digit code form (`components/auth/sign-in-form.tsx`) backed by `actions/auth.ts` (`requestOtp`, `verifyOtp`, `signOut`). OTP requests are restricted to `ADMIN_EMAILS` (defense-in-depth on top of disabled public sign-ups) with `shouldCreateUser: false`
+- Route protection: `proxy.ts` redirects unauthenticated visitors away from `/comps`, and the `(admin)` layout is now an async server component that gates on `isAdmin()` and renders the admin chrome (nav + signed-in email + sign-out)
+- Competition setup UI under `/comps`: list, create (`/comps/new`), and edit (`/comps/[id]/edit`) screens. The edit screen manages the comp plus its divisions and weight classes, including a "Seed IPF defaults" button for the standard classic divisions and weight classes
+- Server actions for competition setup (`actions/competitions.ts`, `actions/divisions.ts`, `actions/weight-classes.ts`): each calls `requireAdmin()` via the `adminGuard()` helper, validates with Zod, is wrapped in `Sentry.withServerActionInstrumentation`, and returns a typed `ActionResult` rather than leaking raw DB errors (unique-violation mapped to friendly messages)
+- Shared Zod schemas and a `slugify` helper in `/types` (`competition.ts`, `auth.ts`), an `ActionResult` discriminated union (`types/action-result.ts`), `toFieldErrors` (`lib/validation.ts`), and IPF default divisions/weight-class data plus enum labels in `lib/constants.ts`
+- Unit tests for the competition and auth Zod schemas (`tests/unit/competition`, `tests/unit/auth/auth-schema.test.ts`)
 - Database foundation: sequential migrations in `/supabase/migrations` for the full data model (profiles, competitions, divisions, weight_classes, platforms, sessions, flights, lifters, entries, attempts, referee_decisions) plus the eight domain enums (`kit_type`, `event_type`, `comp_status`, `entry_status`, `lift_type`, `attempt_result`, `ref_position`, `ref_decision`)
 - Row Level Security on every table: admins (any authenticated session) read and write everything; anon reads data belonging to publicly visible competitions, gated by SECURITY DEFINER helpers (`is_comp_public`, `lifter_in_public_comp`)
 - `public_lifters` view exposing only non-PII lifter fields (name, gender, club, country) to anon, scoped to lifters in a publicly visible competition; the base `lifters` table is admin-only (full PII)
