@@ -45,7 +45,9 @@ export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
 
 // Which of the three lifts a competition contests, by event type. Drives which opener and rack
 // fields a registration screen shows. Bench-only and deadlift-only meets omit the others.
-export const LIFTS_FOR_EVENT: Record<EventType, { squat: boolean; bench: boolean; deadlift: boolean }> = {
+export type Lifts = { squat: boolean; bench: boolean; deadlift: boolean };
+
+export const LIFTS_FOR_EVENT: Record<EventType, Lifts> = {
   full_power: { squat: true, bench: true, deadlift: true },
   bench_only: { squat: false, bench: true, deadlift: false },
   deadlift_only: { squat: false, bench: false, deadlift: true },

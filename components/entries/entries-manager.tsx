@@ -9,7 +9,15 @@ import {
   updateLifterAction,
   type LifterSearchResult,
 } from '@/actions/lifters';
-import { ENTRY_STATUS_LABELS, ENTRY_STATUSES, GENDER_LABELS, GENDERS, type Gender } from '@/lib/constants';
+import {
+  ENTRY_STATUS_LABELS,
+  ENTRY_STATUSES,
+  GENDER_LABELS,
+  GENDERS,
+  type Gender,
+  type Lifts,
+} from '@/lib/constants';
+import { BulkImport } from '@/components/entries/bulk-import';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
 
@@ -43,7 +51,6 @@ export type EntryWithLifter = {
 
 export type DivisionOption = { id: string; name: string };
 export type WeightClassOption = { id: string; name: string; gender: string };
-export type Lifts = { squat: boolean; bench: boolean; deadlift: boolean };
 
 const INPUT_CLASS =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
@@ -633,6 +640,8 @@ export function EntriesManager({
   return (
     <div className="space-y-6">
       <AddEntry competitionId={competitionId} registeredLifterIds={registeredLifterIds} />
+
+      <BulkImport competitionId={competitionId} lifts={lifts} />
 
       <div>
         <h2 className="text-lg font-semibold tracking-tight">
