@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bulkImportColumns, bulkImportHeader, parseBulkImport } from '@/lib/entries/bulk-import';
+import {
+  bulkImportColumns,
+  bulkImportHeader,
+  formatBulkExport,
+  parseBulkImport,
+  type ExportRow,
+} from '@/lib/entries/bulk-import';
 
 const FULL_POWER = { squat: true, bench: true, deadlift: true };
 const BENCH_ONLY = { squat: false, bench: true, deadlift: false };
@@ -84,5 +90,55 @@ describe('parseBulkImport', () => {
     expect(row.errors).toEqual([]);
     expect(row.surname).toBe('Smith');
     expect(row.weightClassName).toBe('-72 kg');
+  });
+});
+
+describe('formatBulkExport', () => {
+  const row: ExportRow = {
+    firstName: 'Dana',
+    surname: 'Smith',
+    gender: 'female',
+    dateOfBirth: '1995-04-02',
+    membership: 'GB123',
+    club: 'Barbell Club',
+    country: 'GBR',
+    divisionName: 'Open',
+    weightClassName: '-72 kg',
+    lot: 5,
+    bodyweight: 71.5,
+    openerSquat: 100,
+    openerBench: 60,
+    openerDeadlift: 130,
+  };
+
+  it('starts with the same header row the import expects', () => {
+    expect(formatBulkExport([row], FULL_POWER).split('\n')[0]).toBe(bulkImportHeader(FULL_POWER));
+  });
+
+  it('renders blank cells for null values', () => {
+    const sparse: ExportRow = { ...row, dateOfBirth: null, membership: null, lot: null, bodyweight: null };
+    const dataLine = formatBulkExport([sparse], FULL_POWER).split('\n')[1].split('\t');
+    expect(dataLine[3]).toBe(''); // Date of birth
+    expect(dataLine[9]).toBe(''); // Lot
+  });
+
+  it('round-trips back through the parser', () => {
+    const text = formatBulkExport([row], FULL_POWER);
+    const [parsed] = parseBulkImport(text, FULL_POWER);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed).toMatchObject({
+      firstName: 'Dana',
+      surname: 'Smith',
+      gender: 'female',
+      dateOfBirth: '1995-04-02',
+      membership: 'GB123',
+      divisionName: 'Open',
+      weightClassName: '-72 kg',
+      lot: 5,
+      bodyweight: 71.5,
+      openerSquat: 100,
+      openerBench: 60,
+      openerDeadlift: 130,
+    });
   });
 });

@@ -18,6 +18,7 @@ import {
   type Lifts,
 } from '@/lib/constants';
 import { BulkImport } from '@/components/entries/bulk-import';
+import { formatBulkExport, type ExportRow } from '@/lib/entries/bulk-import';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
 
@@ -622,6 +623,71 @@ function AddEntry({
   );
 }
 
+const COPY_RESET_MS = 2000;
+
+function CopyEntriesButton({
+  entries,
+  divisions,
+  weightClasses,
+  lifts,
+}: {
+  entries: EntryWithLifter[];
+  divisions: DivisionOption[];
+  weightClasses: WeightClassOption[];
+  lifts: Lifts;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const divisionNameById = new Map(divisions.map((division) => [division.id, division.name]));
+  const weightClassNameById = new Map(weightClasses.map((weightClass) => [weightClass.id, weightClass.name]));
+
+  async function copy() {
+    setError(null);
+    const rows: ExportRow[] = entries.map((entry) => ({
+      firstName: entry.lifter.first_name,
+      surname: entry.lifter.surname,
+      gender: entry.lifter.gender,
+      dateOfBirth: entry.lifter.date_of_birth,
+      membership: entry.lifter.ipf_member_id,
+      club: entry.lifter.club,
+      country: entry.lifter.country,
+      divisionName: entry.division_id ? (divisionNameById.get(entry.division_id) ?? null) : null,
+      weightClassName: entry.weight_class_id ? (weightClassNameById.get(entry.weight_class_id) ?? null) : null,
+      lot: entry.lot_number,
+      bodyweight: entry.bodyweight_kg,
+      openerSquat: entry.opener_squat_kg,
+      openerBench: entry.opener_bench_kg,
+      openerDeadlift: entry.opener_deadlift_kg,
+    }));
+
+    try {
+      await globalThis.navigator.clipboard.writeText(formatBulkExport(rows, lifts));
+      setCopied(true);
+      globalThis.setTimeout(() => setCopied(false), COPY_RESET_MS);
+    } catch {
+      setError('Could not copy automatically.');
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {error ? (
+        <span role="alert" className="text-xs text-red-600">
+          {error}
+        </span>
+      ) : null}
+      <button type="button" onClick={() => void copy()} className={GHOST_BUTTON}>
+        {copied ? 'Copied' : 'Copy current entries'}
+      </button>
+    </div>
+  );
+}
+
 export function EntriesManager({
   competitionId,
   lifts,
@@ -644,9 +710,17 @@ export function EntriesManager({
       <BulkImport competitionId={competitionId} lifts={lifts} />
 
       <div>
-        <h2 className="text-lg font-semibold tracking-tight">
-          Registered lifters{entries.length > 0 ? ` (${entries.length})` : ''}
-        </h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">
+            Registered lifters{entries.length > 0 ? ` (${entries.length})` : ''}
+          </h2>
+          <CopyEntriesButton
+            entries={entries}
+            divisions={divisions}
+            weightClasses={weightClasses}
+            lifts={lifts}
+          />
+        </div>
         {entries.length === 0 ? (
           <p className="mt-4 rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
             No lifters registered yet.

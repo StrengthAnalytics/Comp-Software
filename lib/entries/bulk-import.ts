@@ -146,6 +146,93 @@ function cellAt(cells: string[], indexByKey: Map<BulkImportField, number>, key: 
   return columnIndex === undefined ? '' : (cells[columnIndex] ?? '');
 }
 
+// The reverse of the import: dump current registrations as the same tab-separated layout so the
+// operator can pull them back into a sheet, edit, and re-import. Round-trips with parseBulkImport.
+export type ExportRow = {
+  firstName: string;
+  surname: string;
+  gender: string;
+  dateOfBirth: string | null;
+  membership: string | null;
+  club: string | null;
+  country: string | null;
+  divisionName: string | null;
+  weightClassName: string | null;
+  lot: number | null;
+  bodyweight: number | null;
+  openerSquat: number | null;
+  openerBench: number | null;
+  openerDeadlift: number | null;
+};
+
+function exportGender(gender: string): string {
+  if (gender === 'male') {
+    return 'Male';
+  }
+  if (gender === 'female') {
+    return 'Female';
+  }
+  return gender;
+}
+
+function numberCell(value: number | null): string {
+  return value === null ? '' : String(value);
+}
+
+function exportValue(row: ExportRow, key: BulkImportField): string {
+  switch (key) {
+    case 'firstName': {
+      return row.firstName;
+    }
+    case 'surname': {
+      return row.surname;
+    }
+    case 'gender': {
+      return exportGender(row.gender);
+    }
+    case 'dateOfBirth': {
+      return row.dateOfBirth ?? '';
+    }
+    case 'membership': {
+      return row.membership ?? '';
+    }
+    case 'club': {
+      return row.club ?? '';
+    }
+    case 'country': {
+      return row.country ?? '';
+    }
+    case 'divisionName': {
+      return row.divisionName ?? '';
+    }
+    case 'weightClassName': {
+      return row.weightClassName ?? '';
+    }
+    case 'lot': {
+      return numberCell(row.lot);
+    }
+    case 'bodyweight': {
+      return numberCell(row.bodyweight);
+    }
+    case 'openerSquat': {
+      return numberCell(row.openerSquat);
+    }
+    case 'openerBench': {
+      return numberCell(row.openerBench);
+    }
+    case 'openerDeadlift': {
+      return numberCell(row.openerDeadlift);
+    }
+  }
+}
+
+export function formatBulkExport(rows: ExportRow[], lifts: Lifts): string {
+  const columns = bulkImportColumns(lifts);
+  const header = columns.map((column) => column.label).join('\t');
+  const body = rows.map((row) => columns.map((column) => exportValue(row, column.key)).join('\t'));
+  return [header, ...body].join('\n');
+}
+
 export function parseBulkImport(text: string, lifts: Lifts): ParsedImportRow[] {
   const columns = bulkImportColumns(lifts);
   const indexByKey = new Map(columns.map((column, index) => [column.key, index]));
