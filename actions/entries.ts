@@ -1,0 +1,198 @@
+'use server';
+
+import * as Sentry from '@sentry/nextjs';
+import { z } from 'zod';
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
+import { adminGuard } from '@/lib/auth/guard';
+import { isUniqueViolation } from '@/lib/supabase/errors';
+import { createEntrySchema, entryUpdateSchema, type EntryUpdateInput } from '@/types/entry';
+import { toFieldErrors } from '@/lib/validation';
+import { fail, ok, type ActionResult } from '@/types/action-result';
+import type { Database } from '@/types/database.types';
+
+type Client = SupabaseClient<Database>;
+
+// Cross-entity checks RLS cannot make: a chosen weight class / division must belong to this comp,
+// and the weight class gender must match the lifter's. Returns an error result, or null when valid.
+async function validateReferences(
+  supabase: Client,
+  comp: string,
+  lifterGender: string,
+  input: EntryUpdateInput,
+): Promise<ActionResult<never> | null> {
+  if (input.weightClassId) {
+    const { data: weightClass, error } = await supabase
+      .from('weight_classes')
+      .select('gender, competition_id')
+      .eq('id', input.weightClassId)
+      .maybeSingle();
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not save the entry. Please try again.');
+    }
+    if (!weightClass || weightClass.competition_id !== comp) {
+      return fail('Please fix the highlighted fields.', {
+        weightClassId: ['Choose a weight class from this competition.'],
+      });
+    }
+    if (weightClass.gender !== lifterGender) {
+      return fail('Please fix the highlighted fields.', {
+        weightClassId: ["Weight class gender must match the lifter's."],
+      });
+    }
+  }
+
+  if (input.divisionId) {
+    const { data: division, error } = await supabase
+      .from('divisions')
+      .select('competition_id')
+      .eq('id', input.divisionId)
+      .maybeSingle();
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not save the entry. Please try again.');
+    }
+    if (!division || division.competition_id !== comp) {
+      return fail('Please fix the highlighted fields.', {
+        divisionId: ['Choose a division from this competition.'],
+      });
+    }
+  }
+
+  return null;
+}
+
+function mapEntryWriteError(error: PostgrestError): ActionResult<never> {
+  if (isUniqueViolation(error)) {
+    return fail('Please fix the highlighted fields.', {
+      lotNumber: ['That lot number is already taken in this competition.'],
+    });
+  }
+  return fail('Could not save the entry. Please try again.');
+}
+
+// Registers a lifter for a comp. Class, division, lot and weigh-in details are added afterwards
+// via updateEntryAction, so this only needs the comp and lifter link.
+export async function createEntryAction(input: {
+  competitionId: string;
+  lifterId: string;
+}): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('createEntry', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = createEntrySchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not register the lifter. Please try again.');
+    }
+
+    const supabase = await createClient();
+    const { error } = await supabase.from('entries').insert({
+      competition_id: parsed.data.competitionId,
+      lifter_id: parsed.data.lifterId,
+    });
+
+    if (error) {
+      if (isUniqueViolation(error)) {
+        return fail('This lifter is already registered for this competition.');
+      }
+      Sentry.captureException(error);
+      return fail('Could not register the lifter. Please try again.');
+    }
+
+    return ok();
+  });
+}
+
+export async function updateEntryAction(input: EntryUpdateInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('updateEntry', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = entryUpdateSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+
+    const { data: entry, error: entryError } = await supabase
+      .from('entries')
+      .select('competition_id, lifter_id')
+      .eq('id', parsed.data.id)
+      .maybeSingle();
+
+    if (entryError) {
+      Sentry.captureException(entryError);
+      return fail('Could not save the entry. Please try again.');
+    }
+    if (!entry || entry.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that entry.');
+    }
+
+    const { data: lifter, error: lifterError } = await supabase
+      .from('lifters')
+      .select('gender')
+      .eq('id', entry.lifter_id)
+      .maybeSingle();
+
+    if (lifterError) {
+      Sentry.captureException(lifterError);
+      return fail('Could not save the entry. Please try again.');
+    }
+    if (!lifter) {
+      return fail('Could not find that entry.');
+    }
+
+    const invalid = await validateReferences(supabase, entry.competition_id, lifter.gender, parsed.data);
+    if (invalid) return invalid;
+
+    const { error } = await supabase
+      .from('entries')
+      .update({
+        weight_class_id: parsed.data.weightClassId,
+        division_id: parsed.data.divisionId,
+        lot_number: parsed.data.lotNumber,
+        bodyweight_kg: parsed.data.bodyweightKg,
+        opener_squat_kg: parsed.data.openerSquatKg,
+        opener_bench_kg: parsed.data.openerBenchKg,
+        opener_deadlift_kg: parsed.data.openerDeadliftKg,
+        rack_height_squat: parsed.data.rackHeightSquat,
+        rack_height_bench: parsed.data.rackHeightBench,
+        status: parsed.data.status,
+      })
+      .eq('id', parsed.data.id);
+
+    if (error) {
+      Sentry.captureException(error);
+      return mapEntryWriteError(error);
+    }
+
+    return ok();
+  });
+}
+
+export async function deleteEntryAction(input: { id: string }): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('deleteEntry', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = z.object({ id: z.uuid() }).safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not delete the entry. Please try again.');
+    }
+
+    const supabase = await createClient();
+    const { error } = await supabase.from('entries').delete().eq('id', parsed.data.id);
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not delete the entry. Please try again.');
+    }
+
+    return ok();
+  });
+}
