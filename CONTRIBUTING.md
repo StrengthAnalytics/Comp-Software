@@ -1,17 +1,14 @@
 # Contributing to Comp-Software
 
-## Local development
+## Development workflow
 
-1. Clone the repo
-2. Copy `.env.example` to `.env.local` and fill in values (Supabase URL and keys, Resend API key, Sentry DSN)
-3. `pnpm install`
-4. `pnpm db:types` to regenerate the typed Supabase client from the current schema
-5. `pnpm dev` to start the Next.js dev server on port 3000
+This project is developed online-only. There is no local Next.js server and no local Supabase instance — all work runs against the hosted Supabase dev project and Vercel preview deployments.
 
-If you're running a fresh local Supabase instance:
+- **Branches and previews.** Push a branch to GitHub and Vercel auto-deploys a preview for it. You exercise your changes against that preview URL, which reads from the hosted Supabase dev project. There is nothing to run on your machine.
+- **Environment variables.** Managed in Vercel (project settings) and mirrored to Supabase via the Vercel ↔ Supabase integration. Do not keep a local `.env.local`; the preview deployment supplies the runtime config.
+- **Migrations and types.** Claude Code writes the migration SQL into `/supabase/migrations/*.sql`. The operator applies it manually through the Supabase SQL editor against the hosted dev project. Claude Code then hand-updates `types/database.types.ts` to match the new schema, and both land in the same commit. (See "Database changes" below.)
 
-1. `pnpm db:reset` to apply all migrations
-2. `pnpm db:seed` to load a sample comp with lifters and a partial flight
+The `db:*` scripts in `package.json` (`db:reset`, `db:seed`, `db:types`, `db:migration:new`) and `pnpm dev` are retained for a possible future local setup, but are not part of this workflow today.
 
 ## Branch naming
 
@@ -48,7 +45,7 @@ Examples:
 - `feat(scorekeeper): add optimistic update for attempt result`
 - `fix(realtime): scope subscriptions to current session`
 - `chore(deps): bump @sentry/nextjs to 9.3.0`
-- `docs(architecture): add v2 referee role to permission matrix`
+- `docs(architecture): document the admin-allowlist auth model`
 
 ## PR checklist
 
@@ -59,8 +56,8 @@ Before opening a PR:
 - [ ] `pnpm test` passes
 - [ ] `pnpm test:e2e` passes for any touched user flow
 - [ ] `CHANGELOG.md` updated under `[Unreleased]`
-- [ ] If the data model changed: migration committed, types regenerated, RLS policies updated, all in the same commit
-- [ ] If a new role permission added: permission matrix tests updated and `ARCHITECTURE.md` table refreshed
+- [ ] If the data model changed: migration committed, `types/database.types.ts` hand-updated to match, RLS policies updated, all in the same commit
+- [ ] If the auth/access model changed: `/lib/auth` tests updated and `ARCHITECTURE.md` sections 3 and 5 refreshed
 - [ ] Screenshots or screen recordings attached for any UI change
 - [ ] One reviewer minimum before merge to `main`
 
@@ -77,20 +74,19 @@ Before opening a PR:
 Non-negotiable coverage:
 
 - `/lib/scoring` must hit 100% unit test coverage
-- `/lib/permissions/matrix.ts` must hit 100% unit test coverage
+- `/lib/auth/admin.ts` (the admin allowlist) must hit 100% unit test coverage
 
 ## Database changes
 
-The migration files in `/supabase/migrations` are the source of truth. Never edit the production database via the Supabase dashboard in a way that diverges from migrations.
+The migration files in `/supabase/migrations` are the source of truth. Never edit the hosted database via the Supabase dashboard in a way that diverges from migrations.
 
-To make a schema change:
+Schema changes follow the online-only workflow:
 
-1. Create a new migration via `pnpm db:migration:new <name>`
-2. Edit the generated SQL file
-3. Apply locally with `pnpm db:reset`
-4. Regenerate types with `pnpm db:types`
-5. Update affected RLS policies in the same commit
-6. Update the permission matrix tests if the change affects access
+1. Claude Code adds a new timestamped migration file in `/supabase/migrations/` (RLS policy changes included in the same file).
+2. The operator applies it by hand via the Supabase SQL editor against the hosted dev project.
+3. Claude Code hand-updates `types/database.types.ts` to match the new schema.
+4. Claude Code updates `/lib/auth` and its tests if the change affects who can read or write.
+5. Migration, types, and any auth/test changes are committed together.
 
 ## Working with AI coding assistants
 

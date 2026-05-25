@@ -8,8 +8,8 @@ This document captures the system design. Read it alongside `CLAUDE.md` before s
 
 Three user-facing surfaces share one backend.
 
-- **Admin** (`/(admin)`): staff interfaces with full chrome. Auth required. Meet directors set up comps, scorekeepers run flights, table loaders manage declarations. Role-gated server-side via `requireRole()` and at the database via RLS.
-- **Overlay** (`/(overlay)`): OBS browser sources. Transparent background, fixed pixel dimensions (typically 1920×1080 or sub-regions). No chrome, no navigation. Read-only access via per-comp overlay key in the URL. Each overlay subscribes to real-time and renders one piece of data.
+- **Admin** (`/(admin)`): staff interfaces with full chrome. Auth required. Admins set up comps, run flights, and manage declarations. Gated server-side via `requireAdmin()` and at the database via RLS.
+- **Overlay** (`/(overlay)`): OBS browser sources. Transparent background, fixed pixel dimensions (typically 1920×1080 or sub-regions). No chrome, no navigation. Run on the admin's machine using the admin session — no separate overlay auth. Each overlay subscribes to real-time and renders one piece of data.
 - **Public** (`/(public)`): comp landing pages, live scoreboard for venue TVs and social shares, final results. Read-only.
 
 Backend services:
@@ -32,7 +32,6 @@ erDiagram
   COMPETITIONS ||--o{ PLATFORMS : has
   COMPETITIONS ||--o{ SESSIONS : has
   COMPETITIONS ||--o{ ENTRIES : receives
-  COMPETITIONS ||--o{ COMP_ROLES : grants
   PLATFORMS ||--o{ SESSIONS : hosts
   SESSIONS ||--o{ FLIGHTS : contains
   FLIGHTS ||--o{ ENTRIES : groups
@@ -41,12 +40,11 @@ erDiagram
   DIVISIONS ||--o{ ENTRIES : categorises
   ENTRIES ||--o{ ATTEMPTS : produces
   ATTEMPTS ||--o{ REFEREE_DECISIONS : receives
-  PROFILES ||--o{ COMP_ROLES : holds
 ```
 
 ### Table summaries
 
-- **competitions**: the meet. Slug, name, federation, kit_type (classic/equipped), event_type (full_power/bench_only/deadlift_only), date range, status (draft/published/active/completed), overlay_key.
+- **competitions**: the meet. Slug, name, federation, kit_type (classic/equipped), event_type (full_power/bench_only/deadlift_only), date range, status (draft/published/active/completed).
 - **divisions**: age categories per comp (Open, Junior, Sub-junior, Masters 1-4).
 - **weight_classes**: bodyweight categories per comp with gender, lower_kg, upper_kg.
 - **platforms**: physical lifting platforms (one per comp normally, two for bigger meets).
@@ -57,34 +55,14 @@ erDiagram
 - **attempts**: up to 9 per entry (3 squats, 3 benches, 3 deadlifts). Weight in kg, declared timestamp, result (pending/good_lift/no_lift/not_taken/withdrawn).
 - **referee_decisions**: exactly 3 per attempt (left/head/right positions). Decision (white/red) plus reasons array for no-lifts.
 - **profiles**: extends `auth.users` with display_name.
-- **comp_roles**: links a user to a comp with a role.
 
 ---
 
-## 3. Permission matrix
+## 3. Permissions
 
-Source of truth lives in `/lib/permissions/matrix.ts`. This table mirrors it for documentation. Operations: R (read), W (write), - (no access).
+Admins (email in `ADMIN_EMAILS`) can do everything. Anon can read data belonging to publicly visible competitions (status `published`, `active`, or `completed`). That's it — there are no per-comp roles.
 
-| Resource | meet_director | scorekeeper | table_loader | announcer | viewer (public) |
-|----------|---------------|-------------|--------------|-----------|-----------------|
-| competitions | R/W | R | R | R | R (published only) |
-| divisions | R/W | R | R | R | R |
-| weight_classes | R/W | R | R | R | R |
-| platforms | R/W | R | R | R | R |
-| sessions | R/W | R | R | R | R |
-| flights | R/W | R/W | R | R | R |
-| lifters | R/W | R/W | R/W | R | R |
-| entries | R/W | R/W | R/W | R | R |
-| attempts | R/W | R/W | R/W (declared weight only) | R | R |
-| referee_decisions | R/W | R/W | R | R | R |
-| comp_roles | R/W | R | R | R | - |
-
-v2 roles:
-
-- **referee**: read all, write own referee_decisions only
-- **jury**: read all, write referee_decisions overrides
-
-The matrix is enforced in two places: RLS policies on Postgres tables, and `requireRole()` checks at the top of server actions. Both must agree. The matrix file has 100% unit test coverage as a guard against drift.
+Enforcement: RLS grants every write to any authenticated session, and `requireAdmin()` in server actions is the real gate. This holds only because public sign-ups are disabled, so admins are the sole session holders (see section 5 and the ADR in section 7). Anon reads are gated by the `is_comp_public()` RLS predicate. Lifter PII (date of birth, IPF member ID) is never exposed to anon: the public reads the `public_lifters` view, which omits those columns and is scoped to lifters who appear in a publicly visible comp (`lifter_in_public_comp()`).
 
 ---
 
@@ -110,13 +88,13 @@ Subscriptions inherit RLS: if a user can't read a row via a regular query, they 
 
 ## 5. Auth model
 
-- Supabase Auth handles sessions
-- Password sign-in for staff roles (meet director, scorekeeper, table loader, ref, jury, announcer)
-- 6-digit OTP for public accounts (registering for or following a comp)
-- `proxy.ts` middleware: checks session, redirects unauthenticated users from protected routes
-- `requireRole(competitionId, allowedRoles)` server-side helper enforces role checks at the server action boundary
-- RLS policies on Postgres enforce row-level access
-- Overlay access is via a per-comp `overlay_key` in the URL. No user session required. The key is read-only and revocable.
+- Supabase Auth handles sessions.
+- 6-digit OTP sign-in for admins. Public sign-ups are disabled, so the only accounts that can hold a session are the admin emails listed in `ADMIN_EMAILS`.
+- The public has no accounts and no sign-in — they read published-comp data anonymously.
+- `requireAdmin()` (in `/lib/auth`) is the authorization gate at the server-action boundary; it checks the session's email against `ADMIN_EMAILS`. Because RLS grants writes to any authenticated session, this helper is the real write gate — and that is only safe while public sign-ups stay disabled.
+- RLS policies on Postgres enforce row-level access: anon reads publicly visible competitions only; authenticated (admin) sessions read and write everything.
+- `proxy.ts` middleware refreshes and passes through the Supabase session cookie.
+- Overlays run on the admin's own machine using the admin session — there is no separate overlay auth.
 
 ---
 
@@ -127,6 +105,8 @@ Subscriptions inherit RLS: if a user can't read a row via a regular query, they 
 - **Resend**: SMTP provider for Supabase auth emails. Single account, multiple sending domains as needed.
 - **Sentry**: errors and performance traces. One project per environment, source maps uploaded on every Vercel deployment.
 - **GitHub**: repo host. PRs trigger Vercel previews and Sentry release tagging.
+
+There is no local development environment: all work runs against the hosted Supabase dev project and Vercel preview deployments, never a local Next.js or Supabase instance.
 
 Environment variables documented in `.env.example`.
 
@@ -152,10 +132,6 @@ Per-position decisions in a separate table enables future digital ref login with
 
 Our venue wifi is controlled and reliable. LiftingCast's offline-first architecture (PouchDB sync, conflict resolution) carries significant complexity that is not warranted at our risk profile. Revisit if we expand to venues outside our control.
 
-### Password sign-in for staff, OTP for public
-
-OTP at a venue is friction for staff who sign in repeatedly across multiple devices. Passwords for staff, OTP reserved for public-facing accounts that sign in rarely.
-
 ### Multi-platform support from v1
 
 Some IPF comps run two platforms simultaneously. Designing this out of v1 would force a painful migration later. The cost in v1 is one extra column (`platform_id` on `sessions`).
@@ -166,8 +142,12 @@ Admin, overlay, and public surfaces have radically different chrome, transparenc
 
 ### Server actions for all writes
 
-No direct Supabase writes from the client. Every mutation passes through a server action wrapped in `Sentry.withServerActionInstrumentation`, validated by Zod, and authorised via `requireRole()`. The cost is a slightly chattier request layer; the benefit is one unambiguous audit and validation point per mutation.
+No direct Supabase writes from the client. Every mutation passes through a server action wrapped in `Sentry.withServerActionInstrumentation`, validated by Zod, and authorised via `requireAdmin()`. The cost is a slightly chattier request layer; the benefit is one unambiguous audit and validation point per mutation.
 
-### Per-comp overlay key, no user session
+### Simplified from role-based permissions to admin allowlist + anon read
 
-Overlays run in OBS where there is no realistic way to maintain a session. A revocable per-comp key in the URL gives read-only access to the live data feed for that comp. The key can be rotated mid-event if leaked.
+Original model assumed multi-organisation use with a per-comp role matrix (`comp_roles`, `requireRole`). In practice this is a single-gym tool with 1-2 admins, so the matrix added complexity without value at this scale. Replaced with an `ADMIN_EMAILS` allowlist checked by `requireAdmin()` plus anonymous public read of published comps. Revisit only if multi-tenant becomes a real requirement.
+
+### Overlays on the admin session, no separate overlay auth
+
+Overlays run in OBS on the admin's own machine, which already holds an admin session. That removes the need for a per-comp overlay key or signed URL: the overlay browser sources read the same data the admin can, through the existing session. Revisit if overlays ever need to run on an untrusted machine.
