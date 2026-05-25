@@ -4,73 +4,46 @@ import * as Sentry from '@sentry/nextjs';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { isAdmin } from '@/lib/auth/admin';
-import { emailSchema, otpTokenSchema } from '@/types/auth';
+import { emailSchema, passwordSchema } from '@/types/auth';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 
-export type OtpRequestState = ActionResult<{ email: string }>;
-export type OtpVerifyState = ActionResult;
+export type SignInState = ActionResult;
 
-// Step 1 of sign-in: email a 6-digit OTP. Restricted to allowlisted admins (defense-in-depth on
-// top of disabled public sign-ups), and shouldCreateUser:false so no new accounts are ever made.
-export async function requestOtpAction(
-  _previous: OtpRequestState | null,
+// Email + password sign-in. Initial-build auth: simpler to operate than OTP while the dev SMTP is
+// heavily rate-limited (see ARCHITECTURE.md §5; production switches to OTP). The ADMIN_EMAILS
+// allowlist remains the real gate, so the authorization model is unchanged. On success the server
+// client writes the session cookie and we redirect into the admin area.
+export async function signInAction(
+  _previous: SignInState | null,
   formData: FormData,
-): Promise<OtpRequestState> {
-  return Sentry.withServerActionInstrumentation('requestOtp', async () => {
-    const parsed = emailSchema.safeParse(formData.get('email'));
-    if (!parsed.success) {
-      return fail('Enter a valid email address.', { email: ['Enter a valid email address.'] });
+): Promise<SignInState> {
+  const result = await Sentry.withServerActionInstrumentation('signIn', async () => {
+    const email = emailSchema.safeParse(formData.get('email'));
+    const password = passwordSchema.safeParse(formData.get('password'));
+
+    if (!email.success || !password.success) {
+      return fail('Enter your email and password.', {
+        ...(email.success ? {} : { email: ['Enter a valid email address.'] }),
+        ...(password.success ? {} : { password: ['Enter your password.'] }),
+      });
     }
 
-    const email = parsed.data;
-
-    if (!isAdmin(email)) {
+    // Defense-in-depth on top of disabled public sign-ups: only allowlisted admins may sign in.
+    if (!isAdmin(email.data)) {
       return fail('That email is not authorised to sign in.', {
         email: ['That email is not authorised to sign in.'],
       });
     }
 
     const supabase = await createClient();
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: false },
-    });
-
-    if (error) {
-      Sentry.captureException(error);
-      return fail('Could not send a sign-in code. Please try again.');
-    }
-
-    return ok({ email });
-  });
-}
-
-// Step 2 of sign-in: verify the code. On success the server client writes the session cookie and
-// we redirect into the admin area.
-export async function verifyOtpAction(
-  _previous: OtpVerifyState | null,
-  formData: FormData,
-): Promise<OtpVerifyState> {
-  const result = await Sentry.withServerActionInstrumentation('verifyOtp', async () => {
-    const email = emailSchema.safeParse(formData.get('email'));
-    const token = otpTokenSchema.safeParse(formData.get('token'));
-
-    if (!email.success || !token.success) {
-      return fail('Enter the 6-digit code from your email.', {
-        token: ['Enter the 6-digit code from your email.'],
-      });
-    }
-
-    const supabase = await createClient();
-    const { error } = await supabase.auth.verifyOtp({
+    const { error } = await supabase.auth.signInWithPassword({
       email: email.data,
-      token: token.data,
-      type: 'email',
+      password: password.data,
     });
 
     if (error) {
       Sentry.captureException(error);
-      return fail('That code was not valid or has expired. Request a new one.');
+      return fail('Incorrect email or password.');
     }
 
     return ok();

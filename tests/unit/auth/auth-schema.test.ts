@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emailSchema, otpTokenSchema } from '@/types/auth';
+import { emailSchema, passwordSchema } from '@/types/auth';
 
 describe('emailSchema', () => {
   it('trims and lowercases a valid email', () => {
@@ -15,14 +15,12 @@ describe('emailSchema', () => {
   });
 });
 
-describe('otpTokenSchema', () => {
-  it('accepts a 6-digit code', () => {
-    expect(otpTokenSchema.safeParse('123456').success).toBe(true);
+describe('passwordSchema', () => {
+  it('accepts a non-empty password', () => {
+    expect(passwordSchema.safeParse('sprinter').success).toBe(true);
   });
 
-  it('rejects codes that are not 6 digits', () => {
-    expect(otpTokenSchema.safeParse('12345').success).toBe(false);
-    expect(otpTokenSchema.safeParse('1234567').success).toBe(false);
-    expect(otpTokenSchema.safeParse('12a456').success).toBe(false);
+  it('rejects an empty password', () => {
+    expect(passwordSchema.safeParse('').success).toBe(false);
   });
 });

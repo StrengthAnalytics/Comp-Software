@@ -36,9 +36,6 @@ export const EVENT_TYPES = Object.keys(EVENT_TYPE_LABELS) as EventType[];
 export const COMP_STATUSES = Object.keys(COMP_STATUS_LABELS) as CompStatus[];
 export const GENDERS = Object.keys(GENDER_LABELS) as Gender[];
 
-// Length of the email one-time passcode Supabase Auth issues.
-export const OTP_LENGTH = 6;
-
 // Default IPF age divisions, in competition running order. Used by the "seed defaults" action.
 export const DEFAULT_DIVISIONS: readonly string[] = [
   'Sub-Junior',

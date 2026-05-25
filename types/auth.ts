@@ -6,8 +6,6 @@ export const emailSchema = z
   .toLowerCase()
   .pipe(z.email('Enter a valid email address.'));
 
-// Supabase email OTP is a fixed 6-digit numeric code.
-export const otpTokenSchema = z
-  .string()
-  .trim()
-  .regex(/^\d{6}$/, 'Enter the 6-digit code from your email.');
+// Sign-in only validates that a password was provided; strength is enforced at account creation
+// (managed manually in Supabase for now), not here.
+export const passwordSchema = z.string().min(1, 'Enter your password.');

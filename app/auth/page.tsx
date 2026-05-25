@@ -18,7 +18,7 @@ export default async function AuthPage() {
       <div className="w-full max-w-sm">
         <h1 className="text-xl font-semibold tracking-tight text-neutral-900">Sign in</h1>
         <p className="mt-1 text-sm text-neutral-600">
-          Admin access only. We&apos;ll email you a 6-digit code.
+          Admin access only. Sign in with your email and password.
         </p>
         <div className="mt-6">
           <SignInForm />

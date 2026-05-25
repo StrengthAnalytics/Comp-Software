@@ -15,7 +15,7 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 ## [Unreleased]
 
 ### Added
-- Admin OTP sign-in at `/auth`: two-step email + 6-digit code form (`components/auth/sign-in-form.tsx`) backed by `actions/auth.ts` (`requestOtp`, `verifyOtp`, `signOut`). OTP requests are restricted to `ADMIN_EMAILS` (defense-in-depth on top of disabled public sign-ups) with `shouldCreateUser: false`
+- Admin sign-in at `/auth`: email + password form (`components/auth/sign-in-form.tsx`) backed by `actions/auth.ts` (`signIn`, `signOut`), restricted to `ADMIN_EMAILS`. Initial-build auth choice — production switches to 6-digit OTP (see ARCHITECTURE.md §7); the `ADMIN_EMAILS` allowlist is the authorization gate regardless of sign-in method
 - Route protection: `proxy.ts` redirects unauthenticated visitors away from `/comps`, and the `(admin)` layout is now an async server component that gates on `isAdmin()` and renders the admin chrome (nav + signed-in email + sign-out)
 - Competition setup UI under `/comps`: list, create (`/comps/new`), and edit (`/comps/[id]/edit`) screens. The edit screen manages the comp plus its divisions and weight classes, including a "Seed IPF defaults" button for the standard classic divisions and weight classes
 - Server actions for competition setup (`actions/competitions.ts`, `actions/divisions.ts`, `actions/weight-classes.ts`): each calls `requireAdmin()` via the `adminGuard()` helper, validates with Zod, is wrapped in `Sentry.withServerActionInstrumentation`, and returns a typed `ActionResult` rather than leaking raw DB errors (unique-violation mapped to friendly messages)
