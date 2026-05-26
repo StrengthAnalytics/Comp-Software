@@ -20,6 +20,7 @@ import {
 import { BulkImport } from '@/components/entries/bulk-import';
 import { DeleteAllEntries } from '@/components/entries/delete-all-entries';
 import { formatBulkExport, type ExportRow } from '@/lib/entries/bulk-import';
+import { formatLifterName } from '@/lib/lifters/name';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
 
@@ -90,7 +91,7 @@ function asGender(value: string): Gender {
 }
 
 function fullName(lifter: { first_name: string; surname: string }): string {
-  return `${lifter.surname}, ${lifter.first_name}`;
+  return formatLifterName(lifter.surname, lifter.first_name);
 }
 
 function NumberField({
@@ -203,7 +204,7 @@ function LifterDetailsEditor({ lifter, onClose }: { lifter: EntryLifter; onClose
         <button
           type="button"
           onClick={save}
-          disabled={pending || firstName.trim() === '' || surname.trim() === ''}
+          disabled={pending || firstName.trim() === ''}
           className={PRIMARY_BUTTON}
         >
           {pending ? 'Saving…' : 'Save lifter'}
@@ -478,7 +479,7 @@ function NewLifterForm({
         <button
           type="button"
           onClick={submit}
-          disabled={pending || firstName.trim() === '' || surname.trim() === ''}
+          disabled={pending || firstName.trim() === ''}
           className={PRIMARY_BUTTON}
         >
           {pending ? 'Registering…' : 'Create & register'}

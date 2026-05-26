@@ -25,8 +25,16 @@ describe('lifterInputSchema', () => {
     }
   });
 
-  it('rejects an empty surname', () => {
-    expect(lifterInputSchema.safeParse({ ...base, surname: '  ' }).success).toBe(false);
+  it('accepts a blank surname and stores it as an empty string', () => {
+    const result = lifterInputSchema.safeParse({ ...base, surname: '  ' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.surname).toBe('');
+    }
+  });
+
+  it('still rejects an empty first name', () => {
+    expect(lifterInputSchema.safeParse({ ...base, first_name: '  ' }).success).toBe(false);
   });
 
   it('rejects an unknown gender', () => {

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
+import { formatLifterName } from '@/lib/lifters/name';
 import {
   FlightsManager,
   type BoardEntry,
@@ -94,7 +95,7 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
         lot_number: row.lot_number,
         opener_kg: openerForEvent(comp.event_type, row),
         weight_class_name: row.weight_class_id ? (weightClassNameById.get(row.weight_class_id) ?? null) : null,
-        lifter_name: `${lifter.surname}, ${lifter.first_name}`,
+        lifter_name: formatLifterName(lifter.surname, lifter.first_name),
       };
     })
     .filter((entry): entry is BoardEntry => entry !== null);

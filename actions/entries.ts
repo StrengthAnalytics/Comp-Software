@@ -8,6 +8,7 @@ import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
+import { formatLifterName } from '@/lib/lifters/name';
 import { createEntrySchema, entryUpdateSchema, lifterInputSchema, type EntryUpdateInput } from '@/types/entry';
 import { assignFlightSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
@@ -369,7 +370,7 @@ export async function bulkImportEntriesAction(input: {
     };
 
     for (const row of rows) {
-      const name = `${row.surname}, ${row.firstName}`;
+      const name = formatLifterName(row.surname, row.firstName);
 
       if (row.errors.length > 0) {
         record(row.line, name, 'error', row.errors.join(' '));

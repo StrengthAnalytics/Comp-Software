@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { formatLifterName } from '@/lib/lifters/name';
 import {
   TeamsManager,
   type TeamMemberEntry,
@@ -71,7 +72,7 @@ export default async function TeamsPage({ params }: { params: Promise<{ 'comp-sl
         id: row.id,
         team_id: row.team_id,
         team_lift: row.team_lift,
-        lifter_name: `${lifter.surname}, ${lifter.first_name}`,
+        lifter_name: formatLifterName(lifter.surname, lifter.first_name),
       };
     })
     .filter((entry): entry is TeamMemberEntry => entry !== null)

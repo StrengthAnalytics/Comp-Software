@@ -14,6 +14,9 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 
 ## [Unreleased]
 
+### Changed
+- Surnames are now optional for lifters (mononymous athletes and sparse imported data). The first name stays required, so every lifter still has a name; a blank surname is stored as an empty string. Relaxed in the lifter Zod schema, the bulk-import parser, and the add/edit forms. Names now render via a shared `formatLifterName` helper (`lib/lifters/name.ts`) that shows just the first name when the surname is blank, across the entries, flights and teams screens
+
 ### Added
 - "Delete all entrants" on the entries screen: a danger-zone button behind a custom type-to-confirm dialog (the operator types the competition name to enable it) that removes every entry in the comp in one go, cascading to their attempts and referee decisions. The persistent lifter (person) records are kept and can be re-registered. `deleteAllEntriesAction` in `actions/entries.ts` (admin-guarded, Sentry-wrapped) returns the number removed; UI in `components/entries/delete-all-entries.tsx`
 - Team competition format. A `Team competition` toggle on the competition details (shown for full-power comps only) flags a comp where each team is three lifters — one each on squat, bench and deadlift — and the team score is the sum of their IPF GL points. New teams management screen at `/(admin)/[comp-slug]/teams`: name teams and fill each team's three role slots from the pool of registered lifters (optimistic assignment, rolled back on failure), with an unassigned-lifters list. Reachable from a link on the competition edit screen that appears only when the comp is a team competition

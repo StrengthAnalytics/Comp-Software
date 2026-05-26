@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
+import { formatLifterName } from '@/lib/lifters/name';
 import {
   EntriesManager,
   type EntryLifter,
@@ -84,5 +85,5 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
 }
 
 function fullName(lifter: { first_name: string; surname: string }): string {
-  return `${lifter.surname}, ${lifter.first_name}`;
+  return formatLifterName(lifter.surname, lifter.first_name);
 }
