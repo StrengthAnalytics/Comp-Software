@@ -262,6 +262,37 @@ export async function deleteEntryAction(input: { id: string }): Promise<ActionRe
   });
 }
 
+// Removes every entrant from a competition at once. Attempts and referee decisions cascade away with
+// the entries; the persistent lifter (person) records are kept — only this comp's registrations go.
+// Gated behind a type-to-confirm step in the UI. Returns how many entries were removed.
+export async function deleteAllEntriesAction(input: {
+  competitionId: string;
+}): Promise<ActionResult<{ deleted: number }>> {
+  return Sentry.withServerActionInstrumentation('deleteAllEntries', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = z.object({ competitionId: z.uuid() }).safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not delete the entrants. Please try again.');
+    }
+
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from('entries')
+      .delete()
+      .eq('competition_id', parsed.data.competitionId)
+      .select('id');
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not delete the entrants. Please try again.');
+    }
+
+    return ok({ deleted: (data ?? []).length });
+  });
+}
+
 export type BulkImportOutcome = {
   line: number;
   name: string;

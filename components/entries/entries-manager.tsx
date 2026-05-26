@@ -18,6 +18,7 @@ import {
   type Lifts,
 } from '@/lib/constants';
 import { BulkImport } from '@/components/entries/bulk-import';
+import { DeleteAllEntries } from '@/components/entries/delete-all-entries';
 import { formatBulkExport, type ExportRow } from '@/lib/entries/bulk-import';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
@@ -693,12 +694,14 @@ function CopyEntriesButton({
 
 export function EntriesManager({
   competitionId,
+  competitionName,
   lifts,
   divisions,
   weightClasses,
   entries,
 }: {
   competitionId: string;
+  competitionName: string;
   lifts: Lifts;
   divisions: DivisionOption[];
   weightClasses: WeightClassOption[];
@@ -743,6 +746,12 @@ export function EntriesManager({
           </div>
         )}
       </div>
+
+      <DeleteAllEntries
+        competitionId={competitionId}
+        competitionName={competitionName}
+        entryCount={entries.length}
+      />
     </div>
   );
 }
