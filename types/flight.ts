@@ -70,5 +70,13 @@ export const assignFlightSchema = z.object({
   flightId: z.uuid().nullable(),
 });
 
+// Team competitions assign whole teams to flights: every member's entry moves together. flightId
+// null = back to Unassigned.
+export const assignTeamFlightSchema = z.object({
+  teamId: z.uuid(),
+  competitionId: z.uuid(),
+  flightId: z.uuid().nullable(),
+});
+
 export type SessionInput = z.infer<typeof sessionInputSchema>;
 export type FlightInput = z.infer<typeof flightInputSchema>;

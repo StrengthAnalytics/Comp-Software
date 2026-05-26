@@ -10,6 +10,8 @@ import {
   type PlatformOption,
   type SessionRow,
 } from '@/components/flights/flights-manager';
+import { type BoardTeam, type BoardTeamMember } from '@/components/flights/team-flight-board';
+import { TEAM_LIFTS } from '@/types/team';
 import type { Database } from '@/types/database.types';
 
 type EventType = Database['public']['Enums']['event_type'];
@@ -44,7 +46,7 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
 
   const { data: comp } = await supabase
     .from('competitions')
-    .select('id, name, slug, event_type')
+    .select('id, name, slug, event_type, is_team_competition')
     .eq('slug', slug)
     .maybeSingle();
 
@@ -52,25 +54,38 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
     notFound();
   }
 
-  const [{ data: platforms }, { data: sessions }, { data: flights }, { data: weightClasses }, { data: entryRows }] =
-    await Promise.all([
-      supabase.from('platforms').select('id, name').eq('competition_id', comp.id).order('name', { ascending: true }),
-      supabase
-        .from('sessions')
-        .select('id, name, session_date, start_time, platform_id, sort_order')
-        .eq('competition_id', comp.id)
-        .order('sort_order', { ascending: true }),
-      supabase
-        .from('flights')
-        .select('id, session_id, name, sort_order')
-        .eq('competition_id', comp.id)
-        .order('sort_order', { ascending: true }),
-      supabase.from('weight_classes').select('id, name').eq('competition_id', comp.id),
-      supabase
-        .from('entries')
-        .select('id, lifter_id, flight_id, lot_number, weight_class_id, opener_squat_kg, opener_bench_kg, opener_deadlift_kg')
-        .eq('competition_id', comp.id),
-    ]);
+  const [
+    { data: platforms },
+    { data: sessions },
+    { data: flights },
+    { data: weightClasses },
+    { data: teamRows },
+    { data: entryRows },
+  ] = await Promise.all([
+    supabase.from('platforms').select('id, name').eq('competition_id', comp.id).order('name', { ascending: true }),
+    supabase
+      .from('sessions')
+      .select('id, name, session_date, start_time, platform_id, sort_order')
+      .eq('competition_id', comp.id)
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('flights')
+      .select('id, session_id, name, sort_order')
+      .eq('competition_id', comp.id)
+      .order('sort_order', { ascending: true }),
+    supabase.from('weight_classes').select('id, name').eq('competition_id', comp.id),
+    supabase
+      .from('teams')
+      .select('id, name, sort_order')
+      .eq('competition_id', comp.id)
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('entries')
+      .select(
+        'id, lifter_id, flight_id, team_id, team_lift, lot_number, weight_class_id, opener_squat_kg, opener_bench_kg, opener_deadlift_kg',
+      )
+      .eq('competition_id', comp.id),
+  ]);
 
   // The generated types carry no relationships, so lifters are joined in a second query rather than
   // an embedded select, matching the rest of the codebase.
@@ -100,6 +115,39 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
     })
     .filter((entry): entry is BoardEntry => entry !== null);
 
+  // For team comps, group members under their team and derive each team's flight (the flight its
+  // members share; null if none or mixed) so the board can move whole teams at once.
+  const membersByTeam = new Map<string, BoardTeamMember[]>();
+  const flightIdsByTeam = new Map<string, Set<string>>();
+  for (const row of entryRows ?? []) {
+    if (!row.team_id || !row.team_lift) {
+      continue;
+    }
+    const lifter = lifterById.get(row.lifter_id);
+    if (!lifter) {
+      continue;
+    }
+    const members = membersByTeam.get(row.team_id) ?? [];
+    members.push({ lift: row.team_lift, lifter_name: formatLifterName(lifter.surname, lifter.first_name) });
+    membersByTeam.set(row.team_id, members);
+    if (row.flight_id) {
+      const ids = flightIdsByTeam.get(row.team_id) ?? new Set<string>();
+      ids.add(row.flight_id);
+      flightIdsByTeam.set(row.team_id, ids);
+    }
+  }
+
+  const teams: BoardTeam[] = comp.is_team_competition
+    ? (teamRows ?? []).map((team) => {
+        const ids = flightIdsByTeam.get(team.id);
+        const flightId = ids && ids.size === 1 ? [...ids][0] : null;
+        const members = (membersByTeam.get(team.id) ?? []).toSorted(
+          (a, b) => TEAM_LIFTS.indexOf(a.lift) - TEAM_LIFTS.indexOf(b.lift),
+        );
+        return { id: team.id, name: team.name, sort_order: team.sort_order, flightId, members };
+      })
+    : [];
+
   return (
     <div className="space-y-8">
       <div>
@@ -111,10 +159,13 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
 
       <FlightsManager
         competitionId={comp.id}
+        compSlug={comp.slug}
+        isTeamCompetition={comp.is_team_competition}
         platforms={(platforms ?? []) as PlatformOption[]}
         sessions={(sessions ?? []) as SessionRow[]}
         flights={(flights ?? []) as FlightRow[]}
         entries={entries}
+        teams={teams}
       />
     </div>
   );

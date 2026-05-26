@@ -16,6 +16,7 @@ import { createFlightAction, deleteFlightAction, updateFlightAction } from '@/ac
 import { assignEntryFlightAction } from '@/actions/entries';
 import { MAX_FLIGHT_SIZE } from '@/lib/constants';
 import { compareFlightOrder } from '@/lib/flights/order';
+import { TeamFlightBoard, type BoardTeam } from '@/components/flights/team-flight-board';
 import type { ActionResult } from '@/types/action-result';
 
 export type PlatformOption = { id: string; name: string };
@@ -590,16 +591,22 @@ function Lane({
 
 export function FlightsManager({
   competitionId,
+  compSlug,
+  isTeamCompetition,
   platforms,
   sessions,
   flights,
   entries,
+  teams,
 }: {
   competitionId: string;
+  compSlug: string;
+  isTeamCompetition: boolean;
   platforms: PlatformOption[];
   sessions: SessionRow[];
   flights: FlightRow[];
   entries: BoardEntry[];
+  teams: BoardTeam[];
 }) {
   // Optimistic assignment state: seeded from the server rows and re-seeded whenever a structural
   // refresh hands us new entries. A "move" updates this immediately and reconciles on failure.
@@ -683,6 +690,15 @@ export function FlightsManager({
         <AddSession competitionId={competitionId} nextSortOrder={sessions.length} />
       </div>
 
+      {isTeamCompetition ? (
+        <TeamFlightBoard
+          competitionId={competitionId}
+          compSlug={compSlug}
+          sessions={sessions}
+          flights={flights}
+          teams={teams}
+        />
+      ) : (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-tight">Roster</h2>
@@ -749,6 +765,7 @@ export function FlightsManager({
           </>
         )}
       </div>
+      )}
     </div>
   );
 }

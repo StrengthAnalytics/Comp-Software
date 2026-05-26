@@ -17,6 +17,9 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 ### Changed
 - Surnames are now optional for lifters (mononymous athletes and sparse imported data). The first name stays required, so every lifter still has a name; a blank surname is stored as an empty string. Relaxed in the lifter Zod schema, the bulk-import parser, and the add/edit forms. Names now render via a shared `formatLifterName` helper (`lib/lifters/name.ts`) that shows just the first name when the surname is blank, across the entries, flights and teams screens
 
+### Changed
+- The sessions & flights screen now assigns by team for team competitions instead of by lifter: the roster board shows team cards (with their members) that move into flights as a unit (every member's entry moves together, optimistically), via `assignTeamFlightAction`. When no teams exist yet it prompts the operator to create teams first, linking to the Teams screen. Non-team comps keep the per-lifter roster board
+
 ### Added
 - Bulk add teams on the teams screen: a collapsible card that creates many teams at once from a pasted list of names (one per line). Skips names that already exist in the comp (case-insensitive) and duplicates within the paste, with a per-name summary. Pure parser `parseTeamNames` in `lib/teams/bulk-add.ts` (unit-tested), `bulkAddTeamsAction` in `actions/teams.ts`, UI in `components/teams/bulk-add-teams.tsx`
 - "Delete all entrants" on the entries screen: a danger-zone button behind a custom type-to-confirm dialog (the operator types the competition name to enable it) that removes every entry in the comp in one go, cascading to their attempts and referee decisions. The persistent lifter (person) records are kept and can be re-registered. `deleteAllEntriesAction` in `actions/entries.ts` (admin-guarded, Sentry-wrapped) returns the number removed; UI in `components/entries/delete-all-entries.tsx`

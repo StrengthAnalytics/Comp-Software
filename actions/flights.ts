@@ -6,7 +6,7 @@ import type { PostgrestError } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
-import { flightInputSchema, flightUpdateSchema } from '@/types/flight';
+import { assignTeamFlightSchema, flightInputSchema, flightUpdateSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 
@@ -125,6 +125,67 @@ export async function deleteFlightAction(input: { id: string }): Promise<ActionR
     if (error) {
       Sentry.captureException(error);
       return fail('Could not delete the flight. Please try again.');
+    }
+
+    return ok();
+  });
+}
+
+// Assigns a whole team to a flight (or clears it when flightId is null) by moving every member's
+// entry together, so a team competition's flights are built team-by-team rather than lifter-by-lifter.
+export async function assignTeamFlightAction(input: {
+  teamId: string;
+  competitionId: string;
+  flightId: string | null;
+}): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('assignTeamFlight', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = assignTeamFlightSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not move the team. Please try again.');
+    }
+
+    const supabase = await createClient();
+
+    const { data: team, error: teamError } = await supabase
+      .from('teams')
+      .select('competition_id')
+      .eq('id', parsed.data.teamId)
+      .maybeSingle();
+    if (teamError) {
+      Sentry.captureException(teamError);
+      return fail('Could not move the team. Please try again.');
+    }
+    if (!team || team.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that team.');
+    }
+
+    // RLS cannot check that the target flight belongs to this comp; verify before assigning.
+    if (parsed.data.flightId) {
+      const { data: flight, error: flightError } = await supabase
+        .from('flights')
+        .select('competition_id')
+        .eq('id', parsed.data.flightId)
+        .maybeSingle();
+      if (flightError) {
+        Sentry.captureException(flightError);
+        return fail('Could not move the team. Please try again.');
+      }
+      if (!flight || flight.competition_id !== parsed.data.competitionId) {
+        return fail('Choose a flight from this competition.');
+      }
+    }
+
+    const { error } = await supabase
+      .from('entries')
+      .update({ flight_id: parsed.data.flightId })
+      .eq('team_id', parsed.data.teamId);
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not move the team. Please try again.');
     }
 
     return ok();
