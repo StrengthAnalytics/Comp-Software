@@ -8,6 +8,7 @@ import {
   deleteTeamAction,
   updateTeamAction,
 } from '@/actions/teams';
+import { BulkAddTeams } from '@/components/teams/bulk-add-teams';
 import { LIFT_LABELS } from '@/lib/constants';
 import { TEAM_LIFTS, type TeamLift } from '@/types/team';
 import type { ActionResult } from '@/types/action-result';
@@ -336,6 +337,8 @@ export function TeamsManager({
       ) : null}
 
       <AddTeam competitionId={competitionId} nextSortOrder={teams.length} />
+
+      <BulkAddTeams competitionId={competitionId} />
 
       <div>
         <h2 className="text-sm font-semibold text-neutral-700">
