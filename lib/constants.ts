@@ -4,6 +4,7 @@ type KitType = Database['public']['Enums']['kit_type'];
 type EventType = Database['public']['Enums']['event_type'];
 type CompStatus = Database['public']['Enums']['comp_status'];
 type EntryStatus = Database['public']['Enums']['entry_status'];
+type LiftType = Database['public']['Enums']['lift_type'];
 
 export type Gender = 'male' | 'female';
 
@@ -30,6 +31,12 @@ export const COMP_STATUS_LABELS: Record<CompStatus, string> = {
 export const GENDER_LABELS: Record<Gender, string> = {
   male: 'Male',
   female: 'Female',
+};
+
+export const LIFT_LABELS: Record<LiftType, string> = {
+  squat: 'Squat',
+  bench: 'Bench',
+  deadlift: 'Deadlift',
 };
 
 // Entry lifecycle, in the order an entry moves through a meet day.

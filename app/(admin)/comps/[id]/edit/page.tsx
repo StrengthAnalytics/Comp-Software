@@ -11,7 +11,7 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
 
   const { data: comp } = await supabase
     .from('competitions')
-    .select('id, name, slug, kit_type, event_type, status, starts_on, ends_on')
+    .select('id, name, slug, kit_type, event_type, status, starts_on, ends_on, is_team_competition')
     .eq('id', id)
     .maybeSingle();
 
@@ -47,6 +47,11 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
           <Link href={`/${comp.slug}/flights`} className="text-sm font-medium text-neutral-900 underline">
             Sessions &amp; flights →
           </Link>
+          {comp.is_team_competition ? (
+            <Link href={`/${comp.slug}/teams`} className="text-sm font-medium text-neutral-900 underline">
+              Teams →
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -61,6 +66,7 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
             status: comp.status,
             starts_on: comp.starts_on ?? '',
             ends_on: comp.ends_on ?? '',
+            is_team_competition: comp.is_team_competition,
           }}
         />
       </div>

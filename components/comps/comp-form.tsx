@@ -29,6 +29,7 @@ export type CompFormInitial = {
   status: CompRow['status'];
   starts_on: string;
   ends_on: string;
+  is_team_competition: boolean;
 };
 
 const INPUT_CLASS =
@@ -68,6 +69,8 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
   const [slug, setSlug] = useState(initial?.slug ?? '');
   // In create mode the slug tracks the name until the operator types their own.
   const [slugEdited, setSlugEdited] = useState(mode === 'edit');
+  // Controlled so the team-competition toggle can show only for full-power comps.
+  const [eventType, setEventType] = useState<CompRow['event_type']>(initial?.event_type ?? 'full_power');
 
   const fieldErrors = state?.status === 'error' ? state.fieldErrors : undefined;
 
@@ -136,7 +139,9 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
           <select
             id="event_type"
             name="event_type"
-            defaultValue={initial?.event_type ?? 'full_power'}
+            value={eventType}
+            // The select only renders EVENT_TYPES values, so this narrowing is exact.
+            onChange={(event) => setEventType(event.target.value as CompRow['event_type'])}
             className={INPUT_CLASS}
           >
             {EVENT_TYPES.map((value) => (
@@ -162,6 +167,27 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
           <FieldError messages={fieldErrors?.status} />
         </div>
       </div>
+
+      {eventType === 'full_power' ? (
+        <div>
+          <label htmlFor="is_team_competition" className="flex items-center gap-2">
+            <input
+              id="is_team_competition"
+              name="is_team_competition"
+              type="checkbox"
+              value="on"
+              defaultChecked={initial?.is_team_competition ?? false}
+              className="h-4 w-4 rounded border-neutral-300"
+            />
+            <span className={LABEL_CLASS}>Team competition</span>
+          </label>
+          <p className="mt-1 text-xs text-neutral-500">
+            Teams of three lifters — one each on squat, bench and deadlift. The team score is the sum of the three
+            members&rsquo; IPF GL points, each from their best lift.
+          </p>
+          <FieldError messages={fieldErrors?.is_team_competition} />
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <div>

@@ -39,10 +39,15 @@ export const competitionInputSchema = z
     status: z.enum(['draft', 'published', 'active', 'completed']),
     starts_on: optionalDate,
     ends_on: optionalDate,
+    is_team_competition: z.boolean().default(false),
   })
   .refine((data) => !data.starts_on || !data.ends_on || data.ends_on >= data.starts_on, {
     path: ['ends_on'],
     message: 'End date cannot be before the start date.',
+  })
+  .refine((data) => !data.is_team_competition || data.event_type === 'full_power', {
+    path: ['is_team_competition'],
+    message: 'Team competitions must be full power (squat, bench and deadlift).',
   });
 
 export type CompetitionInput = z.infer<typeof competitionInputSchema>;
