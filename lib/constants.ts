@@ -43,6 +43,10 @@ export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
   disqualified: 'Disqualified',
 };
 
+// Operational cap on flight size. IPF flights run ~8-14 lifters; past this the flight is too long
+// to run smoothly, so the flights screen warns the operator to rebalance.
+export const MAX_FLIGHT_SIZE = 14;
+
 // Which of the three lifts a competition contests, by event type. Drives which opener and rack
 // fields a registration screen shows. Bench-only and deadlift-only meets omit the others.
 export type Lifts = { squat: boolean; bench: boolean; deadlift: boolean };

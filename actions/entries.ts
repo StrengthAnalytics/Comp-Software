@@ -9,6 +9,7 @@ import { isUniqueViolation } from '@/lib/supabase/errors';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
 import { createEntrySchema, entryUpdateSchema, lifterInputSchema, type EntryUpdateInput } from '@/types/entry';
+import { assignFlightSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
@@ -171,6 +172,68 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
     if (error) {
       Sentry.captureException(error);
       return mapEntryWriteError(error);
+    }
+
+    return ok();
+  });
+}
+
+// Assigns an entry to a flight, or back to Unassigned when flightId is null. Kept separate from
+// updateEntryAction because the flights screen owns flight assignment (the entries screen does not),
+// and the board fires this on every drag-free "move" with optimistic local state.
+export async function assignEntryFlightAction(input: {
+  entryId: string;
+  competitionId: string;
+  flightId: string | null;
+}): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('assignEntryFlight', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = assignFlightSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not move the lifter. Please try again.');
+    }
+
+    const supabase = await createClient();
+
+    const { data: entry, error: entryError } = await supabase
+      .from('entries')
+      .select('competition_id')
+      .eq('id', parsed.data.entryId)
+      .maybeSingle();
+    if (entryError) {
+      Sentry.captureException(entryError);
+      return fail('Could not move the lifter. Please try again.');
+    }
+    if (!entry || entry.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that entry.');
+    }
+
+    // RLS cannot check that the target flight belongs to this comp; verify before assigning.
+    if (parsed.data.flightId) {
+      const { data: flight, error: flightError } = await supabase
+        .from('flights')
+        .select('competition_id')
+        .eq('id', parsed.data.flightId)
+        .maybeSingle();
+      if (flightError) {
+        Sentry.captureException(flightError);
+        return fail('Could not move the lifter. Please try again.');
+      }
+      if (!flight || flight.competition_id !== parsed.data.competitionId) {
+        return fail('Choose a flight from this competition.');
+      }
+    }
+
+    const { error } = await supabase
+      .from('entries')
+      .update({ flight_id: parsed.data.flightId })
+      .eq('id', parsed.data.entryId);
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not move the lifter. Please try again.');
     }
 
     return ok();
