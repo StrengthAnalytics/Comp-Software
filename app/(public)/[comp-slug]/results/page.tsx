@@ -15,7 +15,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ 'comp-
 
   const { data: comp } = await supabase
     .from('competitions')
-    .select('id, name, kit_type, is_team_competition')
+    .select('id, name, status, kit_type, is_team_competition')
     .eq('slug', slug)
     .maybeSingle();
 
@@ -28,6 +28,23 @@ export default async function ResultsPage({ params }: { params: Promise<{ 'comp-
       <main className="mx-auto max-w-3xl p-6">
         <h1 className="text-2xl font-semibold tracking-tight">{comp.name}</h1>
         <p className="mt-2 text-sm text-neutral-600">Final results for this competition will appear here.</p>
+      </main>
+    );
+  }
+
+  // Lifter names come from public_lifters, which is scoped to publicly visible comps. Until the comp
+  // is published the view returns no rows (names would show as "Unknown"), so guide the operator
+  // rather than render an empty-looking table.
+  const isPubliclyVisible =
+    comp.status === 'published' || comp.status === 'active' || comp.status === 'completed';
+  if (!isPubliclyVisible) {
+    return (
+      <main className="mx-auto max-w-3xl p-6">
+        <h1 className="text-2xl font-semibold tracking-tight">{comp.name}</h1>
+        <p className="mt-2 text-sm text-neutral-600">
+          Team standings and lifter names appear once this competition is published. Set the status to Published (or
+          Active during the meet) on the competition details.
+        </p>
       </main>
     );
   }
