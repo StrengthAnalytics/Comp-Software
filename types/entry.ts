@@ -49,7 +49,9 @@ const ENTRY_STATUS_VALUES = [
 // year and is overwritten when the lifter re-registers, so only the current value is retained.
 export const lifterInputSchema = z.object({
   first_name: z.string().trim().min(1, 'First name is required.').max(80, 'First name is too long.'),
-  surname: z.string().trim().min(1, 'Surname is required.').max(80, 'Surname is too long.'),
+  // Surname is optional: some lifters are mononymous and older imported data may lack one. Stored as
+  // an empty string (the column is NOT NULL); the first name remains required so every lifter has one.
+  surname: z.string().trim().max(80, 'Surname is too long.'),
   gender: z.enum(GENDER_VALUES),
   date_of_birth: optionalDate,
   ipf_member_id: optionalText(40, 'Membership number is too long.'),

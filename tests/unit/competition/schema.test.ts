@@ -64,6 +64,27 @@ describe('competitionInputSchema', () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it('defaults is_team_competition to false', () => {
+    const result = competitionInputSchema.safeParse(base);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.is_team_competition).toBe(false);
+    }
+  });
+
+  it('allows a team competition for full power', () => {
+    expect(competitionInputSchema.safeParse({ ...base, is_team_competition: true }).success).toBe(true);
+  });
+
+  it('rejects a team competition that is not full power', () => {
+    const result = competitionInputSchema.safeParse({
+      ...base,
+      event_type: 'bench_only',
+      is_team_competition: true,
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('divisionInputSchema', () => {

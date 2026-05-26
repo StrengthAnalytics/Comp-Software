@@ -8,7 +8,9 @@ import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
+import { formatLifterName } from '@/lib/lifters/name';
 import { createEntrySchema, entryUpdateSchema, lifterInputSchema, type EntryUpdateInput } from '@/types/entry';
+import { assignFlightSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
@@ -177,6 +179,68 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
   });
 }
 
+// Assigns an entry to a flight, or back to Unassigned when flightId is null. Kept separate from
+// updateEntryAction because the flights screen owns flight assignment (the entries screen does not),
+// and the board fires this on every drag-free "move" with optimistic local state.
+export async function assignEntryFlightAction(input: {
+  entryId: string;
+  competitionId: string;
+  flightId: string | null;
+}): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('assignEntryFlight', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = assignFlightSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not move the lifter. Please try again.');
+    }
+
+    const supabase = await createClient();
+
+    const { data: entry, error: entryError } = await supabase
+      .from('entries')
+      .select('competition_id')
+      .eq('id', parsed.data.entryId)
+      .maybeSingle();
+    if (entryError) {
+      Sentry.captureException(entryError);
+      return fail('Could not move the lifter. Please try again.');
+    }
+    if (!entry || entry.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that entry.');
+    }
+
+    // RLS cannot check that the target flight belongs to this comp; verify before assigning.
+    if (parsed.data.flightId) {
+      const { data: flight, error: flightError } = await supabase
+        .from('flights')
+        .select('competition_id')
+        .eq('id', parsed.data.flightId)
+        .maybeSingle();
+      if (flightError) {
+        Sentry.captureException(flightError);
+        return fail('Could not move the lifter. Please try again.');
+      }
+      if (!flight || flight.competition_id !== parsed.data.competitionId) {
+        return fail('Choose a flight from this competition.');
+      }
+    }
+
+    const { error } = await supabase
+      .from('entries')
+      .update({ flight_id: parsed.data.flightId })
+      .eq('id', parsed.data.entryId);
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not move the lifter. Please try again.');
+    }
+
+    return ok();
+  });
+}
+
 export async function deleteEntryAction(input: { id: string }): Promise<ActionResult> {
   return Sentry.withServerActionInstrumentation('deleteEntry', async () => {
     const guard = await adminGuard();
@@ -196,6 +260,56 @@ export async function deleteEntryAction(input: { id: string }): Promise<ActionRe
     }
 
     return ok();
+  });
+}
+
+// Removes every entrant from a competition at once. Attempts and referee decisions cascade away with
+// the entries; the persistent lifter (person) records are kept — only this comp's registrations go.
+// Gated behind a type-to-confirm step in the UI. Returns how many entries were removed.
+export async function deleteAllEntriesAction(input: {
+  competitionId: string;
+}): Promise<ActionResult<{ deleted: number }>> {
+  return Sentry.withServerActionInstrumentation('deleteAllEntries', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = z.object({ competitionId: z.uuid() }).safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not delete the entrants. Please try again.');
+    }
+
+    const supabase = await createClient();
+
+    // Bulk deletion cascades to attempts and referee decisions, so it is blocked once a comp is
+    // completed to protect the final record. (Individual setup edits stay allowed at any status.)
+    const { data: comp, error: compError } = await supabase
+      .from('competitions')
+      .select('status')
+      .eq('id', parsed.data.competitionId)
+      .maybeSingle();
+    if (compError) {
+      Sentry.captureException(compError);
+      return fail('Could not delete the entrants. Please try again.');
+    }
+    if (!comp) {
+      return fail('Could not find that competition.');
+    }
+    if (comp.status === 'completed') {
+      return fail('This competition is completed, so its entrants cannot be deleted in bulk.');
+    }
+
+    const { data, error } = await supabase
+      .from('entries')
+      .delete()
+      .eq('competition_id', parsed.data.competitionId)
+      .select('id');
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not delete the entrants. Please try again.');
+    }
+
+    return ok({ deleted: (data ?? []).length });
   });
 }
 
@@ -275,7 +389,7 @@ export async function bulkImportEntriesAction(input: {
     };
 
     for (const row of rows) {
-      const name = `${row.surname}, ${row.firstName}`;
+      const name = formatLifterName(row.surname, row.firstName);
 
       if (row.errors.length > 0) {
         record(row.line, name, 'error', row.errors.join(' '));

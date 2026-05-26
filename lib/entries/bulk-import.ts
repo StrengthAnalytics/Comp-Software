@@ -254,12 +254,10 @@ export function parseBulkImport(text: string, lifts: Lifts): ParsedImportRow[] {
     const errors: string[] = [];
 
     const firstName = cellAt(cells, indexByKey, 'firstName').trim();
+    // Surname is optional (mononymous lifters / sparse imported data); only the first name is required.
     const surname = cellAt(cells, indexByKey, 'surname').trim();
     if (firstName === '') {
       errors.push('First name is required.');
-    }
-    if (surname === '') {
-      errors.push('Surname is required.');
     }
 
     const genderRaw = cellAt(cells, indexByKey, 'gender');

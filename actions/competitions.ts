@@ -23,6 +23,7 @@ function readCompetitionForm(formData: FormData) {
     status: formData.get('status'),
     starts_on: formData.get('starts_on'),
     ends_on: formData.get('ends_on'),
+    is_team_competition: formData.get('is_team_competition') === 'on',
   };
 }
 

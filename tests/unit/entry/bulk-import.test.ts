@@ -72,11 +72,19 @@ describe('parseBulkImport', () => {
     expect(parseBulkImport(text, FULL_POWER)[0].errors).toContain('Unrecognised gender "X".');
   });
 
-  it('requires first name and surname', () => {
+  it('requires a first name but allows a blank surname', () => {
     const text = '\t\tF\t\t\t\t\t\t\t\t\t\t\t';
     const [row] = parseBulkImport(text, FULL_POWER);
     expect(row.errors).toContain('First name is required.');
-    expect(row.errors).toContain('Surname is required.');
+    expect(row.errors).not.toContain('Surname is required.');
+  });
+
+  it('accepts a row with a first name and no surname', () => {
+    const text = 'Madonna\t\tF\t\t\t\t\t\t\t\t\t\t\t';
+    const [row] = parseBulkImport(text, FULL_POWER);
+    expect(row.errors).toEqual([]);
+    expect(row.firstName).toBe('Madonna');
+    expect(row.surname).toBe('');
   });
 
   it('flags a non-numeric bodyweight', () => {

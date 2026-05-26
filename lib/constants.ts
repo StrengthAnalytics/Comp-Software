@@ -4,6 +4,7 @@ type KitType = Database['public']['Enums']['kit_type'];
 type EventType = Database['public']['Enums']['event_type'];
 type CompStatus = Database['public']['Enums']['comp_status'];
 type EntryStatus = Database['public']['Enums']['entry_status'];
+type LiftType = Database['public']['Enums']['lift_type'];
 
 export type Gender = 'male' | 'female';
 
@@ -32,6 +33,12 @@ export const GENDER_LABELS: Record<Gender, string> = {
   female: 'Female',
 };
 
+export const LIFT_LABELS: Record<LiftType, string> = {
+  squat: 'Squat',
+  bench: 'Bench',
+  deadlift: 'Deadlift',
+};
+
 // Entry lifecycle, in the order an entry moves through a meet day.
 export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
   registered: 'Registered',
@@ -42,6 +49,10 @@ export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
   withdrawn: 'Withdrawn',
   disqualified: 'Disqualified',
 };
+
+// Operational cap on flight size. IPF flights run ~8-14 lifters; past this the flight is too long
+// to run smoothly, so the flights screen warns the operator to rebalance.
+export const MAX_FLIGHT_SIZE = 14;
 
 // Which of the three lifts a competition contests, by event type. Drives which opener and rack
 // fields a registration screen shows. Bench-only and deadlift-only meets omit the others.

@@ -32,9 +32,11 @@ erDiagram
   COMPETITIONS ||--o{ PLATFORMS : has
   COMPETITIONS ||--o{ SESSIONS : has
   COMPETITIONS ||--o{ ENTRIES : receives
+  COMPETITIONS ||--o{ TEAMS : has
   PLATFORMS ||--o{ SESSIONS : hosts
   SESSIONS ||--o{ FLIGHTS : contains
   FLIGHTS ||--o{ ENTRIES : groups
+  TEAMS ||--o{ ENTRIES : groups
   LIFTERS ||--o{ ENTRIES : registers
   WEIGHT_CLASSES ||--o{ ENTRIES : assigns
   DIVISIONS ||--o{ ENTRIES : categorises
@@ -44,14 +46,15 @@ erDiagram
 
 ### Table summaries
 
-- **competitions**: the meet. Slug, name, federation, kit_type (classic/equipped), event_type (full_power/bench_only/deadlift_only), date range, status (draft/published/active/completed).
+- **competitions**: the meet. Slug, name, federation, kit_type (classic/equipped), event_type (full_power/bench_only/deadlift_only), date range, status (draft/published/active/completed), is_team_competition (team-format flag, full power only).
 - **divisions**: age categories per comp (Open, Junior, Sub-junior, Masters 1-4).
 - **weight_classes**: bodyweight categories per comp with gender, lower_kg, upper_kg.
 - **platforms**: physical lifting platforms (one per comp normally, two for bigger meets).
 - **sessions**: a chunk of lifting tied to a date, time, and platform.
 - **flights**: a group of ~8-14 lifters within a session who lift together.
 - **lifters**: the persistent person. First name, surname, gender, DOB, IPF member ID, club, country.
-- **entries**: a lifter registering for one comp. Weight class, division, flight, lot number, bodyweight at weigh-in, opener attempts, rack heights, status.
+- **entries**: a lifter registering for one comp. Weight class, division, flight, lot number, bodyweight at weigh-in, opener attempts, rack heights, status. In team competitions, team_id and team_lift link the entry to a team and its one assigned discipline.
+- **teams**: (team competitions only) a named team within a comp. Its members are entries tagged with team_id and team_lift — one per discipline (squat/bench/deadlift). The team score is the sum of the three members' IPF GL points.
 - **attempts**: up to 9 per entry (3 squats, 3 benches, 3 deadlifts). Weight in kg, declared timestamp, result (pending/good_lift/no_lift/not_taken/withdrawn).
 - **referee_decisions**: exactly 3 per attempt (left/head/right positions). Decision (white/red) plus reasons array for no-lifts.
 - **profiles**: extends `auth.users` with display_name.
@@ -154,8 +157,16 @@ Overlays run in OBS on the admin's own machine, which already holds an admin ses
 
 ### Competition setup stays editable at any status
 
-Setup writes (competition metadata, divisions, weight classes, and lifter registration / weigh-in entries) are not gated on `status`: an operator can edit a `completed` comp's details, not just a `draft` one. The "no writes to a completed comp" rule is a meet-time concern for attempts, referee decisions, and results — not for the setup tables, where late corrections (a misspelled name, a wrong date, a weigh-in adjustment) are legitimate. `requireAdmin()` remains the gate. The attempt/result write paths, when built, should enforce their own status checks.
+Setup writes (competition metadata, divisions, weight classes, and lifter registration / weigh-in entries) are not gated on `status`: an operator can edit a `completed` comp's details, not just a `draft` one. The "no writes to a completed comp" rule is a meet-time concern for attempts, referee decisions, and results — not for the setup tables, where late corrections (a misspelled name, a wrong date, a weigh-in adjustment) are legitimate. `requireAdmin()` remains the gate. The attempt/result write paths, when built, should enforce their own status checks. One deliberate exception on the setup side: deleting *all* entrants at once is blocked once a comp is `completed`, because that cascades to attempts and referee decisions and would destroy the final record — single-entry edits stay allowed.
 
 ### Password sign-in for the initial build, OTP for production
 
 The auth model targets 6-digit OTP sign-in, but the initial build ships email + password instead. The dev SMTP provider is heavily rate-limited (a couple of emails per hour) and email deliverability is unreliable until a production sending domain is registered with Resend, which makes OTP painful to operate and test at this stage. Password sign-in needs no email round-trip and works immediately for the two manually-provisioned admin accounts. This is purely an authentication-ceremony choice: `requireAdmin()` against `ADMIN_EMAILS` remains the authorization gate, RLS is unchanged, and public sign-ups stay disabled, so the security posture is the same either way. Supabase supports both methods simultaneously, so switching to (or adding) OTP for production is a matter of swapping the sign-in action — no other code changes. Production should move to OTP, and admin passwords should be strengthened before the app is exposed publicly.
+
+### Team competitions: members are tagged entries, scored on full-power GL
+
+A competition can opt into a team format (`is_team_competition`, full power only). A team is three lifters — one each on squat, bench and deadlift — and each member contests only their assigned lift. The team score is the sum of the three members' IPF GL points, each taken from that member's best lift; teams rank by that total and individuals do not place in this format.
+
+Members are modelled as ordinary `entries` tagged with `team_id` + `team_lift` (one member per lift per team, enforced by a partial unique index plus a check that the two columns are set together), rather than a separate membership table. This lets the existing registration, flight and attempt paths reuse the entry unchanged; deleting a team unassigns its members via `ON DELETE SET NULL` instead of removing their registrations. On the sessions & flights screen, team comps assign whole teams to a flight at once (every member's entry moves together) rather than placing individual lifters.
+
+GL uses the full-power (3-lift) coefficients for all three roles. The IPF publishes GL coefficients only for full powerlifting and for bench-only — there is no official single-squat or single-deadlift set — so scoring every role on the full-power coefficients keeps the three contributions on one comparable scale. This is a deliberate house rule for the format, not an official IPF score.

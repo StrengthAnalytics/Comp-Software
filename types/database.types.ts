@@ -46,6 +46,7 @@ export type Database = {
           status: Database['public']['Enums']['comp_status'];
           starts_on: string | null;
           ends_on: string | null;
+          is_team_competition: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -59,6 +60,7 @@ export type Database = {
           status?: Database['public']['Enums']['comp_status'];
           starts_on?: string | null;
           ends_on?: string | null;
+          is_team_competition?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -72,6 +74,7 @@ export type Database = {
           status?: Database['public']['Enums']['comp_status'];
           starts_on?: string | null;
           ends_on?: string | null;
+          is_team_competition?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -215,6 +218,30 @@ export type Database = {
         };
         Relationships: [];
       };
+      teams: {
+        Row: {
+          id: string;
+          competition_id: string;
+          name: string;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          competition_id: string;
+          name: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          competition_id?: string;
+          name?: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       lifters: {
         Row: {
           id: string;
@@ -262,6 +289,8 @@ export type Database = {
           weight_class_id: string | null;
           division_id: string | null;
           flight_id: string | null;
+          team_id: string | null;
+          team_lift: Database['public']['Enums']['lift_type'] | null;
           lot_number: number | null;
           bodyweight_kg: number | null;
           opener_squat_kg: number | null;
@@ -280,6 +309,8 @@ export type Database = {
           weight_class_id?: string | null;
           division_id?: string | null;
           flight_id?: string | null;
+          team_id?: string | null;
+          team_lift?: Database['public']['Enums']['lift_type'] | null;
           lot_number?: number | null;
           bodyweight_kg?: number | null;
           opener_squat_kg?: number | null;
@@ -298,6 +329,8 @@ export type Database = {
           weight_class_id?: string | null;
           division_id?: string | null;
           flight_id?: string | null;
+          team_id?: string | null;
+          team_lift?: Database['public']['Enums']['lift_type'] | null;
           lot_number?: number | null;
           bodyweight_kg?: number | null;
           opener_squat_kg?: number | null;
