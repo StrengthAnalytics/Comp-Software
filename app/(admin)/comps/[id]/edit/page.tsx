@@ -52,6 +52,11 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
               Teams →
             </Link>
           ) : null}
+          {comp.is_team_competition ? (
+            <Link href={`/${comp.slug}/results`} className="text-sm font-medium text-neutral-900 underline">
+              Team standings →
+            </Link>
+          ) : null}
         </div>
       </div>
 
