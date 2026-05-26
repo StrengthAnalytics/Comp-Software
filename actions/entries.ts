@@ -279,6 +279,25 @@ export async function deleteAllEntriesAction(input: {
     }
 
     const supabase = await createClient();
+
+    // Bulk deletion cascades to attempts and referee decisions, so it is blocked once a comp is
+    // completed to protect the final record. (Individual setup edits stay allowed at any status.)
+    const { data: comp, error: compError } = await supabase
+      .from('competitions')
+      .select('status')
+      .eq('id', parsed.data.competitionId)
+      .maybeSingle();
+    if (compError) {
+      Sentry.captureException(compError);
+      return fail('Could not delete the entrants. Please try again.');
+    }
+    if (!comp) {
+      return fail('Could not find that competition.');
+    }
+    if (comp.status === 'completed') {
+      return fail('This competition is completed, so its entrants cannot be deleted in bulk.');
+    }
+
     const { data, error } = await supabase
       .from('entries')
       .delete()

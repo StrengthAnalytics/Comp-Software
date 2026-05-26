@@ -15,7 +15,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
 
   const { data: comp } = await supabase
     .from('competitions')
-    .select('id, name, slug, event_type')
+    .select('id, name, slug, event_type, status')
     .eq('slug', slug)
     .maybeSingle();
 
@@ -75,6 +75,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
       <EntriesManager
         competitionId={comp.id}
         competitionName={comp.name}
+        competitionStatus={comp.status}
         lifts={LIFTS_FOR_EVENT[comp.event_type]}
         divisions={divisions ?? []}
         weightClasses={weightClasses ?? []}

@@ -3,13 +3,7 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
-import {
-  FlightsManager,
-  type BoardEntry,
-  type FlightRow,
-  type PlatformOption,
-  type SessionRow,
-} from '@/components/flights/flights-manager';
+import { FlightsManager, type BoardEntry } from '@/components/flights/flights-manager';
 import { type BoardTeam, type BoardTeamMember } from '@/components/flights/team-flight-board';
 import { TEAM_LIFTS } from '@/types/team';
 import type { Database } from '@/types/database.types';
@@ -161,9 +155,9 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
         competitionId={comp.id}
         compSlug={comp.slug}
         isTeamCompetition={comp.is_team_competition}
-        platforms={(platforms ?? []) as PlatformOption[]}
-        sessions={(sessions ?? []) as SessionRow[]}
-        flights={(flights ?? []) as FlightRow[]}
+        platforms={platforms ?? []}
+        sessions={sessions ?? []}
+        flights={flights ?? []}
         entries={entries}
         teams={teams}
       />

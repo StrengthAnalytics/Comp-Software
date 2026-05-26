@@ -148,6 +148,7 @@ Use React `useOptimistic` where it fits. Otherwise hand-roll with local state pl
 - Event type: full power (SBD), bench only, or deadlift only.
 - Weights and bodyweights stored in kg with one decimal place.
 - Each comp owns its own divisions and weight classes (rule sets change year to year).
+- A comp can be a team competition (`is_team_competition`, full power only) — see Team competitions below.
 
 ### Attempt lifecycle
 - Each entry has up to 9 attempts (3 squats, 3 benches, 3 deadlifts).
@@ -166,6 +167,13 @@ Use React `useOptimistic` where it fits. Otherwise hand-roll with local state pl
 - Total = best squat + best bench + best deadlift.
 - Placement by total within (weight class × division × gender × kit type).
 - IPF GL points, Wilks, DOTS as parallel ranking metrics. Pure functions in `/lib/scoring`.
+
+### Team competitions
+- Optional per-comp format (`is_team_competition`), full power only. A team is three lifters, one each on squat, bench and deadlift; each member contests only their assigned lift and weighs in individually.
+- Members are entries tagged with `team_id` and `team_lift` — one member per lift per team. Deleting a team unassigns its members (it does not delete their registrations).
+- Team score = sum of the three members' IPF GL points, each from that member's best lift. A member with no good lift contributes 0. Teams rank by total; there is no individual placing in this format.
+- GL uses the full-power coefficients for all three roles, since the IPF has no single-squat or single-deadlift coefficient set (a deliberate house rule, not an official IPF score).
+- The sessions & flights screen assigns whole teams to flights (all members move together), not individual lifters. Team standings render on the public results page.
 
 ## Operational guardrails
 

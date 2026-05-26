@@ -2,11 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { formatLifterName } from '@/lib/lifters/name';
-import {
-  TeamsManager,
-  type TeamMemberEntry,
-  type TeamRow,
-} from '@/components/teams/teams-manager';
+import { TeamsManager, type TeamMemberEntry } from '@/components/teams/teams-manager';
 
 export default async function TeamsPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
@@ -89,7 +85,7 @@ export default async function TeamsPage({ params }: { params: Promise<{ 'comp-sl
         </p>
       </div>
 
-      <TeamsManager competitionId={comp.id} teams={(teams ?? []) as TeamRow[]} entries={entries} />
+      <TeamsManager competitionId={comp.id} teams={teams ?? []} entries={entries} />
     </div>
   );
 }

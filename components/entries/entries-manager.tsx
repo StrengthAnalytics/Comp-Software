@@ -696,6 +696,7 @@ function CopyEntriesButton({
 export function EntriesManager({
   competitionId,
   competitionName,
+  competitionStatus,
   lifts,
   divisions,
   weightClasses,
@@ -703,6 +704,7 @@ export function EntriesManager({
 }: {
   competitionId: string;
   competitionName: string;
+  competitionStatus: Database['public']['Enums']['comp_status'];
   lifts: Lifts;
   divisions: DivisionOption[];
   weightClasses: WeightClassOption[];
@@ -751,6 +753,7 @@ export function EntriesManager({
       <DeleteAllEntries
         competitionId={competitionId}
         competitionName={competitionName}
+        competitionStatus={competitionStatus}
         entryCount={entries.length}
       />
     </div>
