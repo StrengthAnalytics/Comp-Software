@@ -9,7 +9,14 @@ import { isUniqueViolation } from '@/lib/supabase/errors';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
 import { formatLifterName } from '@/lib/lifters/name';
-import { createEntrySchema, entryUpdateSchema, lifterInputSchema, type EntryUpdateInput } from '@/types/entry';
+import {
+  createEntrySchema,
+  entryUpdateSchema,
+  lifterInputSchema,
+  weighInSchema,
+  type EntryUpdateInput,
+  type WeighInInput,
+} from '@/types/entry';
 import { assignFlightSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
@@ -173,6 +180,57 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
     if (error) {
       Sentry.captureException(error);
       return mapEntryWriteError(error);
+    }
+
+    return ok();
+  });
+}
+
+// Records a weigh-in. Kept separate from updateEntryAction because the weigh-in screen owns only the
+// fields captured at the scale; touching the weight class / division / lot here would risk clearing
+// them. Not gated on comp status, matching the other setup writes.
+export async function weighInAction(input: WeighInInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('weighIn', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = weighInSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+
+    const { data: entry, error: entryError } = await supabase
+      .from('entries')
+      .select('competition_id')
+      .eq('id', parsed.data.id)
+      .maybeSingle();
+
+    if (entryError) {
+      Sentry.captureException(entryError);
+      return fail('Could not save the weigh-in. Please try again.');
+    }
+    if (!entry || entry.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that entry.');
+    }
+
+    const { error } = await supabase
+      .from('entries')
+      .update({
+        bodyweight_kg: parsed.data.bodyweightKg,
+        opener_squat_kg: parsed.data.openerSquatKg,
+        opener_bench_kg: parsed.data.openerBenchKg,
+        opener_deadlift_kg: parsed.data.openerDeadliftKg,
+        rack_height_squat: parsed.data.rackHeightSquat,
+        rack_height_bench: parsed.data.rackHeightBench,
+        status: parsed.data.status,
+      })
+      .eq('id', parsed.data.id);
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not save the weigh-in. Please try again.');
     }
 
     return ok();

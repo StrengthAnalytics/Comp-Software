@@ -92,3 +92,20 @@ export const entryUpdateSchema = z.object({
 });
 
 export type EntryUpdateInput = z.infer<typeof entryUpdateSchema>;
+
+// Recording a lifter's weigh-in. Deliberately a subset of the entry update: it touches only the
+// fields captured at the scale (bodyweight, openers, rack heights, status) so the weigh-in screen
+// cannot clobber the weight class, division or lot set during registration.
+export const weighInSchema = z.object({
+  id: z.uuid(),
+  competitionId: z.uuid(),
+  bodyweightKg: optionalWeightKg,
+  openerSquatKg: optionalWeightKg,
+  openerBenchKg: optionalWeightKg,
+  openerDeadliftKg: optionalWeightKg,
+  rackHeightSquat: optionalText(20, 'Rack height is too long.'),
+  rackHeightBench: optionalText(20, 'Rack height is too long.'),
+  status: z.enum(ENTRY_STATUS_VALUES),
+});
+
+export type WeighInInput = z.infer<typeof weighInSchema>;

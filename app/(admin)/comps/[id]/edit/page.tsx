@@ -44,6 +44,9 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
           <Link href={`/${comp.slug}/entries`} className="text-sm font-medium text-neutral-900 underline">
             Entries &amp; weigh-in →
           </Link>
+          <Link href={`/${comp.slug}/weigh-in`} className="text-sm font-medium text-neutral-900 underline">
+            Weigh-in →
+          </Link>
           <Link href={`/${comp.slug}/flights`} className="text-sm font-medium text-neutral-900 underline">
             Sessions &amp; flights →
           </Link>
