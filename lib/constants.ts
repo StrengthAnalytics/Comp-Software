@@ -39,6 +39,26 @@ export const LIFT_LABELS: Record<LiftType, string> = {
   deadlift: 'Deadlift',
 };
 
+// Squat rack position and bench spotting choices, captured at weigh-in (or later at the platform).
+// The tuples mirror the matching Postgres enums; labels render in the all-caps house style.
+export const SQUAT_RACK_SETTINGS = ['in', 'out', 'left_in', 'right_in'] as const;
+export type SquatRackSetting = (typeof SQUAT_RACK_SETTINGS)[number];
+
+export const SQUAT_RACK_SETTING_LABELS: Record<SquatRackSetting, string> = {
+  in: 'IN',
+  out: 'OUT',
+  left_in: 'LEFT IN',
+  right_in: 'RIGHT IN',
+};
+
+export const BENCH_SPOTTINGS = ['self', 'hand_out'] as const;
+export type BenchSpotting = (typeof BENCH_SPOTTINGS)[number];
+
+export const BENCH_SPOTTING_LABELS: Record<BenchSpotting, string> = {
+  self: 'SELF',
+  hand_out: 'HAND OUT',
+};
+
 // Entry lifecycle, in the order an entry moves through a meet day.
 export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
   registered: 'Registered',

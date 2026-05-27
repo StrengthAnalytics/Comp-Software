@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BENCH_SPOTTINGS, SQUAT_RACK_SETTINGS } from '@/lib/constants';
 
 // Blank string → null, so optional text fields clear cleanly when the operator empties them.
 function optionalText(max: number, tooLong: string) {
@@ -30,6 +31,17 @@ const optionalLotNumber = z
   .int('Lot number must be a whole number.')
   .positive('Lot number must be positive.')
   .nullable();
+
+// Rack and bench heights are hole numbers on the rack — positive whole numbers. Clients convert
+// blank inputs to null before calling.
+const optionalRackHeight = z
+  .number()
+  .int('Height must be a whole number.')
+  .positive('Height must be positive.')
+  .nullable();
+
+const optionalSquatRackSetting = z.enum(SQUAT_RACK_SETTINGS).nullable();
+const optionalBenchSpotting = z.enum(BENCH_SPOTTINGS).nullable();
 
 const optionalUuid = z.uuid().nullable();
 
@@ -76,6 +88,15 @@ export const createEntrySchema = z.object({
   lifterId: z.uuid(),
 });
 
+// Reassigning an entry's weight class on its own (the weigh-in screen moves a lifter up/down a class
+// once their bodyweight is recorded). Kept separate from the full entry update so it touches nothing
+// else. weightClassId null clears the class.
+export const assignWeightClassSchema = z.object({
+  entryId: z.uuid(),
+  competitionId: z.uuid(),
+  weightClassId: z.uuid().nullable(),
+});
+
 export const entryUpdateSchema = z.object({
   id: z.uuid(),
   competitionId: z.uuid(),
@@ -86,9 +107,32 @@ export const entryUpdateSchema = z.object({
   openerSquatKg: optionalWeightKg,
   openerBenchKg: optionalWeightKg,
   openerDeadliftKg: optionalWeightKg,
-  rackHeightSquat: optionalText(20, 'Rack height is too long.'),
-  rackHeightBench: optionalText(20, 'Rack height is too long.'),
+  rackHeightSquat: optionalRackHeight,
+  squatRackSetting: optionalSquatRackSetting,
+  rackHeightBench: optionalRackHeight,
+  benchSafetyHeight: optionalRackHeight,
+  benchSpotting: optionalBenchSpotting,
   status: z.enum(ENTRY_STATUS_VALUES),
 });
 
 export type EntryUpdateInput = z.infer<typeof entryUpdateSchema>;
+
+// Recording a lifter's weigh-in. Deliberately a subset of the entry update: it touches only the
+// fields captured at the scale (bodyweight, openers, rack heights, status) so the weigh-in screen
+// cannot clobber the weight class, division or lot set during registration.
+export const weighInSchema = z.object({
+  id: z.uuid(),
+  competitionId: z.uuid(),
+  bodyweightKg: optionalWeightKg,
+  openerSquatKg: optionalWeightKg,
+  openerBenchKg: optionalWeightKg,
+  openerDeadliftKg: optionalWeightKg,
+  rackHeightSquat: optionalRackHeight,
+  squatRackSetting: optionalSquatRackSetting,
+  rackHeightBench: optionalRackHeight,
+  benchSafetyHeight: optionalRackHeight,
+  benchSpotting: optionalBenchSpotting,
+  status: z.enum(ENTRY_STATUS_VALUES),
+});
+
+export type WeighInInput = z.infer<typeof weighInSchema>;

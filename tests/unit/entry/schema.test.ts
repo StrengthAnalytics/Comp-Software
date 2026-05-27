@@ -63,18 +63,51 @@ describe('entryUpdateSchema', () => {
     openerSquatKg: null,
     openerBenchKg: null,
     openerDeadliftKg: null,
-    rackHeightSquat: '',
-    rackHeightBench: '',
+    rackHeightSquat: null,
+    squatRackSetting: null,
+    rackHeightBench: null,
+    benchSafetyHeight: null,
+    benchSpotting: null,
     status: 'registered',
   };
 
-  it('accepts an entry with everything blank and maps blank rack heights to null', () => {
+  it('accepts an entry with everything blank', () => {
     const result = entryUpdateSchema.safeParse(base);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.rackHeightSquat).toBeNull();
       expect(result.data.rackHeightBench).toBeNull();
+      expect(result.data.squatRackSetting).toBeNull();
+      expect(result.data.benchSpotting).toBeNull();
     }
+  });
+
+  it('accepts integer rack and bench heights with valid settings', () => {
+    const result = entryUpdateSchema.safeParse({
+      ...base,
+      rackHeightSquat: 12,
+      squatRackSetting: 'left_in',
+      rackHeightBench: 4,
+      benchSafetyHeight: 2,
+      benchSpotting: 'hand_out',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a fractional rack height', () => {
+    expect(entryUpdateSchema.safeParse({ ...base, rackHeightSquat: 12.5 }).success).toBe(false);
+  });
+
+  it('rejects a non-positive rack height', () => {
+    expect(entryUpdateSchema.safeParse({ ...base, rackHeightBench: 0 }).success).toBe(false);
+  });
+
+  it('rejects an unknown squat rack setting', () => {
+    expect(entryUpdateSchema.safeParse({ ...base, squatRackSetting: 'sideways' }).success).toBe(false);
+  });
+
+  it('rejects an unknown bench spotting choice', () => {
+    expect(entryUpdateSchema.safeParse({ ...base, benchSpotting: 'liftoff' }).success).toBe(false);
   });
 
   it('rounds weights to one decimal place', () => {

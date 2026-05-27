@@ -296,8 +296,11 @@ export type Database = {
           opener_squat_kg: number | null;
           opener_bench_kg: number | null;
           opener_deadlift_kg: number | null;
-          rack_height_squat: string | null;
-          rack_height_bench: string | null;
+          rack_height_squat: number | null;
+          squat_rack_setting: Database['public']['Enums']['squat_rack_setting'] | null;
+          rack_height_bench: number | null;
+          bench_safety_height: number | null;
+          bench_spotting: Database['public']['Enums']['bench_spotting'] | null;
           status: Database['public']['Enums']['entry_status'];
           created_at: string;
           updated_at: string;
@@ -316,8 +319,11 @@ export type Database = {
           opener_squat_kg?: number | null;
           opener_bench_kg?: number | null;
           opener_deadlift_kg?: number | null;
-          rack_height_squat?: string | null;
-          rack_height_bench?: string | null;
+          rack_height_squat?: number | null;
+          squat_rack_setting?: Database['public']['Enums']['squat_rack_setting'] | null;
+          rack_height_bench?: number | null;
+          bench_safety_height?: number | null;
+          bench_spotting?: Database['public']['Enums']['bench_spotting'] | null;
           status?: Database['public']['Enums']['entry_status'];
           created_at?: string;
           updated_at?: string;
@@ -336,8 +342,11 @@ export type Database = {
           opener_squat_kg?: number | null;
           opener_bench_kg?: number | null;
           opener_deadlift_kg?: number | null;
-          rack_height_squat?: string | null;
-          rack_height_bench?: string | null;
+          rack_height_squat?: number | null;
+          squat_rack_setting?: Database['public']['Enums']['squat_rack_setting'] | null;
+          rack_height_bench?: number | null;
+          bench_safety_height?: number | null;
+          bench_spotting?: Database['public']['Enums']['bench_spotting'] | null;
           status?: Database['public']['Enums']['entry_status'];
           created_at?: string;
           updated_at?: string;
@@ -441,6 +450,7 @@ export type Database = {
     Functions: Record<string, never>;
     Enums: {
       attempt_result: 'pending' | 'good_lift' | 'no_lift' | 'not_taken' | 'withdrawn';
+      bench_spotting: 'self' | 'hand_out';
       comp_status: 'draft' | 'published' | 'active' | 'completed';
       entry_status:
         | 'registered'
@@ -455,6 +465,7 @@ export type Database = {
       lift_type: 'squat' | 'bench' | 'deadlift';
       ref_decision: 'white' | 'red';
       ref_position: 'left' | 'head' | 'right';
+      squat_rack_setting: 'in' | 'out' | 'left_in' | 'right_in';
     };
     CompositeTypes: Record<string, never>;
   };

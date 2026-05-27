@@ -10,12 +10,18 @@ import {
   type LifterSearchResult,
 } from '@/actions/lifters';
 import {
+  BENCH_SPOTTING_LABELS,
+  BENCH_SPOTTINGS,
   ENTRY_STATUS_LABELS,
   ENTRY_STATUSES,
   GENDER_LABELS,
   GENDERS,
+  SQUAT_RACK_SETTING_LABELS,
+  SQUAT_RACK_SETTINGS,
+  type BenchSpotting,
   type Gender,
   type Lifts,
+  type SquatRackSetting,
 } from '@/lib/constants';
 import { BulkImport } from '@/components/entries/bulk-import';
 import { DeleteAllEntries } from '@/components/entries/delete-all-entries';
@@ -46,8 +52,11 @@ export type EntryWithLifter = {
   opener_squat_kg: number | null;
   opener_bench_kg: number | null;
   opener_deadlift_kg: number | null;
-  rack_height_squat: string | null;
-  rack_height_bench: string | null;
+  rack_height_squat: number | null;
+  squat_rack_setting: SquatRackSetting | null;
+  rack_height_bench: number | null;
+  bench_safety_height: number | null;
+  bench_spotting: BenchSpotting | null;
   status: EntryStatus;
   lifter: EntryLifter;
 };
@@ -132,6 +141,40 @@ function TextField({
     <label className="flex flex-col gap-1">
       <span className={LABEL_CLASS}>{label}</span>
       <input value={value} onChange={(event) => onChange(event.target.value)} className={INPUT_CLASS} />
+    </label>
+  );
+}
+
+// A select for an optional enum value, with a blank "—" choice that maps to no selection.
+function OptionalSelectField<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+  labels,
+}: {
+  label: string;
+  value: T | '';
+  onChange: (value: T | '') => void;
+  options: readonly T[];
+  labels: Record<T, string>;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className={LABEL_CLASS}>{label}</span>
+      <select
+        value={value}
+        // The select only renders the given options plus the blank value, so this narrowing is exact.
+        onChange={(event) => onChange(event.target.value as T | '')}
+        className={INPUT_CLASS}
+      >
+        <option value="">—</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {labels[option]}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -243,8 +286,11 @@ function EntryCard({
   const [openerSquat, setOpenerSquat] = useState(numberToInput(entry.opener_squat_kg));
   const [openerBench, setOpenerBench] = useState(numberToInput(entry.opener_bench_kg));
   const [openerDeadlift, setOpenerDeadlift] = useState(numberToInput(entry.opener_deadlift_kg));
-  const [rackSquat, setRackSquat] = useState(entry.rack_height_squat ?? '');
-  const [rackBench, setRackBench] = useState(entry.rack_height_bench ?? '');
+  const [rackSquat, setRackSquat] = useState(numberToInput(entry.rack_height_squat));
+  const [squatSetting, setSquatSetting] = useState<SquatRackSetting | ''>(entry.squat_rack_setting ?? '');
+  const [rackBench, setRackBench] = useState(numberToInput(entry.rack_height_bench));
+  const [benchSafety, setBenchSafety] = useState(numberToInput(entry.bench_safety_height));
+  const [benchSpotting, setBenchSpotting] = useState<BenchSpotting | ''>(entry.bench_spotting ?? '');
   const [status, setStatus] = useState<EntryStatus>(entry.status);
   const [editingLifter, setEditingLifter] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -266,8 +312,11 @@ function EntryCard({
         openerSquatKg: lifts.squat ? parseOptionalNumber(openerSquat) : null,
         openerBenchKg: lifts.bench ? parseOptionalNumber(openerBench) : null,
         openerDeadliftKg: lifts.deadlift ? parseOptionalNumber(openerDeadlift) : null,
-        rackHeightSquat: lifts.squat ? rackSquat.trim() || null : null,
-        rackHeightBench: lifts.bench ? rackBench.trim() || null : null,
+        rackHeightSquat: lifts.squat ? parseOptionalNumber(rackSquat) : null,
+        squatRackSetting: lifts.squat && squatSetting !== '' ? squatSetting : null,
+        rackHeightBench: lifts.bench ? parseOptionalNumber(rackBench) : null,
+        benchSafetyHeight: lifts.bench ? parseOptionalNumber(benchSafety) : null,
+        benchSpotting: lifts.bench && benchSpotting !== '' ? benchSpotting : null,
         status,
       });
       if (result.status === 'error') {
@@ -365,8 +414,31 @@ function EntryCard({
           <NumberField label="Opening deadlift (kg)" value={openerDeadlift} onChange={setOpenerDeadlift} step="0.5" />
         ) : null}
 
-        {lifts.squat ? <TextField label="Squat rack height" value={rackSquat} onChange={setRackSquat} /> : null}
-        {lifts.bench ? <TextField label="Bench rack height" value={rackBench} onChange={setRackBench} /> : null}
+        {lifts.squat ? (
+          <NumberField label="Squat rack height" value={rackSquat} onChange={setRackSquat} step="1" />
+        ) : null}
+        {lifts.squat ? (
+          <OptionalSelectField
+            label="Squat rack setting"
+            value={squatSetting}
+            onChange={setSquatSetting}
+            options={SQUAT_RACK_SETTINGS}
+            labels={SQUAT_RACK_SETTING_LABELS}
+          />
+        ) : null}
+        {lifts.bench ? <NumberField label="Bench height" value={rackBench} onChange={setRackBench} step="1" /> : null}
+        {lifts.bench ? (
+          <NumberField label="Bench safety height" value={benchSafety} onChange={setBenchSafety} step="1" />
+        ) : null}
+        {lifts.bench ? (
+          <OptionalSelectField
+            label="Bench spotting"
+            value={benchSpotting}
+            onChange={setBenchSpotting}
+            options={BENCH_SPOTTINGS}
+            labels={BENCH_SPOTTING_LABELS}
+          />
+        ) : null}
 
         <label className="flex flex-col gap-1">
           <span className={LABEL_CLASS}>Status</span>

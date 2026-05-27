@@ -41,10 +41,12 @@ This project is developed online-only against the hosted Supabase dev project an
   /(admin)                      ← auth-gated staff routes, full chrome
     /comps                      ← comp list, comp setup
     /[comp-slug]
-      /entries                  ← lifter registration, weigh-in
+      /entries                  ← lifter registration, inline weigh-in editing
+      /weigh-in                 ← day-of weigh-in by session (bodyweight, openers, rack settings)
       /run                      ← scorekeeper interface
       /refs                     ← ref panel (v2)
-      /flights                  ← flight management
+      /flights                  ← sessions & flight management
+      /teams                    ← team management (team competitions only)
   /(overlay)                    ← OBS browser sources, transparent bg, fixed dimensions
     /[comp-slug]
       /scoreboard               ← current scoreboard overlay
