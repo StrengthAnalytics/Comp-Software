@@ -272,6 +272,9 @@ function WeighInCard({
   // Weighed-in lifters collapse to a compact row; everyone still to do stays open.
   const expanded = !weighedIn || manuallyExpanded;
 
+  // Team comps score purely on IPF GL points, so weight class is irrelevant — the field and its
+  // bodyweight check are dropped for team weigh-ins.
+  const showWeightClass = !isTeamComp;
   // A lifter only competes in classes for their own gender.
   const classOptions = weightClasses.filter((weightClass) => weightClass.gender === entry.sex);
   const assignedClass = weightClasses.find((weightClass) => weightClass.id === weightClassId) ?? null;
@@ -280,7 +283,7 @@ function WeighInCard({
   // class it does fit. Only meaningful once a bodyweight is recorded.
   const suggestedClass = bodyweightValue === null ? null : findWeightClassForBodyweight(bodyweightValue, classOptions);
   let classWarning: string | null = null;
-  if (bodyweightValue !== null) {
+  if (showWeightClass && bodyweightValue !== null) {
     if (assignedClass) {
       if (!isBodyweightInClass(bodyweightValue, assignedClass)) {
         classWarning = `${bodyweightValue} kg is outside ${assignedClass.name}${
@@ -311,7 +314,7 @@ function WeighInCard({
           </span>
           <span className="text-xs text-neutral-700">
             BW {entry.bodyweightKg ?? '—'}
-            {assignedClass ? ` · ${assignedClass.name}` : ''}
+            {showWeightClass && assignedClass ? ` · ${assignedClass.name}` : ''}
             {summary ? ` · ${summary}` : ''}
           </span>
           {classWarning ? <span className="text-xs font-medium text-amber-700">⚠ {classWarning}</span> : null}
@@ -347,22 +350,24 @@ function WeighInCard({
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-3">
-        <label className={FIELD_CLASS}>
-          <span className={LABEL_CLASS}>Weight class</span>
-          <select
-            value={weightClassId}
-            onChange={(event) => changeWeightClass(event.target.value)}
-            disabled={pending}
-            className={INPUT_CLASS}
-          >
-            <option value="">—</option>
-            {classOptions.map((weightClass) => (
-              <option key={weightClass.id} value={weightClass.id}>
-                {weightClass.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {showWeightClass ? (
+          <label className={FIELD_CLASS}>
+            <span className={LABEL_CLASS}>Weight class</span>
+            <select
+              value={weightClassId}
+              onChange={(event) => changeWeightClass(event.target.value)}
+              disabled={pending}
+              className={INPUT_CLASS}
+            >
+              <option value="">—</option>
+              {classOptions.map((weightClass) => (
+                <option key={weightClass.id} value={weightClass.id}>
+                  {weightClass.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
         <NumberField
           label="Bodyweight (kg)"
