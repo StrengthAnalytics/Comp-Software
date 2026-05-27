@@ -65,6 +65,7 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
   const { data: lifterRows } =
     lifterIds.length > 0
       ? await supabase.from('lifters').select('id, first_name, surname, gender').in('id', lifterIds)
+      // No entries → skip the lookup; the assertion just types the empty default to the query shape.
       : { data: [] as { id: string; first_name: string; surname: string; gender: string }[] };
 
   const lifterById = new Map((lifterRows ?? []).map((lifter) => [lifter.id, lifter]));

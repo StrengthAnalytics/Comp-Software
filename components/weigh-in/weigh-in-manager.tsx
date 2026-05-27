@@ -134,21 +134,28 @@ function NumberField({
   onChange,
   step,
   invalid = false,
+  required = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   step: string;
   invalid?: boolean;
+  required?: boolean;
 }) {
   return (
     <label className={FIELD_CLASS}>
-      <span className={LABEL_CLASS}>{label}</span>
+      <span className={LABEL_CLASS}>
+        {label}
+        {required ? <span className="text-red-500"> *</span> : null}
+      </span>
       <input
         type="number"
         step={step}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        aria-required={required || undefined}
+        aria-invalid={invalid || undefined}
         className={invalid ? INPUT_REQUIRED_CLASS : INPUT_CLASS}
       />
     </label>
@@ -334,7 +341,7 @@ function WeighInCard({
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h4 className="text-base font-semibold tracking-tight">{entry.lifterName}</h4>
+          <h3 className="text-base font-semibold tracking-tight">{entry.lifterName}</h3>
           <p className="mt-0.5 text-xs text-neutral-500">
             {entry.flightName ?? 'No flight'}
             {entry.lotNumber === null ? '' : ` · Lot ${entry.lotNumber}`}
@@ -374,6 +381,7 @@ function WeighInCard({
           value={bodyweight}
           onChange={setBodyweight}
           step="0.1"
+          required
           invalid={parseOptionalNumber(bodyweight) === null}
         />
 
@@ -383,6 +391,7 @@ function WeighInCard({
             value={openerSquat}
             onChange={setOpenerSquat}
             step="0.5"
+            required
             invalid={parseOptionalNumber(openerSquat) === null}
           />
         ) : null}
@@ -392,6 +401,7 @@ function WeighInCard({
             value={openerBench}
             onChange={setOpenerBench}
             step="0.5"
+            required
             invalid={parseOptionalNumber(openerBench) === null}
           />
         ) : null}
@@ -401,6 +411,7 @@ function WeighInCard({
             value={openerDeadlift}
             onChange={setOpenerDeadlift}
             step="0.5"
+            required
             invalid={parseOptionalNumber(openerDeadlift) === null}
           />
         ) : null}
@@ -589,9 +600,9 @@ export function WeighInManager({
         );
         return (
           <div key={`${group.lift ?? 'all'}-${group.sex}`}>
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
               {groupLabel(group, isTeamCompetition)}
-            </h3>
+            </h2>
             <div className="mt-3 space-y-4">
               {ordered.map((entry) => (
                 <WeighInCard
