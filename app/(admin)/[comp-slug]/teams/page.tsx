@@ -1,35 +1,22 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
 import { formatLifterName } from '@/lib/lifters/name';
 import { TeamsManager, type TeamMemberEntry } from '@/components/teams/teams-manager';
 
 export default async function TeamsPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
-  const supabase = await createClient();
-
-  const { data: comp } = await supabase
-    .from('competitions')
-    .select('id, name, slug, is_team_competition')
-    .eq('slug', slug)
-    .maybeSingle();
+  const comp = await getCompBySlug(slug);
 
   if (!comp) {
     notFound();
   }
 
-  const backLink = (
-    <Link href={`/comps/${comp.id}/edit`} className="text-sm text-neutral-500 hover:text-neutral-800">
-      ← {comp.name}
-    </Link>
-  );
-
   if (!comp.is_team_competition) {
     return (
       <div className="space-y-6">
         <div>
-          {backLink}
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">Teams</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Teams</h1>
         </div>
         <p className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
           This competition isn&rsquo;t a team competition. Turn on “Team competition” on the competition details to build
@@ -38,6 +25,8 @@ export default async function TeamsPage({ params }: { params: Promise<{ 'comp-sl
       </div>
     );
   }
+
+  const supabase = await createClient();
 
   const [{ data: teams }, { data: entryRows }] = await Promise.all([
     supabase
@@ -77,8 +66,7 @@ export default async function TeamsPage({ params }: { params: Promise<{ 'comp-sl
   return (
     <div className="space-y-8">
       <div>
-        {backLink}
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">Teams</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Teams</h1>
         <p className="mt-1 text-sm text-neutral-600">
           Each team is three lifters — one on squat, one on bench, one on deadlift. The team score is the sum of their
           IPF GL points.

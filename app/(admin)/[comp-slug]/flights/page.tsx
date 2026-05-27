@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
 import { FlightsManager, type BoardEntry } from '@/components/flights/flights-manager';
@@ -36,17 +36,13 @@ function openerForEvent(eventType: EventType, entry: EntryRow): number | null {
 
 export default async function FlightsPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
-  const supabase = await createClient();
-
-  const { data: comp } = await supabase
-    .from('competitions')
-    .select('id, name, slug, event_type, is_team_competition')
-    .eq('slug', slug)
-    .maybeSingle();
+  const comp = await getCompBySlug(slug);
 
   if (!comp) {
     notFound();
   }
+
+  const supabase = await createClient();
 
   const [
     { data: platforms },
@@ -145,10 +141,7 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
   return (
     <div className="space-y-8">
       <div>
-        <Link href={`/comps/${comp.id}/edit`} className="text-sm text-neutral-500 hover:text-neutral-800">
-          ← {comp.name}
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">Sessions &amp; flights</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Sessions &amp; flights</h1>
       </div>
 
       <FlightsManager
