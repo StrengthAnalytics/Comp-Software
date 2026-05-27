@@ -51,6 +51,9 @@ export type WeighInSessionOption = { id: string; name: string };
 const INPUT_CLASS =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
+// Weigh-in fields hold short values (weights, hole numbers, a short setting), so each box is a fixed
+// compact width and the row wraps — roughly half the width of the old full-stretch grid cells.
+const FIELD_CLASS = 'flex w-32 flex-col gap-1';
 const PRIMARY_BUTTON =
   'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
 const GHOST_BUTTON =
@@ -111,7 +114,7 @@ function NumberField({
   step: string;
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className={FIELD_CLASS}>
       <span className={LABEL_CLASS}>{label}</span>
       <input
         type="number"
@@ -139,7 +142,7 @@ function OptionalSelectField<T extends string>({
   labels: Record<T, string>;
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className={FIELD_CLASS}>
       <span className={LABEL_CLASS}>{label}</span>
       <select
         value={value}
@@ -222,7 +225,11 @@ function WeighInCard({
   const canMarkWeighedIn = parseOptionalNumber(bodyweight) !== null && !openerMissing;
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-5">
+    <section
+      className={`rounded-lg border p-5 ${
+        weighedIn ? 'border-green-300 bg-green-50' : 'border-neutral-200 bg-white'
+      }`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h4 className="text-base font-semibold tracking-tight">{entry.lifterName}</h4>
@@ -234,7 +241,7 @@ function WeighInCard({
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="mt-4 flex flex-wrap gap-3">
         <NumberField label="Bodyweight (kg)" value={bodyweight} onChange={setBodyweight} step="0.1" />
 
         {shownLifts.squat ? (
@@ -275,7 +282,7 @@ function WeighInCard({
           />
         ) : null}
 
-        <label className="flex flex-col gap-1">
+        <label className={FIELD_CLASS}>
           <span className={LABEL_CLASS}>Status</span>
           <select
             value={status}
