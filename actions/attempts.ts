@@ -118,6 +118,27 @@ export async function setAttemptWeightAction(input: SetAttemptWeightInput): Prom
       return fail('Could not set the weight. Please try again.');
     }
 
+    // Attempt 1 IS the opener: keep the entry's opener column in step so a later weigh-in save
+    // (which re-seeds attempt 1 from the opener) can't revert a platform correction. Best-effort —
+    // the attempt weight is already saved.
+    if (parsed.data.attemptNumber === 1) {
+      const openerUpdate: Database['public']['Tables']['entries']['Update'] = {};
+      if (parsed.data.lift === 'squat') {
+        openerUpdate.opener_squat_kg = parsed.data.weightKg;
+      } else if (parsed.data.lift === 'bench') {
+        openerUpdate.opener_bench_kg = parsed.data.weightKg;
+      } else {
+        openerUpdate.opener_deadlift_kg = parsed.data.weightKg;
+      }
+      const { error: openerError } = await supabase
+        .from('entries')
+        .update(openerUpdate)
+        .eq('id', parsed.data.entryId);
+      if (openerError) {
+        Sentry.captureException(openerError);
+      }
+    }
+
     return ok({ id: saved.id });
   });
 }

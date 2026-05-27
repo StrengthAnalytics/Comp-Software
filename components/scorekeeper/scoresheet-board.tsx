@@ -14,18 +14,19 @@ import {
 } from '@/lib/constants';
 import { bestGoodLift } from '@/lib/attempts/best-lift';
 import {
-  compareRunningOrder,
   selectPlatformPositions,
   type PlatformPositions,
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
 import { useAttemptsSubscription } from '@/lib/realtime/use-attempts-subscription';
 import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
+import { useFlightsSubscription } from '@/lib/realtime/use-flights-subscription';
 import { setAttemptResultAction, setAttemptWeightAction } from '@/actions/attempts';
 import type { ActionResult } from '@/types/action-result';
 
 type AttemptRow = Database['public']['Tables']['attempts']['Row'];
 type EntryRow = Database['public']['Tables']['entries']['Row'];
+type FlightRow = Database['public']['Tables']['flights']['Row'];
 type LiftType = Database['public']['Enums']['lift_type'];
 type AttemptResult = Database['public']['Enums']['attempt_result'];
 
@@ -85,6 +86,9 @@ function readError(result: ActionResult<unknown>): string {
   const firstField = result.fieldErrors ? Object.values(result.fieldErrors)[0] : undefined;
   return firstField?.[0] ?? result.message;
 }
+
+// Prefix for an optimistic attempt id that has not yet been persisted (no real uuid yet).
+const TEMP_ID_PREFIX = 'temp:';
 
 function attemptKey(entryId: string, lift: LiftType, attemptNumber: number): string {
   return `${entryId}:${lift}:${attemptNumber}`;
@@ -205,6 +209,47 @@ function applyEntryChange(
   return next;
 }
 
+function applyFlightChange(
+  rows: BoardFlight[],
+  payload: RealtimePostgresChangesPayload<FlightRow>,
+): BoardFlight[] {
+  if (payload.eventType === 'DELETE') {
+    const removedId = payload.old.id;
+    return removedId ? rows.filter((row) => row.id !== removedId) : rows;
+  }
+  const changed = payload.new;
+  const mapped: BoardFlight = {
+    id: changed.id,
+    sessionId: changed.session_id,
+    name: changed.name,
+    sortOrder: changed.sort_order,
+  };
+  const index = rows.findIndex((row) => row.id === mapped.id);
+  if (index === -1) {
+    return [...rows, mapped];
+  }
+  const next = [...rows];
+  next[index] = mapped;
+  return next;
+}
+
+// A session is finished only once a LATER session on the platform has begun lifting — so the live
+// session stays put through between-rounds gaps (no pending rows for a moment) and only rolls forward
+// when the next session actually starts.
+function isSessionFinished(
+  session: BoardSession,
+  platformSessions: readonly BoardSession[],
+  attemptCountBySession: Map<string, number>,
+  pendingCountBySession: Map<string, number>,
+): boolean {
+  const hasAttempts = (attemptCountBySession.get(session.id) ?? 0) > 0;
+  const hasPending = (pendingCountBySession.get(session.id) ?? 0) > 0;
+  const laterSessionStarted = platformSessions.some(
+    (other) => other.sortOrder > session.sortOrder && (attemptCountBySession.get(other.id) ?? 0) > 0,
+  );
+  return hasAttempts && !hasPending && laterSessionStarted;
+}
+
 type RunRow = RunningOrderFields & { entryId: string; lifterName: string; flightName: string };
 
 type PlatformView = {
@@ -233,7 +278,10 @@ function buildPlatformViews({
   const platformById = new Map(platforms.map((platform) => [platform.id, platform]));
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
 
-  const rows: (RunRow & { result: AttemptResult; sessionId: string; sessionSortOrder: number; platformKey: string })[] = [];
+  // Attempt rows joined to their session, for running-order positions and per-session counts.
+  const rowsBySession = new Map<string, (RunRow & { result: AttemptResult })[]>();
+  const attemptCountBySession = new Map<string, number>();
+  const pendingCountBySession = new Map<string, number>();
   for (const attempt of attempts.values()) {
     const entry = entryById.get(attempt.entryId);
     const flight = entry?.flightId ? flightById.get(entry.flightId) : undefined;
@@ -241,7 +289,8 @@ function buildPlatformViews({
     if (!entry || !flight || !session) {
       continue;
     }
-    rows.push({
+    const list = rowsBySession.get(session.id) ?? [];
+    list.push({
       entryId: attempt.entryId,
       lift: attempt.lift,
       attemptNumber: attempt.attemptNumber,
@@ -251,42 +300,53 @@ function buildPlatformViews({
       result: attempt.result,
       lifterName: entry.lifterName,
       flightName: flight.name,
-      sessionId: session.id,
-      sessionSortOrder: session.sortOrder,
-      platformKey: session.platformId ?? 'none',
     });
+    rowsBySession.set(session.id, list);
+    attemptCountBySession.set(session.id, (attemptCountBySession.get(session.id) ?? 0) + 1);
+    if (attempt.result === 'pending' && attempt.weightKg !== null) {
+      pendingCountBySession.set(session.id, (pendingCountBySession.get(session.id) ?? 0) + 1);
+    }
+  }
+
+  // Roster comes from session/flight structure, not attempts, so a flight of weighed-in lifters
+  // shows even before any attempt is declared.
+  const rosterBySession = new Map<string, { entry: BoardEntry; flight: BoardFlight }[]>();
+  for (const entry of entries) {
+    const flight = entry.flightId ? flightById.get(entry.flightId) : undefined;
+    const session = flight ? sessionById.get(flight.sessionId) : undefined;
+    if (!flight || !session) {
+      continue;
+    }
+    const list = rosterBySession.get(session.id) ?? [];
+    list.push({ entry, flight });
+    rosterBySession.set(session.id, list);
   }
 
   const platformKeys = new Set<string>();
   for (const session of sessions) {
     platformKeys.add(session.platformId ?? 'none');
   }
-  for (const row of rows) {
-    platformKeys.add(row.platformKey);
-  }
 
   const views: PlatformView[] = [];
   for (const key of platformKeys) {
-    const groupRows = rows.filter((row) => row.platformKey === key);
+    // Sessions on this platform that actually have lifters, in running order.
+    const platformSessions = sessions
+      .filter((session) => (session.platformId ?? 'none') === key && (rosterBySession.get(session.id)?.length ?? 0) > 0)
+      .toSorted((a, b) => a.sortOrder - b.sortOrder);
+    if (platformSessions.length === 0) {
+      continue;
+    }
 
-    const pending = groupRows.filter((row) => row.result === 'pending' && row.weightKg !== null);
-    const firstPending = pending.toSorted((a, b) =>
-      a.sessionSortOrder === b.sessionSortOrder
-        ? compareRunningOrder(a, b)
-        : a.sessionSortOrder - b.sessionSortOrder,
-    )[0];
-    // Fall back to the latest session that has attempts, so a finished session stays open for review.
-    const latest = groupRows.toSorted((a, b) => b.sessionSortOrder - a.sessionSortOrder)[0];
-    const liveSessionId = firstPending?.sessionId ?? latest?.sessionId ?? null;
+    // The live session is the earliest not-yet-finished one (platformSessions is non-empty).
+    const liveSession =
+      platformSessions.find(
+        (session) => !isSessionFinished(session, platformSessions, attemptCountBySession, pendingCountBySession),
+      ) ?? platformSessions.at(-1);
+    if (!liveSession) {
+      continue;
+    }
 
-    const sessionRows = liveSessionId ? groupRows.filter((row) => row.sessionId === liveSessionId) : [];
-    const sessionFlightIds = new Set(
-      flights.filter((flight) => flight.sessionId === liveSessionId).map((flight) => flight.id),
-    );
-    const roster = entries
-      .filter((entry) => entry.flightId !== null && sessionFlightIds.has(entry.flightId))
-      .map((entry) => ({ entry, flight: entry.flightId ? flightById.get(entry.flightId) : undefined }))
-      .filter((item): item is { entry: BoardEntry; flight: BoardFlight } => item.flight !== undefined)
+    const roster = (rosterBySession.get(liveSession.id) ?? [])
       .toSorted((a, b) =>
         a.flight.sortOrder === b.flight.sortOrder
           ? (a.entry.lotNumber ?? Number.POSITIVE_INFINITY) - (b.entry.lotNumber ?? Number.POSITIVE_INFINITY)
@@ -297,8 +357,8 @@ function buildPlatformViews({
     views.push({
       key,
       platformName: key === 'none' ? null : (platformById.get(key)?.name ?? null),
-      sessionName: liveSessionId ? (sessionById.get(liveSessionId)?.name ?? null) : null,
-      positions: selectPlatformPositions(sessionRows),
+      sessionName: liveSession.name,
+      positions: selectPlatformPositions(rowsBySession.get(liveSession.id) ?? []),
       roster,
     });
   }
@@ -312,7 +372,7 @@ export function ScoresheetBoard({
   lifts,
   platforms,
   sessions,
-  flights,
+  flights: initialFlights,
   weightClasses,
   divisions,
   entries: initialEntries,
@@ -322,6 +382,7 @@ export function ScoresheetBoard({
     () => new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
   );
   const [entries, setEntries] = useState<BoardEntry[]>(initialEntries);
+  const [flights, setFlights] = useState<BoardFlight[]>(initialFlights);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [, startTransition] = useTransition();
@@ -345,6 +406,24 @@ export function ScoresheetBoard({
   useEntriesSubscription(competitionId, (payload) => {
     setEntries((current) => applyEntryChange(current, payload, nameById, classNameById, divisionNameById));
   });
+  useFlightsSubscription(competitionId, (payload) => {
+    setFlights((current) => applyFlightChange(current, payload));
+  });
+
+  // Re-seed from the server when fresh props arrive (e.g. a manual refresh after a realtime gap),
+  // so reloading the page recovers correct state rather than keeping a stale local copy. Props only
+  // change on a server re-render, never on a realtime-driven client re-render.
+  useEffect(() => {
+    setAttempts(
+      new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
+    );
+  }, [initialAttempts]);
+  useEffect(() => {
+    setEntries(initialEntries);
+  }, [initialEntries]);
+  useEffect(() => {
+    setFlights(initialFlights);
+  }, [initialFlights]);
 
   // Esc leaves the expanded view.
   useEffect(() => {
@@ -570,9 +649,11 @@ function PlatformPanel({
               </tr>
             </thead>
             <tbody>
-              {roster.map(({ entry, flightName }) => (
-                <tr key={entry.id}>
-                  <td className={`sticky left-0 z-10 whitespace-nowrap bg-white ${CELL}`}>
+              {roster.map(({ entry, flightName }) => {
+                const total = entryTotal(entry);
+                return (
+                  <tr key={entry.id}>
+                    <td className={`sticky left-0 z-10 whitespace-nowrap bg-white ${CELL}`}>
                     <span className="font-medium text-neutral-900">{entry.lifterName}</span>
                     <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                   </td>
@@ -598,10 +679,11 @@ function PlatformPanel({
                     );
                   })}
                   <td className={`text-center font-semibold tabular-nums text-neutral-900 ${CELL}`}>
-                    {entryTotal(entry) > 0 ? entryTotal(entry) : '—'}
+                    {total > 0 ? total : '—'}
                   </td>
                 </tr>
-              ))}
+              );
+            })}
             </tbody>
           </table>
         </div>
@@ -770,26 +852,30 @@ function AttemptCell({
       )}
       {declaredAttempt ? (
         <div className="flex justify-center gap-1">
+          {/* Disabled until the optimistic weight write returns a real id — otherwise a result write
+              would be sent with the temp placeholder id and rejected. */}
           <button
             type="button"
+            disabled={declaredAttempt.id.startsWith(TEMP_ID_PREFIX)}
             aria-label={`Good lift for ${entry.lifterName}`}
             onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'good_lift' ? 'pending' : 'good_lift')}
             className={
               declaredAttempt.result === 'good_lift'
-                ? 'rounded bg-green-600 px-2 py-0.5 text-xs font-bold text-white'
-                : 'rounded border border-green-500 px-2 py-0.5 text-xs font-bold text-green-700 hover:bg-green-50'
+                ? 'rounded bg-green-600 px-2 py-0.5 text-xs font-bold text-white disabled:opacity-50'
+                : 'rounded border border-green-500 px-2 py-0.5 text-xs font-bold text-green-700 hover:bg-green-50 disabled:opacity-50'
             }
           >
             ✓
           </button>
           <button
             type="button"
+            disabled={declaredAttempt.id.startsWith(TEMP_ID_PREFIX)}
             aria-label={`No lift for ${entry.lifterName}`}
             onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'no_lift' ? 'pending' : 'no_lift')}
             className={
               declaredAttempt.result === 'no_lift'
-                ? 'rounded bg-red-600 px-2 py-0.5 text-xs font-bold text-white'
-                : 'rounded border border-red-500 px-2 py-0.5 text-xs font-bold text-red-700 hover:bg-red-50'
+                ? 'rounded bg-red-600 px-2 py-0.5 text-xs font-bold text-white disabled:opacity-50'
+                : 'rounded border border-red-500 px-2 py-0.5 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-50'
             }
           >
             ✗

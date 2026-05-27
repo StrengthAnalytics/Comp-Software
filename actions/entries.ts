@@ -29,9 +29,10 @@ type EventType = Database['public']['Enums']['event_type'];
 
 // Mirrors a lifter's openers into their first attempt rows (attempt #1 = the opener). Attempts #2
 // and #3 are created later when declared at the platform. Idempotent: re-saving a weigh-in re-syncs
-// attempt #1 to the current opener (attempt #1 always equals the opener, so this never clobbers
-// meaningful data). Only contested lifts are seeded — for a team member, just their assigned lift.
-// A failure here is logged but does not fail the weigh-in, which has already saved.
+// attempt #1 to the current opener. A platform-side correction to attempt #1 writes back to the
+// opener column (see setAttemptWeightAction), so the two stay in step and this re-sync never reverts
+// a correction. Only contested lifts are seeded — for a team member, just their assigned lift. A
+// failure here is logged but does not fail the weigh-in, which has already saved.
 async function seedOpenerAttempts(
   supabase: Client,
   input: WeighInInput,

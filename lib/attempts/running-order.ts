@@ -1,4 +1,5 @@
 import type { Database } from '@/types/database.types';
+import { compareValues, nullsLast } from '@/lib/ordering';
 
 type LiftType = Database['public']['Enums']['lift_type'];
 type AttemptResult = Database['public']['Enums']['attempt_result'];
@@ -18,22 +19,6 @@ export type RunningOrderFields = {
   weightKg: number | null;
   lotNumber: number | null;
 };
-
-function nullsLast(value: number | null): number {
-  return value === null ? Number.POSITIVE_INFINITY : value;
-}
-
-// Ordered comparison rather than subtraction: two missing values both map to Infinity, and
-// Infinity - Infinity is NaN, which would corrupt the sort.
-function compareValues(a: number, b: number): number {
-  if (a < b) {
-    return -1;
-  }
-  if (a > b) {
-    return 1;
-  }
-  return 0;
-}
 
 // Orders attempts within a session: lift (S, B, D), then flight (A, B, C), then round (attempt 1, 2,
 // 3), then rising bar (weight ascending), then lot number to break equal weights. Because flight is
