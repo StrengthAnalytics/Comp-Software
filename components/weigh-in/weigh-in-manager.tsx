@@ -48,8 +48,10 @@ export type WeighInEntry = {
 
 export type WeighInSessionOption = { id: string; name: string };
 
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+const INPUT_BASE = 'rounded-md border px-3 py-2 text-sm text-neutral-900 focus:outline-none';
+const INPUT_CLASS = `${INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
+// Empty fields that must be filled before a lifter can be marked weighed-in (bodyweight, openers).
+const INPUT_REQUIRED_CLASS = `${INPUT_BASE} border-red-400 bg-red-50 focus:border-red-500`;
 const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
 // Weigh-in fields hold short values (weights, hole numbers, a short setting), so each box is a fixed
 // compact width and the row wraps — roughly half the width of the old full-stretch grid cells.
@@ -107,11 +109,13 @@ function NumberField({
   value,
   onChange,
   step,
+  invalid = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   step: string;
+  invalid?: boolean;
 }) {
   return (
     <label className={FIELD_CLASS}>
@@ -121,7 +125,7 @@ function NumberField({
         step={step}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={INPUT_CLASS}
+        className={invalid ? INPUT_REQUIRED_CLASS : INPUT_CLASS}
       />
     </label>
   );
@@ -242,16 +246,40 @@ function WeighInCard({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-3">
-        <NumberField label="Bodyweight (kg)" value={bodyweight} onChange={setBodyweight} step="0.1" />
+        <NumberField
+          label="Bodyweight (kg)"
+          value={bodyweight}
+          onChange={setBodyweight}
+          step="0.1"
+          invalid={parseOptionalNumber(bodyweight) === null}
+        />
 
         {shownLifts.squat ? (
-          <NumberField label="Opening squat (kg)" value={openerSquat} onChange={setOpenerSquat} step="0.5" />
+          <NumberField
+            label="Opening squat (kg)"
+            value={openerSquat}
+            onChange={setOpenerSquat}
+            step="0.5"
+            invalid={parseOptionalNumber(openerSquat) === null}
+          />
         ) : null}
         {shownLifts.bench ? (
-          <NumberField label="Opening bench (kg)" value={openerBench} onChange={setOpenerBench} step="0.5" />
+          <NumberField
+            label="Opening bench (kg)"
+            value={openerBench}
+            onChange={setOpenerBench}
+            step="0.5"
+            invalid={parseOptionalNumber(openerBench) === null}
+          />
         ) : null}
         {shownLifts.deadlift ? (
-          <NumberField label="Opening deadlift (kg)" value={openerDeadlift} onChange={setOpenerDeadlift} step="0.5" />
+          <NumberField
+            label="Opening deadlift (kg)"
+            value={openerDeadlift}
+            onChange={setOpenerDeadlift}
+            step="0.5"
+            invalid={parseOptionalNumber(openerDeadlift) === null}
+          />
         ) : null}
 
         {shownLifts.squat ? (
