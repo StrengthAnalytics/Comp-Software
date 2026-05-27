@@ -1,9 +1,19 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Database } from '@/types/database.types';
-import { ATTEMPT_RESULT_LABELS, LIFT_LABELS, type Lifts } from '@/lib/constants';
+import {
+  ATTEMPTS_PER_LIFT,
+  ATTEMPT_RESULT_LABELS,
+  BENCH_SPOTTING_LABELS,
+  LIFT_LABELS,
+  SQUAT_RACK_SETTING_LABELS,
+  type BenchSpotting,
+  type Lifts,
+  type SquatRackSetting,
+} from '@/lib/constants';
+import { bestGoodLift } from '@/lib/attempts/best-lift';
 import {
   compareRunningOrder,
   selectPlatformPositions,
@@ -24,6 +34,7 @@ type EntryRow = Database['public']['Tables']['entries']['Row'];
 type LiftType = Database['public']['Enums']['lift_type'];
 type AttemptResult = Database['public']['Enums']['attempt_result'];
 
+export type NamedOption = { id: string; name: string };
 export type BoardPlatform = { id: string; name: string };
 export type BoardSession = { id: string; name: string; sortOrder: number; platformId: string | null };
 export type BoardFlight = { id: string; sessionId: string; name: string; sortOrder: number };
@@ -33,6 +44,14 @@ export type BoardEntry = {
   flightId: string | null;
   lotNumber: number | null;
   teamLift: LiftType | null;
+  bodyweightKg: number | null;
+  weightClassName: string | null;
+  divisionName: string | null;
+  rackHeightSquat: number | null;
+  squatRackSetting: SquatRackSetting | null;
+  rackHeightBench: number | null;
+  benchSafetyHeight: number | null;
+  benchSpotting: BenchSpotting | null;
 };
 export type BoardAttempt = {
   id: string;
@@ -51,13 +70,19 @@ type ScoresheetBoardProps = {
   platforms: BoardPlatform[];
   sessions: BoardSession[];
   flights: BoardFlight[];
+  weightClasses: NamedOption[];
+  divisions: NamedOption[];
   entries: BoardEntry[];
   attempts: BoardAttempt[];
 };
 
+// Attempt numbers 1..3 (CLAUDE.md: three attempts per lift), derived so the literal lives once.
+const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => index + 1);
+
 const INPUT_CLASS =
   'w-16 rounded border border-neutral-300 px-1.5 py-1 text-sm tabular-nums text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const GHOST_BUTTON = 'rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
+const TH_CLASS = 'whitespace-nowrap px-2 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-neutral-500';
 
 function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {
@@ -69,6 +94,47 @@ function readError(result: ActionResult<unknown>): string {
 
 function attemptKey(entryId: string, lift: LiftType, attemptNumber: number): string {
   return `${entryId}:${lift}:${attemptNumber}`;
+}
+
+function liftHasRack(lift: LiftType): boolean {
+  return lift === 'squat' || lift === 'bench';
+}
+
+function rackText(entry: BoardEntry, lift: LiftType): string {
+  if (lift === 'squat') {
+    const parts: string[] = [];
+    if (entry.rackHeightSquat !== null) {
+      parts.push(String(entry.rackHeightSquat));
+    }
+    if (entry.squatRackSetting) {
+      parts.push(SQUAT_RACK_SETTING_LABELS[entry.squatRackSetting]);
+    }
+    return parts.length > 0 ? parts.join(' ') : '—';
+  }
+  if (lift === 'bench') {
+    const parts: string[] = [];
+    if (entry.rackHeightBench !== null) {
+      parts.push(`R${entry.rackHeightBench}`);
+    }
+    if (entry.benchSafetyHeight !== null) {
+      parts.push(`S${entry.benchSafetyHeight}`);
+    }
+    if (entry.benchSpotting) {
+      parts.push(BENCH_SPOTTING_LABELS[entry.benchSpotting]);
+    }
+    return parts.length > 0 ? parts.join(' ') : '—';
+  }
+  return '—';
+}
+
+function resultTextClass(result: AttemptResult): string {
+  if (result === 'good_lift') {
+    return 'text-green-700';
+  }
+  if (result === 'no_lift') {
+    return 'text-red-700';
+  }
+  return 'text-neutral-500';
 }
 
 function mapAttempt(row: AttemptRow): BoardAttempt {
@@ -106,6 +172,8 @@ function applyEntryChange(
   rows: BoardEntry[],
   payload: RealtimePostgresChangesPayload<EntryRow>,
   nameById: Map<string, string>,
+  classNameById: Map<string, string>,
+  divisionNameById: Map<string, string>,
 ): BoardEntry[] {
   if (payload.eventType === 'DELETE') {
     const removedId = payload.old.id;
@@ -119,6 +187,14 @@ function applyEntryChange(
     flightId: changed.flight_id,
     lotNumber: changed.lot_number,
     teamLift: changed.team_lift,
+    bodyweightKg: changed.bodyweight_kg,
+    weightClassName: changed.weight_class_id ? (classNameById.get(changed.weight_class_id) ?? null) : null,
+    divisionName: changed.division_id ? (divisionNameById.get(changed.division_id) ?? null) : null,
+    rackHeightSquat: changed.rack_height_squat,
+    squatRackSetting: changed.squat_rack_setting,
+    rackHeightBench: changed.rack_height_bench,
+    benchSafetyHeight: changed.bench_safety_height,
+    benchSpotting: changed.bench_spotting,
   };
   const index = rows.findIndex((row) => row.id === mapped.id);
   if (index === -1) {
@@ -181,8 +257,6 @@ function buildPlatformViews({
     });
   }
 
-  // Every session that holds a flight, grouped by platform, so a platform with lifters assigned but
-  // no attempts yet still shows up.
   const platformKeys = new Set<string>();
   for (const session of sessions) {
     platformKeys.add(session.platformId ?? 'none');
@@ -232,16 +306,6 @@ function buildPlatformViews({
   return views.toSorted((a, b) => (a.platformName ?? '').localeCompare(b.platformName ?? ''));
 }
 
-function resultTextClass(result: AttemptResult): string {
-  if (result === 'good_lift') {
-    return 'text-green-700';
-  }
-  if (result === 'no_lift') {
-    return 'text-red-700';
-  }
-  return 'text-neutral-500';
-}
-
 export function ScoresheetBoard({
   competitionId,
   isTeamCompetition,
@@ -249,6 +313,8 @@ export function ScoresheetBoard({
   platforms,
   sessions,
   flights,
+  weightClasses,
+  divisions,
   entries: initialEntries,
   attempts: initialAttempts,
 }: ScoresheetBoardProps) {
@@ -257,19 +323,42 @@ export function ScoresheetBoard({
   );
   const [entries, setEntries] = useState<BoardEntry[]>(initialEntries);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [, startTransition] = useTransition();
 
   const nameById = useMemo(
     () => new Map(initialEntries.map((entry) => [entry.id, entry.lifterName])),
     [initialEntries],
   );
+  const classNameById = useMemo(
+    () => new Map(weightClasses.map((option) => [option.id, option.name])),
+    [weightClasses],
+  );
+  const divisionNameById = useMemo(
+    () => new Map(divisions.map((option) => [option.id, option.name])),
+    [divisions],
+  );
 
   useAttemptsSubscription(competitionId, (payload) => {
     setAttempts((current) => applyAttemptChange(current, payload));
   });
   useEntriesSubscription(competitionId, (payload) => {
-    setEntries((current) => applyEntryChange(current, payload, nameById));
+    setEntries((current) => applyEntryChange(current, payload, nameById, classNameById, divisionNameById));
   });
+
+  // Esc leaves the expanded view.
+  useEffect(() => {
+    if (!expanded) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setExpanded(false);
+      }
+    };
+    globalThis.addEventListener('keydown', onKeyDown);
+    return () => globalThis.removeEventListener('keydown', onKeyDown);
+  }, [expanded]);
 
   const columnLifts = useMemo(
     () => (['squat', 'bench', 'deadlift'] as LiftType[]).filter((lift) => lifts[lift]),
@@ -367,26 +456,35 @@ export function ScoresheetBoard({
   const hasRoster = views.some((view) => view.roster.length > 0);
 
   return (
-    <div className="space-y-6">
+    <div className={expanded ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        {expanded ? <h2 className="text-lg font-semibold text-neutral-900">Scoresheet</h2> : <span />}
+        <button type="button" onClick={() => setExpanded((value) => !value)} className={GHOST_BUTTON}>
+          {expanded ? 'Collapse (Esc)' : 'Expand to full screen'}
+        </button>
+      </div>
+
       {error ? (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </p>
       ) : null}
 
       {hasRoster ? (
-        views.map((view) => (
-          <PlatformPanel
-            key={view.key}
-            view={view}
-            attempts={attempts}
-            columnLifts={columnLifts}
-            isTeamCompetition={isTeamCompetition}
-            onDeclare={declare}
-            onChangeWeight={changeWeight}
-            onSetResult={setResult}
-          />
-        ))
+        <div className="space-y-6">
+          {views.map((view) => (
+            <PlatformPanel
+              key={view.key}
+              view={view}
+              attempts={attempts}
+              columnLifts={columnLifts}
+              isTeamCompetition={isTeamCompetition}
+              onDeclare={declare}
+              onChangeWeight={changeWeight}
+              onSetResult={setResult}
+            />
+          ))}
+        </div>
       ) : (
         <div className="rounded-lg border border-dashed border-neutral-300 p-8 text-center">
           <p className="text-sm text-neutral-600">
@@ -418,6 +516,22 @@ function PlatformPanel({
   const { platformName, sessionName, positions, roster } = view;
   const current = positions.onPlatform;
 
+  const bestForLift = (entryId: string, lift: LiftType): number =>
+    bestGoodLift(
+      ATTEMPT_NUMBERS.map((attemptNumber) => attempts.get(attemptKey(entryId, lift, attemptNumber)))
+        .filter((attempt): attempt is BoardAttempt => attempt !== undefined)
+        .map((attempt) => ({ result: attempt.result, weightKg: attempt.weightKg })),
+    );
+
+  const entryTotal = (entry: BoardEntry): number => {
+    const contributing = isTeamCompetition && entry.teamLift ? [entry.teamLift] : columnLifts;
+    let total = 0;
+    for (const lift of contributing) {
+      total += bestForLift(entry.id, lift);
+    }
+    return total;
+  };
+
   return (
     <section className="space-y-4 rounded-lg border border-neutral-200 p-4">
       <header>
@@ -440,84 +554,64 @@ function PlatformPanel({
 
       {roster.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-sm">
-            <thead>
-              <tr className="text-xs uppercase tracking-wide text-neutral-500">
-                <th scope="col" rowSpan={2} className="border-b border-neutral-200 py-2 pr-3 font-medium">
+          <table className="w-full border-collapse text-sm">
+            <thead className="sticky top-0 z-10 bg-white">
+              <tr>
+                <th scope="col" className={`sticky left-0 z-10 bg-white ${TH_CLASS}`}>
                   Lifter
                 </th>
-                <th scope="col" rowSpan={2} className="border-b border-neutral-200 py-2 pr-3 font-medium">
-                  Flight
+                <th scope="col" className={TH_CLASS}>
+                  Lot
+                </th>
+                <th scope="col" className={TH_CLASS}>
+                  BW
+                </th>
+                <th scope="col" className={TH_CLASS}>
+                  Class
+                </th>
+                <th scope="col" className={TH_CLASS}>
+                  Div
                 </th>
                 {columnLifts.map((lift) => (
-                  <th
-                    key={lift}
-                    scope="colgroup"
-                    colSpan={3}
-                    className="border-b border-l border-neutral-200 px-2 py-2 text-center font-medium"
-                  >
-                    {LIFT_LABELS[lift]}
-                  </th>
+                  <FragmentHeader key={lift} lift={lift} />
                 ))}
-              </tr>
-              <tr className="text-xs text-neutral-400">
-                {columnLifts.flatMap((lift) =>
-                  [1, 2, 3].map((attemptNumber) => (
-                    <th
-                      key={`${lift}-${attemptNumber}`}
-                      scope="col"
-                      className={
-                        attemptNumber === 1
-                          ? 'border-b border-l border-neutral-200 px-2 py-1 text-center font-normal'
-                          : 'border-b border-neutral-200 px-2 py-1 text-center font-normal'
-                      }
-                    >
-                      {attemptNumber}
-                    </th>
-                  )),
-                )}
+                <th scope="col" className={`border-l border-neutral-200 ${TH_CLASS}`}>
+                  Total
+                </th>
               </tr>
             </thead>
             <tbody>
               {roster.map(({ entry, flightName }) => (
-                <tr key={entry.id} className="border-b border-neutral-100 align-top">
-                  <td className="py-2 pr-3 font-medium text-neutral-900">{entry.lifterName}</td>
-                  <td className="py-2 pr-3 text-neutral-500">{flightName}</td>
-                  {columnLifts.flatMap((lift) =>
-                    [1, 2, 3].map((attemptNumber) => {
-                      const active = isTeamCompetition ? entry.teamLift === lift : true;
-                      const attempt = attempts.get(attemptKey(entry.id, lift, attemptNumber));
-                      const isCurrent =
-                        current?.entryId === entry.id &&
-                        current.lift === lift &&
-                        current.attemptNumber === attemptNumber;
-                      return (
-                        <td
-                          key={`${entry.id}-${lift}-${attemptNumber}`}
-                          className={
-                            attemptNumber === 1
-                              ? 'border-l border-neutral-200 px-2 py-2'
-                              : 'px-2 py-2'
-                          }
-                        >
-                          {active ? (
-                            <AttemptCell
-                              entry={entry}
-                              lift={lift}
-                              attemptNumber={attemptNumber}
-                              attempt={attempt}
-                              isCurrent={isCurrent}
-                              onDeclare={onDeclare}
-                              onChangeWeight={onChangeWeight}
-                              onSetResult={onSetResult}
-                            />
-                          ) : (
-                            <span className="text-neutral-300">—</span>
-                          )}
-                        </td>
-                      );
-                    }),
-                  )}
+                <tr key={entry.id} className="border-t border-neutral-100 align-top">
+                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-2 py-2">
+                    <span className="font-medium text-neutral-900">{entry.lifterName}</span>
+                    <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
+                  </td>
+                  <td className="px-2 py-2 tabular-nums text-neutral-600">{entry.lotNumber ?? '—'}</td>
+                  <td className="px-2 py-2 tabular-nums text-neutral-600">{entry.bodyweightKg ?? '—'}</td>
+                  <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{entry.weightClassName ?? '—'}</td>
+                  <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{entry.divisionName ?? '—'}</td>
+                  {columnLifts.map((lift) => {
+                    const active = isTeamCompetition ? entry.teamLift === lift : true;
+                    const best = active ? bestForLift(entry.id, lift) : 0;
+                    return (
+                      <FragmentCells
+                        key={lift}
+                        lift={lift}
+                        entry={entry}
+                        active={active}
+                        best={best}
+                        attempts={attempts}
+                        current={current}
+                        onDeclare={onDeclare}
+                        onChangeWeight={onChangeWeight}
+                        onSetResult={onSetResult}
+                      />
+                    );
+                  })}
+                  <td className="border-l border-neutral-200 px-2 py-2 text-right font-semibold tabular-nums text-neutral-900">
+                    {entryTotal(entry) > 0 ? `${entryTotal(entry)} kg` : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -527,6 +621,91 @@ function PlatformPanel({
         <p className="text-sm text-neutral-500">No lifters in this session.</p>
       )}
     </section>
+  );
+}
+
+function FragmentHeader({ lift }: { lift: LiftType }) {
+  return (
+    <>
+      {liftHasRack(lift) ? (
+        <th scope="col" className={`border-l border-neutral-200 ${TH_CLASS}`}>
+          {LIFT_LABELS[lift]} rack
+        </th>
+      ) : null}
+      {ATTEMPT_NUMBERS.map((attemptNumber) => (
+        <th
+          key={`${lift}-${attemptNumber}`}
+          scope="col"
+          className={
+            attemptNumber === 1 && !liftHasRack(lift)
+              ? `border-l border-neutral-200 ${TH_CLASS}`
+              : TH_CLASS
+          }
+        >
+          {attemptNumber === 1 ? `${LIFT_LABELS[lift]} ${attemptNumber}` : String(attemptNumber)}
+        </th>
+      ))}
+      <th scope="col" className={TH_CLASS}>
+        Best
+      </th>
+    </>
+  );
+}
+
+function FragmentCells({
+  lift,
+  entry,
+  active,
+  best,
+  attempts,
+  current,
+  onDeclare,
+  onChangeWeight,
+  onSetResult,
+}: {
+  lift: LiftType;
+  entry: BoardEntry;
+  active: boolean;
+  best: number;
+  attempts: Map<string, BoardAttempt>;
+  current: RunRow | null;
+  onDeclare: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
+  onChangeWeight: (attempt: BoardAttempt, weightKg: number) => void;
+  onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
+}) {
+  return (
+    <>
+      {liftHasRack(lift) ? (
+        <td className="whitespace-nowrap border-l border-neutral-200 px-2 py-2 text-xs text-neutral-500">
+          {active ? rackText(entry, lift) : '—'}
+        </td>
+      ) : null}
+      {ATTEMPT_NUMBERS.map((attemptNumber) => {
+        const attempt = attempts.get(attemptKey(entry.id, lift, attemptNumber));
+        const isCurrent =
+          current?.entryId === entry.id && current.lift === lift && current.attemptNumber === attemptNumber;
+        const borderClass = attemptNumber === 1 && !liftHasRack(lift) ? 'border-l border-neutral-200' : '';
+        return (
+          <td key={`${entry.id}-${lift}-${attemptNumber}`} className={`px-2 py-2 ${borderClass}`}>
+            {active ? (
+              <AttemptCell
+                entry={entry}
+                lift={lift}
+                attemptNumber={attemptNumber}
+                attempt={attempt}
+                isCurrent={isCurrent}
+                onDeclare={onDeclare}
+                onChangeWeight={onChangeWeight}
+                onSetResult={onSetResult}
+              />
+            ) : (
+              <span className="text-neutral-300">—</span>
+            )}
+          </td>
+        );
+      })}
+      <td className="px-2 py-2 text-right tabular-nums text-neutral-700">{active && best > 0 ? `${best}` : '—'}</td>
+    </>
   );
 }
 
@@ -569,7 +748,7 @@ function AttemptCell({
 }) {
   const [draft, setDraft] = useState('');
 
-  const wrapperClass = isCurrent ? 'rounded ring-2 ring-neutral-900 p-1' : 'p-1';
+  const wrapperClass = isCurrent ? 'rounded p-1 ring-2 ring-neutral-900' : 'p-1';
 
   // Undeclared: capture the first weight.
   if (!attempt || attempt.weightKg === null) {

@@ -10,6 +10,7 @@ import {
   type BoardFlight,
   type BoardPlatform,
   type BoardSession,
+  type NamedOption,
 } from '@/components/scorekeeper/scoresheet-board';
 
 export default async function RunPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
@@ -22,25 +23,39 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
 
   const supabase = await createClient();
 
-  const [{ data: platformRows }, { data: sessionRows }, { data: flightRows }, { data: entryRows }, { data: attemptRows }] =
-    await Promise.all([
-      supabase.from('platforms').select('id, name').eq('competition_id', comp.id).order('name', { ascending: true }),
-      supabase
-        .from('sessions')
-        .select('id, name, sort_order, platform_id')
-        .eq('competition_id', comp.id)
-        .order('sort_order', { ascending: true }),
-      supabase
-        .from('flights')
-        .select('id, session_id, name, sort_order')
-        .eq('competition_id', comp.id)
-        .order('sort_order', { ascending: true }),
-      supabase.from('entries').select('id, lifter_id, flight_id, lot_number, team_lift').eq('competition_id', comp.id),
-      supabase
-        .from('attempts')
-        .select('id, entry_id, lift, attempt_number, weight_kg, result, weight_changes')
-        .eq('competition_id', comp.id),
-    ]);
+  const [
+    { data: platformRows },
+    { data: sessionRows },
+    { data: flightRows },
+    { data: weightClassRows },
+    { data: divisionRows },
+    { data: entryRows },
+    { data: attemptRows },
+  ] = await Promise.all([
+    supabase.from('platforms').select('id, name').eq('competition_id', comp.id).order('name', { ascending: true }),
+    supabase
+      .from('sessions')
+      .select('id, name, sort_order, platform_id')
+      .eq('competition_id', comp.id)
+      .order('sort_order', { ascending: true }),
+    supabase
+      .from('flights')
+      .select('id, session_id, name, sort_order')
+      .eq('competition_id', comp.id)
+      .order('sort_order', { ascending: true }),
+    supabase.from('weight_classes').select('id, name').eq('competition_id', comp.id),
+    supabase.from('divisions').select('id, name').eq('competition_id', comp.id),
+    supabase
+      .from('entries')
+      .select(
+        'id, lifter_id, flight_id, weight_class_id, division_id, lot_number, team_lift, bodyweight_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting',
+      )
+      .eq('competition_id', comp.id),
+    supabase
+      .from('attempts')
+      .select('id, entry_id, lift, attempt_number, weight_kg, result, weight_changes')
+      .eq('competition_id', comp.id),
+  ]);
 
   // The generated types carry no relationships, so lifter names are joined in a second query rather
   // than an embedded select, matching the rest of the codebase.
@@ -50,6 +65,8 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
       ? await supabase.from('lifters').select('id, first_name, surname').in('id', lifterIds)
       : { data: [] as { id: string; first_name: string; surname: string }[] };
   const lifterById = new Map((lifterRows ?? []).map((lifter) => [lifter.id, lifter]));
+  const weightClassById = new Map((weightClassRows ?? []).map((weightClass) => [weightClass.id, weightClass.name]));
+  const divisionById = new Map((divisionRows ?? []).map((division) => [division.id, division.name]));
 
   const platforms: BoardPlatform[] = (platformRows ?? []).map((platform) => ({ id: platform.id, name: platform.name }));
   const sessions: BoardSession[] = (sessionRows ?? []).map((session) => ({
@@ -64,6 +81,11 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
     name: flight.name,
     sortOrder: flight.sort_order,
   }));
+  const weightClasses: NamedOption[] = (weightClassRows ?? []).map((weightClass) => ({
+    id: weightClass.id,
+    name: weightClass.name,
+  }));
+  const divisions: NamedOption[] = (divisionRows ?? []).map((division) => ({ id: division.id, name: division.name }));
   const entries: BoardEntry[] = (entryRows ?? []).map((row) => {
     const lifter = lifterById.get(row.lifter_id);
     return {
@@ -72,6 +94,14 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
       flightId: row.flight_id,
       lotNumber: row.lot_number,
       teamLift: row.team_lift,
+      bodyweightKg: row.bodyweight_kg,
+      weightClassName: row.weight_class_id ? (weightClassById.get(row.weight_class_id) ?? null) : null,
+      divisionName: row.division_id ? (divisionById.get(row.division_id) ?? null) : null,
+      rackHeightSquat: row.rack_height_squat,
+      squatRackSetting: row.squat_rack_setting,
+      rackHeightBench: row.rack_height_bench,
+      benchSafetyHeight: row.bench_safety_height,
+      benchSpotting: row.bench_spotting,
     };
   });
   const attempts: BoardAttempt[] = (attemptRows ?? []).map((row) => ({
@@ -97,6 +127,8 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
         platforms={platforms}
         sessions={sessions}
         flights={flights}
+        weightClasses={weightClasses}
+        divisions={divisions}
         entries={entries}
         attempts={attempts}
       />
