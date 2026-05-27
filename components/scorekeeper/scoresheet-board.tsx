@@ -5,7 +5,6 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Database } from '@/types/database.types';
 import {
   ATTEMPTS_PER_LIFT,
-  ATTEMPT_RESULT_LABELS,
   BENCH_SPOTTING_LABELS,
   LIFT_LABELS,
   SQUAT_RACK_SETTING_LABELS,
@@ -79,10 +78,10 @@ type ScoresheetBoardProps = {
 // Attempt numbers 1..3 (CLAUDE.md: three attempts per lift), derived so the literal lives once.
 const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => index + 1);
 
-const INPUT_CLASS =
-  'w-16 rounded border border-neutral-300 px-1.5 py-1 text-sm tabular-nums text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const GHOST_BUTTON = 'rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const TH_CLASS = 'whitespace-nowrap px-2 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-neutral-500';
+const HEAD = 'border border-neutral-300 bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600';
+const CELL = 'border border-neutral-200 px-2 py-1 align-middle';
+const CELL_INPUT = 'w-14 rounded border border-neutral-300 px-1 py-0.5 text-center text-sm tabular-nums text-neutral-900 focus:border-neutral-500 focus:outline-none';
 
 function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {
@@ -127,14 +126,21 @@ function rackText(entry: BoardEntry, lift: LiftType): string {
   return '—';
 }
 
-function resultTextClass(result: AttemptResult): string {
-  if (result === 'good_lift') {
-    return 'text-green-700';
+// Background tint for an attempt cell: green for a good lift, red for a no lift, neutral for other
+// terminal results, amber for the lifter currently on the platform, and untinted while pending.
+function cellTint(attempt: BoardAttempt | undefined, isCurrent: boolean): string {
+  if (attempt && attempt.weightKg !== null) {
+    if (attempt.result === 'good_lift') {
+      return 'bg-green-200';
+    }
+    if (attempt.result === 'no_lift') {
+      return 'bg-red-200';
+    }
+    if (attempt.result !== 'pending') {
+      return 'bg-neutral-200';
+    }
   }
-  if (result === 'no_lift') {
-    return 'text-red-700';
-  }
-  return 'text-neutral-500';
+  return isCurrent ? 'bg-amber-100' : '';
 }
 
 function mapAttempt(row: AttemptRow): BoardAttempt {
@@ -554,43 +560,43 @@ function PlatformPanel({
 
       {roster.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-white">
+          <table className="border-collapse text-sm">
+            <thead className="sticky top-0 z-20">
               <tr>
-                <th scope="col" className={`sticky left-0 z-10 bg-white ${TH_CLASS}`}>
+                <th scope="col" className={`sticky left-0 z-30 min-w-[11rem] text-left ${HEAD}`}>
                   Lifter
                 </th>
-                <th scope="col" className={TH_CLASS}>
+                <th scope="col" className={`w-12 text-center ${HEAD}`}>
                   Lot
                 </th>
-                <th scope="col" className={TH_CLASS}>
+                <th scope="col" className={`w-14 text-center ${HEAD}`}>
                   BW
                 </th>
-                <th scope="col" className={TH_CLASS}>
+                <th scope="col" className={`w-28 text-left ${HEAD}`}>
                   Class
                 </th>
-                <th scope="col" className={TH_CLASS}>
+                <th scope="col" className={`w-24 text-left ${HEAD}`}>
                   Div
                 </th>
                 {columnLifts.map((lift) => (
                   <FragmentHeader key={lift} lift={lift} />
                 ))}
-                <th scope="col" className={`border-l border-neutral-200 ${TH_CLASS}`}>
+                <th scope="col" className={`w-20 text-center ${HEAD}`}>
                   Total
                 </th>
               </tr>
             </thead>
             <tbody>
               {roster.map(({ entry, flightName }) => (
-                <tr key={entry.id} className="border-t border-neutral-100 align-top">
-                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-2 py-2">
+                <tr key={entry.id}>
+                  <td className={`sticky left-0 z-10 whitespace-nowrap bg-white ${CELL}`}>
                     <span className="font-medium text-neutral-900">{entry.lifterName}</span>
                     <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                   </td>
-                  <td className="px-2 py-2 tabular-nums text-neutral-600">{entry.lotNumber ?? '—'}</td>
-                  <td className="px-2 py-2 tabular-nums text-neutral-600">{entry.bodyweightKg ?? '—'}</td>
-                  <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{entry.weightClassName ?? '—'}</td>
-                  <td className="whitespace-nowrap px-2 py-2 text-neutral-600">{entry.divisionName ?? '—'}</td>
+                  <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.lotNumber ?? '—'}</td>
+                  <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.bodyweightKg ?? '—'}</td>
+                  <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.weightClassName ?? '—'}</td>
+                  <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.divisionName ?? '—'}</td>
                   {columnLifts.map((lift) => {
                     const active = isTeamCompetition ? entry.teamLift === lift : true;
                     const best = active ? bestForLift(entry.id, lift) : 0;
@@ -609,8 +615,8 @@ function PlatformPanel({
                       />
                     );
                   })}
-                  <td className="border-l border-neutral-200 px-2 py-2 text-right font-semibold tabular-nums text-neutral-900">
-                    {entryTotal(entry) > 0 ? `${entryTotal(entry)} kg` : '—'}
+                  <td className={`text-center font-semibold tabular-nums text-neutral-900 ${CELL}`}>
+                    {entryTotal(entry) > 0 ? entryTotal(entry) : '—'}
                   </td>
                 </tr>
               ))}
@@ -628,24 +634,16 @@ function FragmentHeader({ lift }: { lift: LiftType }) {
   return (
     <>
       {liftHasRack(lift) ? (
-        <th scope="col" className={`border-l border-neutral-200 ${TH_CLASS}`}>
+        <th scope="col" className={`w-24 text-center ${HEAD}`}>
           {LIFT_LABELS[lift]} rack
         </th>
       ) : null}
       {ATTEMPT_NUMBERS.map((attemptNumber) => (
-        <th
-          key={`${lift}-${attemptNumber}`}
-          scope="col"
-          className={
-            attemptNumber === 1 && !liftHasRack(lift)
-              ? `border-l border-neutral-200 ${TH_CLASS}`
-              : TH_CLASS
-          }
-        >
+        <th key={`${lift}-${attemptNumber}`} scope="col" className={`w-[5.5rem] text-center ${HEAD}`}>
           {attemptNumber === 1 ? `${LIFT_LABELS[lift]} ${attemptNumber}` : String(attemptNumber)}
         </th>
       ))}
-      <th scope="col" className={TH_CLASS}>
+      <th scope="col" className={`w-16 text-center ${HEAD}`}>
         Best
       </th>
     </>
@@ -676,7 +674,7 @@ function FragmentCells({
   return (
     <>
       {liftHasRack(lift) ? (
-        <td className="whitespace-nowrap border-l border-neutral-200 px-2 py-2 text-xs text-neutral-500">
+        <td className={`whitespace-nowrap text-center text-xs text-neutral-500 ${CELL}`}>
           {active ? rackText(entry, lift) : '—'}
         </td>
       ) : null}
@@ -684,16 +682,14 @@ function FragmentCells({
         const attempt = attempts.get(attemptKey(entry.id, lift, attemptNumber));
         const isCurrent =
           current?.entryId === entry.id && current.lift === lift && current.attemptNumber === attemptNumber;
-        const borderClass = attemptNumber === 1 && !liftHasRack(lift) ? 'border-l border-neutral-200' : '';
         return (
-          <td key={`${entry.id}-${lift}-${attemptNumber}`} className={`px-2 py-2 ${borderClass}`}>
+          <td key={`${entry.id}-${lift}-${attemptNumber}`} className={`text-center ${CELL} ${active ? cellTint(attempt, isCurrent) : ''}`}>
             {active ? (
               <AttemptCell
                 entry={entry}
                 lift={lift}
                 attemptNumber={attemptNumber}
                 attempt={attempt}
-                isCurrent={isCurrent}
                 onDeclare={onDeclare}
                 onChangeWeight={onChangeWeight}
                 onSetResult={onSetResult}
@@ -704,7 +700,7 @@ function FragmentCells({
           </td>
         );
       })}
-      <td className="px-2 py-2 text-right tabular-nums text-neutral-700">{active && best > 0 ? `${best}` : '—'}</td>
+      <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>{active && best > 0 ? best : '—'}</td>
     </>
   );
 }
@@ -732,7 +728,6 @@ function AttemptCell({
   lift,
   attemptNumber,
   attempt,
-  isCurrent,
   onDeclare,
   onChangeWeight,
   onSetResult,
@@ -741,16 +736,13 @@ function AttemptCell({
   lift: LiftType;
   attemptNumber: number;
   attempt: BoardAttempt | undefined;
-  isCurrent: boolean;
   onDeclare: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onChangeWeight: (attempt: BoardAttempt, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
 }) {
   const [draft, setDraft] = useState('');
 
-  const wrapperClass = isCurrent ? 'rounded p-1 ring-2 ring-neutral-900' : 'p-1';
-
-  // Undeclared: capture the first weight.
+  // Undeclared: capture the first weight (Enter or blur).
   if (!attempt || attempt.weightKg === null) {
     const submitDeclare = () => {
       const value = Number(draft);
@@ -760,41 +752,37 @@ function AttemptCell({
       }
     };
     return (
-      <div className={`flex items-center gap-1 ${wrapperClass}`}>
-        <input
-          aria-label={`Declare ${LIFT_LABELS[lift]} attempt ${attemptNumber} for ${entry.lifterName}`}
-          type="number"
-          inputMode="decimal"
-          step="0.5"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              submitDeclare();
-            }
-          }}
-          className={INPUT_CLASS}
-        />
-        <button type="button" onClick={submitDeclare} disabled={draft.trim() === ''} className={GHOST_BUTTON}>
-          Set
-        </button>
-      </div>
+      <input
+        aria-label={`Declare ${LIFT_LABELS[lift]} attempt ${attemptNumber} for ${entry.lifterName}`}
+        type="number"
+        inputMode="decimal"
+        step="0.5"
+        placeholder="–"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={submitDeclare}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            submitDeclare();
+          }
+        }}
+        className={CELL_INPUT}
+      />
     );
   }
 
-  // Resulted: show the call with the option to reopen for a correction.
+  // Resulted: the cell is tinted (good/no lift); show just the weight, click to reopen for a fix.
   if (attempt.result !== 'pending') {
     const resulted = attempt;
     return (
-      <div className={`flex flex-col gap-1 ${wrapperClass}`}>
-        <span className="tabular-nums text-neutral-700">{resulted.weightKg} kg</span>
-        <span className={`rounded px-1.5 py-0.5 text-center text-xs font-medium ${resultTextClass(resulted.result)}`}>
-          {ATTEMPT_RESULT_LABELS[resulted.result]}
-        </span>
-        <button type="button" onClick={() => onSetResult(resulted, 'pending')} className={GHOST_BUTTON}>
-          Reopen
-        </button>
-      </div>
+      <button
+        type="button"
+        title="Reopen for a correction"
+        onClick={() => onSetResult(resulted, 'pending')}
+        className="w-full font-semibold tabular-nums text-neutral-900"
+      >
+        {resulted.weightKg}
+      </button>
     );
   }
 
@@ -810,14 +798,14 @@ function AttemptCell({
     }
   };
   return (
-    <div className={`flex flex-col gap-1 ${wrapperClass}`}>
-      <span className="tabular-nums text-neutral-900">{declared.weightKg} kg</span>
-      <div className="flex gap-1">
+    <div className="flex flex-col items-center gap-1">
+      <span className="font-semibold tabular-nums text-neutral-900">{declared.weightKg}</span>
+      <div className="flex justify-center gap-1">
         <button
           type="button"
           aria-label={`Good lift for ${entry.lifterName}`}
           onClick={() => onSetResult(declared, 'good_lift')}
-          className="rounded border border-green-600 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50"
+          className="rounded bg-green-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-green-700"
         >
           ✓
         </button>
@@ -825,31 +813,28 @@ function AttemptCell({
           type="button"
           aria-label={`No lift for ${entry.lifterName}`}
           onClick={() => onSetResult(declared, 'no_lift')}
-          className="rounded border border-red-600 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50"
+          className="rounded bg-red-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-red-700"
         >
           ✗
         </button>
       </div>
       {canChange ? (
-        <div className="flex items-center gap-1">
-          <input
-            aria-label={`Change weight for ${entry.lifterName}`}
-            type="number"
-            inputMode="decimal"
-            step="0.5"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                submitChange();
-              }
-            }}
-            className={INPUT_CLASS}
-          />
-          <button type="button" onClick={submitChange} disabled={draft.trim() === ''} className={GHOST_BUTTON}>
-            Raise
-          </button>
-        </div>
+        <input
+          aria-label={`Raise the bar for ${entry.lifterName}`}
+          type="number"
+          inputMode="decimal"
+          step="0.5"
+          placeholder="raise"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={submitChange}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              submitChange();
+            }
+          }}
+          className={CELL_INPUT}
+        />
       ) : null}
     </div>
   );
