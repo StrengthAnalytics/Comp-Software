@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
@@ -145,10 +144,7 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
   return (
     <div className="space-y-8">
       <div>
-        <Link href={`/comps/${comp.id}/edit`} className="text-sm text-neutral-500 hover:text-neutral-800">
-          ← {comp.name}
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">Sessions &amp; flights</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Sessions &amp; flights</h1>
       </div>
 
       <FlightsManager

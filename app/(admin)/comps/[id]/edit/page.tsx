@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { CompForm } from '@/components/comps/comp-form';
+import { CompShell } from '@/components/comps/comp-shell';
 import { DivisionsEditor } from '@/components/comps/divisions-editor';
 import { WeightClassesEditor } from '@/components/comps/weight-classes-editor';
 
@@ -33,54 +34,40 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
   ]);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <Link href="/comps" className="text-sm text-neutral-500 hover:text-neutral-800">
-          ← Competitions
-        </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{comp.name}</h1>
-        <p className="mt-1 text-sm text-neutral-600">/{comp.slug}</p>
-        <div className="mt-3 flex flex-wrap gap-4">
-          <Link href={`/${comp.slug}/entries`} className="text-sm font-medium text-neutral-900 underline">
-            Entries &amp; weigh-in →
+    <CompShell
+      slug={comp.slug}
+      compId={comp.id}
+      compName={comp.name}
+      isTeamCompetition={comp.is_team_competition}
+    >
+      <div className="space-y-8">
+        <div>
+          <Link href="/comps" className="text-sm text-neutral-500 hover:text-neutral-800">
+            ← Competitions
           </Link>
-          <Link href={`/${comp.slug}/weigh-in`} className="text-sm font-medium text-neutral-900 underline">
-            Weigh-in →
-          </Link>
-          <Link href={`/${comp.slug}/flights`} className="text-sm font-medium text-neutral-900 underline">
-            Sessions &amp; flights →
-          </Link>
-          {comp.is_team_competition ? (
-            <Link href={`/${comp.slug}/teams`} className="text-sm font-medium text-neutral-900 underline">
-              Teams →
-            </Link>
-          ) : null}
-          {comp.is_team_competition ? (
-            <Link href={`/${comp.slug}/results`} className="text-sm font-medium text-neutral-900 underline">
-              Team standings →
-            </Link>
-          ) : null}
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">{comp.name}</h1>
+          <p className="mt-1 text-sm text-neutral-600">/{comp.slug}</p>
         </div>
-      </div>
 
-      <div className="rounded-lg border border-neutral-200 bg-white p-6">
-        <CompForm
-          initial={{
-            id: comp.id,
-            name: comp.name,
-            slug: comp.slug,
-            kit_type: comp.kit_type,
-            event_type: comp.event_type,
-            status: comp.status,
-            starts_on: comp.starts_on ?? '',
-            ends_on: comp.ends_on ?? '',
-            is_team_competition: comp.is_team_competition,
-          }}
-        />
-      </div>
+        <div className="rounded-lg border border-neutral-200 bg-white p-6">
+          <CompForm
+            initial={{
+              id: comp.id,
+              name: comp.name,
+              slug: comp.slug,
+              kit_type: comp.kit_type,
+              event_type: comp.event_type,
+              status: comp.status,
+              starts_on: comp.starts_on ?? '',
+              ends_on: comp.ends_on ?? '',
+              is_team_competition: comp.is_team_competition,
+            }}
+          />
+        </div>
 
-      <DivisionsEditor competitionId={comp.id} divisions={divisions ?? []} />
-      <WeightClassesEditor competitionId={comp.id} weightClasses={weightClasses ?? []} />
-    </div>
+        <DivisionsEditor competitionId={comp.id} divisions={divisions ?? []} />
+        <WeightClassesEditor competitionId={comp.id} weightClasses={weightClasses ?? []} />
+      </div>
+    </CompShell>
   );
 }
