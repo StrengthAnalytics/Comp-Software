@@ -10,6 +10,7 @@ import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
 import { formatLifterName } from '@/lib/lifters/name';
 import {
+  assignWeightClassSchema,
   createEntrySchema,
   entryUpdateSchema,
   lifterInputSchema,
@@ -245,6 +246,83 @@ export async function weighInAction(input: WeighInInput): Promise<ActionResult> 
     if (error) {
       Sentry.captureException(error);
       return fail('Could not save the weigh-in. Please try again.');
+    }
+
+    return ok();
+  });
+}
+
+// Reassigns an entry's weight class (or clears it when weightClassId is null). The weigh-in screen
+// fires this when an operator moves a lifter up or down a class after recording their bodyweight.
+// Verifies the class belongs to the comp and matches the lifter's gender — checks RLS cannot make.
+export async function assignEntryWeightClassAction(input: {
+  entryId: string;
+  competitionId: string;
+  weightClassId: string | null;
+}): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('assignEntryWeightClass', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = assignWeightClassSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not change the weight class. Please try again.');
+    }
+
+    const supabase = await createClient();
+
+    const { data: entry, error: entryError } = await supabase
+      .from('entries')
+      .select('competition_id, lifter_id')
+      .eq('id', parsed.data.entryId)
+      .maybeSingle();
+    if (entryError) {
+      Sentry.captureException(entryError);
+      return fail('Could not change the weight class. Please try again.');
+    }
+    if (!entry || entry.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that entry.');
+    }
+
+    if (parsed.data.weightClassId) {
+      const { data: lifter, error: lifterError } = await supabase
+        .from('lifters')
+        .select('gender')
+        .eq('id', entry.lifter_id)
+        .maybeSingle();
+      if (lifterError) {
+        Sentry.captureException(lifterError);
+        return fail('Could not change the weight class. Please try again.');
+      }
+      if (!lifter) {
+        return fail('Could not find that entry.');
+      }
+
+      const { data: weightClass, error: classError } = await supabase
+        .from('weight_classes')
+        .select('gender, competition_id')
+        .eq('id', parsed.data.weightClassId)
+        .maybeSingle();
+      if (classError) {
+        Sentry.captureException(classError);
+        return fail('Could not change the weight class. Please try again.');
+      }
+      if (!weightClass || weightClass.competition_id !== parsed.data.competitionId) {
+        return fail('Choose a weight class from this competition.');
+      }
+      if (weightClass.gender !== lifter.gender) {
+        return fail("Weight class gender must match the lifter's.");
+      }
+    }
+
+    const { error } = await supabase
+      .from('entries')
+      .update({ weight_class_id: parsed.data.weightClassId })
+      .eq('id', parsed.data.entryId);
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not change the weight class. Please try again.');
     }
 
     return ok();

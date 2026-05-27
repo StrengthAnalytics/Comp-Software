@@ -88,6 +88,15 @@ export const createEntrySchema = z.object({
   lifterId: z.uuid(),
 });
 
+// Reassigning an entry's weight class on its own (the weigh-in screen moves a lifter up/down a class
+// once their bodyweight is recorded). Kept separate from the full entry update so it touches nothing
+// else. weightClassId null clears the class.
+export const assignWeightClassSchema = z.object({
+  entryId: z.uuid(),
+  competitionId: z.uuid(),
+  weightClassId: z.uuid().nullable(),
+});
+
 export const entryUpdateSchema = z.object({
   id: z.uuid(),
   competitionId: z.uuid(),

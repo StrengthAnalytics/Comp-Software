@@ -3,7 +3,11 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { LIFTS_FOR_EVENT, type Gender } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
-import { WeighInManager, type WeighInEntry } from '@/components/weigh-in/weigh-in-manager';
+import {
+  WeighInManager,
+  type WeighInEntry,
+  type WeightClassOption,
+} from '@/components/weigh-in/weigh-in-manager';
 
 function asGender(value: string): Gender {
   return value === 'female' ? 'female' : 'male';
@@ -23,7 +27,7 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
     notFound();
   }
 
-  const [{ data: sessions }, { data: flights }, { data: entryRows }] = await Promise.all([
+  const [{ data: sessions }, { data: flights }, { data: weightClassRows }, { data: entryRows }] = await Promise.all([
     supabase
       .from('sessions')
       .select('id, name, sort_order')
@@ -35,12 +39,25 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
       .eq('competition_id', comp.id)
       .order('sort_order', { ascending: true }),
     supabase
+      .from('weight_classes')
+      .select('id, name, gender, lower_kg, upper_kg')
+      .eq('competition_id', comp.id)
+      .order('sort_order', { ascending: true }),
+    supabase
       .from('entries')
       .select(
-        'id, lifter_id, flight_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, status',
+        'id, lifter_id, flight_id, weight_class_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, status',
       )
       .eq('competition_id', comp.id),
   ]);
+
+  const weightClasses: WeightClassOption[] = (weightClassRows ?? []).map((weightClass) => ({
+    id: weightClass.id,
+    name: weightClass.name,
+    gender: asGender(weightClass.gender),
+    lowerKg: weightClass.lower_kg,
+    upperKg: weightClass.upper_kg,
+  }));
 
   // The generated types carry no relationships, so lifters are joined in a second query rather than
   // an embedded select, matching the rest of the codebase.
@@ -69,6 +86,7 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
         sessionId: flight?.session_id ?? null,
         flightName: flight?.name ?? null,
         flightSortOrder: flight?.sort_order ?? null,
+        weightClassId: row.weight_class_id,
         lifterName: formatLifterName(lifter.surname, lifter.first_name),
         sex: asGender(lifter.gender),
         teamLift: row.team_lift,
@@ -102,6 +120,7 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
         isTeamCompetition={comp.is_team_competition}
         lifts={LIFTS_FOR_EVENT[comp.event_type]}
         sessions={sessions ?? []}
+        weightClasses={weightClasses}
         entries={entries}
         unflightedCount={unflightedCount}
       />

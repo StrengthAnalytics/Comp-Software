@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { weighInAction } from '@/actions/entries';
+import { assignEntryWeightClassAction, weighInAction } from '@/actions/entries';
 import {
   BENCH_SPOTTING_LABELS,
   BENCH_SPOTTINGS,
@@ -19,6 +19,11 @@ import {
   type SquatRackSetting,
 } from '@/lib/constants';
 import { buildWeighInGroups, type WeighInGroup } from '@/lib/weigh-in/order';
+import {
+  findWeightClassForBodyweight,
+  isBodyweightInClass,
+  type WeightClassBounds,
+} from '@/lib/weigh-in/weight-class';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
 import type { TeamLift } from '@/types/team';
@@ -30,6 +35,7 @@ export type WeighInEntry = {
   sessionId: string | null;
   flightName: string | null;
   flightSortOrder: number | null;
+  weightClassId: string | null;
   lifterName: string;
   sex: Gender;
   teamLift: TeamLift | null;
@@ -45,6 +51,8 @@ export type WeighInEntry = {
   benchSpotting: BenchSpotting | null;
   status: EntryStatus;
 };
+
+export type WeightClassOption = WeightClassBounds & { gender: Gender };
 
 export type WeighInSessionOption = { id: string; name: string };
 
@@ -186,14 +194,17 @@ function WeighInCard({
   entry,
   lifts,
   isTeamComp,
+  weightClasses,
 }: {
   competitionId: string;
   entry: WeighInEntry;
   lifts: Lifts;
   isTeamComp: boolean;
+  weightClasses: WeightClassOption[];
 }) {
   const router = useRouter();
   const shownLifts = liftsForEntry(entry, lifts, isTeamComp);
+  const [weightClassId, setWeightClassId] = useState(entry.weightClassId ?? '');
   const [bodyweight, setBodyweight] = useState(numberToInput(entry.bodyweightKg));
   const [openerSquat, setOpenerSquat] = useState(numberToInput(entry.openerSquatKg));
   const [openerBench, setOpenerBench] = useState(numberToInput(entry.openerBenchKg));
@@ -237,10 +248,49 @@ function WeighInCard({
     });
   }
 
+  function changeWeightClass(next: string) {
+    const previous = weightClassId;
+    setWeightClassId(next);
+    setError(null);
+    startTransition(async () => {
+      const result = await assignEntryWeightClassAction({
+        entryId: entry.id,
+        competitionId,
+        weightClassId: next === '' ? null : next,
+      });
+      if (result.status === 'error') {
+        setWeightClassId(previous);
+        setError(readError(result));
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   const weighedIn = entry.status === 'weighed_in';
   const saveLabel = weighedIn ? 'Save weigh-in' : 'Save & mark weighed in';
   // Weighed-in lifters collapse to a compact row; everyone still to do stays open.
   const expanded = !weighedIn || manuallyExpanded;
+
+  // A lifter only competes in classes for their own gender.
+  const classOptions = weightClasses.filter((weightClass) => weightClass.gender === entry.sex);
+  const assignedClass = weightClasses.find((weightClass) => weightClass.id === weightClassId) ?? null;
+  const bodyweightValue = parseOptionalNumber(bodyweight);
+  // Flag a bodyweight that does not sit in the assigned class (or no class set), and point at the
+  // class it does fit. Only meaningful once a bodyweight is recorded.
+  const suggestedClass = bodyweightValue === null ? null : findWeightClassForBodyweight(bodyweightValue, classOptions);
+  let classWarning: string | null = null;
+  if (bodyweightValue !== null) {
+    if (assignedClass) {
+      if (!isBodyweightInClass(bodyweightValue, assignedClass)) {
+        classWarning = `${bodyweightValue} kg is outside ${assignedClass.name}${
+          suggestedClass ? ` — try ${suggestedClass.name}` : ''
+        }.`;
+      }
+    } else {
+      classWarning = `No weight class set${suggestedClass ? ` — ${bodyweightValue} kg fits ${suggestedClass.name}` : ''}.`;
+    }
+  }
 
   // A lifter is weighed in on bodyweight and openers alone; rack details can follow at the platform.
   const openerMissing =
@@ -261,8 +311,10 @@ function WeighInCard({
           </span>
           <span className="text-xs text-neutral-700">
             BW {entry.bodyweightKg ?? '—'}
+            {assignedClass ? ` · ${assignedClass.name}` : ''}
             {summary ? ` · ${summary}` : ''}
           </span>
+          {classWarning ? <span className="text-xs font-medium text-amber-700">⚠ {classWarning}</span> : null}
         </div>
         <button type="button" onClick={() => setManuallyExpanded(true)} className={GHOST_BUTTON}>
           Edit
@@ -288,7 +340,30 @@ function WeighInCard({
         </div>
       </div>
 
+      {classWarning ? (
+        <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+          {classWarning}
+        </p>
+      ) : null}
+
       <div className="mt-4 flex flex-wrap gap-3">
+        <label className={FIELD_CLASS}>
+          <span className={LABEL_CLASS}>Weight class</span>
+          <select
+            value={weightClassId}
+            onChange={(event) => changeWeightClass(event.target.value)}
+            disabled={pending}
+            className={INPUT_CLASS}
+          >
+            <option value="">—</option>
+            {classOptions.map((weightClass) => (
+              <option key={weightClass.id} value={weightClass.id}>
+                {weightClass.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <NumberField
           label="Bodyweight (kg)"
           value={bodyweight}
@@ -413,6 +488,7 @@ export function WeighInManager({
   isTeamCompetition,
   lifts,
   sessions,
+  weightClasses,
   entries,
   unflightedCount,
 }: {
@@ -421,18 +497,28 @@ export function WeighInManager({
   isTeamCompetition: boolean;
   lifts: Lifts;
   sessions: WeighInSessionOption[];
+  weightClasses: WeightClassOption[];
   entries: WeighInEntry[];
   unflightedCount: number;
 }) {
   const [selectedSessionId, setSelectedSessionId] = useState(sessions[0]?.id ?? null);
+  const [query, setQuery] = useState('');
 
   const sessionEntries = useMemo(
     () => entries.filter((entry) => entry.sessionId === selectedSessionId),
     [entries, selectedSessionId],
   );
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleEntries = useMemo(
+    () =>
+      normalizedQuery === ''
+        ? sessionEntries
+        : sessionEntries.filter((entry) => entry.lifterName.toLowerCase().includes(normalizedQuery)),
+    [sessionEntries, normalizedQuery],
+  );
   const groups = useMemo(
-    () => buildWeighInGroups(sessionEntries, isTeamCompetition),
-    [sessionEntries, isTeamCompetition],
+    () => buildWeighInGroups(visibleEntries, isTeamCompetition),
+    [visibleEntries, isTeamCompetition],
   );
   const weighedInCount = sessionEntries.filter((entry) => entry.status === 'weighed_in').length;
 
@@ -468,11 +554,27 @@ export function WeighInManager({
         })}
       </div>
 
-      <p className="text-sm text-neutral-600">
-        {sessionEntries.length === 0
-          ? 'No lifters assigned to this session yet.'
-          : `${weighedInCount} of ${sessionEntries.length} weighed in`}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-neutral-600">
+          {sessionEntries.length === 0
+            ? 'No lifters assigned to this session yet.'
+            : `${weighedInCount} of ${sessionEntries.length} weighed in`}
+        </p>
+        {sessionEntries.length > 0 ? (
+          <input
+            type="search"
+            aria-label="Find a lifter by name"
+            placeholder="Find a lifter…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className={`${INPUT_CLASS} w-56`}
+          />
+        ) : null}
+      </div>
+
+      {sessionEntries.length > 0 && visibleEntries.length === 0 ? (
+        <p className="text-sm text-neutral-500">No lifters match “{query.trim()}”.</p>
+      ) : null}
 
       {groups.map((group) => {
         // Lifters still to weigh in stay at the top in calling order; the weighed-in ones sink to
@@ -493,6 +595,7 @@ export function WeighInManager({
                   entry={entry}
                   lifts={lifts}
                   isTeamComp={isTeamCompetition}
+                  weightClasses={weightClasses}
                 />
               ))}
             </div>
