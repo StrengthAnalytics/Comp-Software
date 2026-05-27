@@ -5,6 +5,7 @@ type EventType = Database['public']['Enums']['event_type'];
 type CompStatus = Database['public']['Enums']['comp_status'];
 type EntryStatus = Database['public']['Enums']['entry_status'];
 type LiftType = Database['public']['Enums']['lift_type'];
+type AttemptResult = Database['public']['Enums']['attempt_result'];
 
 export type Gender = 'male' | 'female';
 
@@ -37,6 +38,20 @@ export const LIFT_LABELS: Record<LiftType, string> = {
   squat: 'Squat',
   bench: 'Bench',
   deadlift: 'Deadlift',
+};
+
+// Live scorekeeping vocabulary ----------------------------------------------------------------
+
+// Three attempts per lift (3 squats, 3 benches, 3 deadlifts). A lifter's "round" is the attempt
+// number they are on; within a round the platform runs in rising-bar order (weight ascending).
+export const ATTEMPTS_PER_LIFT = 3;
+
+export const ATTEMPT_RESULT_LABELS: Record<AttemptResult, string> = {
+  pending: 'Pending',
+  good_lift: 'Good lift',
+  no_lift: 'No lift',
+  not_taken: 'Not taken',
+  withdrawn: 'Withdrawn',
 };
 
 // Squat rack position and bench spotting choices, captured at weigh-in (or later at the platform).
