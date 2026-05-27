@@ -96,6 +96,22 @@ function liftsForEntry(entry: WeighInEntry, lifts: Lifts, isTeamComp: boolean): 
   return lifts;
 }
 
+// Compact opener readout for the collapsed (weighed-in) row, covering only the lifts this entry
+// contests.
+function openerSummary(entry: WeighInEntry, shownLifts: Lifts): string {
+  const parts: string[] = [];
+  if (shownLifts.squat) {
+    parts.push(`S ${entry.openerSquatKg ?? '—'}`);
+  }
+  if (shownLifts.bench) {
+    parts.push(`B ${entry.openerBenchKg ?? '—'}`);
+  }
+  if (shownLifts.deadlift) {
+    parts.push(`DL ${entry.openerDeadliftKg ?? '—'}`);
+  }
+  return parts.join(' / ');
+}
+
 function groupLabel(group: WeighInGroup<WeighInEntry>, isTeamComp: boolean): string {
   const sex = GENDER_LABELS[group.sex];
   if (group.lift) {
@@ -189,6 +205,7 @@ function WeighInCard({
   const [benchSpotting, setBenchSpotting] = useState<BenchSpotting | ''>(entry.benchSpotting ?? '');
   const [status, setStatus] = useState<EntryStatus>(entry.status);
   const [error, setError] = useState<string | null>(null);
+  const [manuallyExpanded, setManuallyExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function save(nextStatus: EntryStatus) {
@@ -214,12 +231,16 @@ function WeighInCard({
         setError(readError(result));
         return;
       }
+      // Collapse once saved; a freshly weighed-in lifter folds away to keep the to-do list short.
+      setManuallyExpanded(false);
       router.refresh();
     });
   }
 
   const weighedIn = entry.status === 'weighed_in';
   const saveLabel = weighedIn ? 'Save weigh-in' : 'Save & mark weighed in';
+  // Weighed-in lifters collapse to a compact row; everyone still to do stays open.
+  const expanded = !weighedIn || manuallyExpanded;
 
   // A lifter is weighed in on bodyweight and openers alone; rack details can follow at the platform.
   const openerMissing =
@@ -227,6 +248,28 @@ function WeighInCard({
     (shownLifts.bench && parseOptionalNumber(openerBench) === null) ||
     (shownLifts.deadlift && parseOptionalNumber(openerDeadlift) === null);
   const canMarkWeighedIn = parseOptionalNumber(bodyweight) !== null && !openerMissing;
+
+  if (!expanded) {
+    const summary = openerSummary(entry, shownLifts);
+    return (
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-green-300 bg-green-50 px-5 py-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-sm font-semibold tracking-tight">{entry.lifterName}</span>
+          <span className="text-xs text-neutral-500">
+            {entry.flightName ?? 'No flight'}
+            {entry.lotNumber === null ? '' : ` · Lot ${entry.lotNumber}`}
+          </span>
+          <span className="text-xs text-neutral-700">
+            BW {entry.bodyweightKg ?? '—'}
+            {summary ? ` · ${summary}` : ''}
+          </span>
+        </div>
+        <button type="button" onClick={() => setManuallyExpanded(true)} className={GHOST_BUTTON}>
+          Edit
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -341,6 +384,16 @@ function WeighInCard({
         <button type="button" onClick={() => save(status)} disabled={pending} className={GHOST_BUTTON}>
           Save progress
         </button>
+        {weighedIn ? (
+          <button
+            type="button"
+            onClick={() => setManuallyExpanded(false)}
+            disabled={pending}
+            className={GHOST_BUTTON}
+          >
+            Collapse
+          </button>
+        ) : null}
         {canMarkWeighedIn ? null : (
           <span className="text-xs text-neutral-500">Needs bodyweight and openers to weigh in</span>
         )}
@@ -421,24 +474,31 @@ export function WeighInManager({
           : `${weighedInCount} of ${sessionEntries.length} weighed in`}
       </p>
 
-      {groups.map((group) => (
-        <div key={`${group.lift ?? 'all'}-${group.sex}`}>
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-            {groupLabel(group, isTeamCompetition)}
-          </h3>
-          <div className="mt-3 space-y-4">
-            {group.entries.map((entry) => (
-              <WeighInCard
-                key={entry.id}
-                competitionId={competitionId}
-                entry={entry}
-                lifts={lifts}
-                isTeamComp={isTeamCompetition}
-              />
-            ))}
+      {groups.map((group) => {
+        // Lifters still to weigh in stay at the top in calling order; the weighed-in ones sink to
+        // the bottom (sort is stable, so calling order holds within each part).
+        const ordered = group.entries.toSorted(
+          (a, b) => Number(a.status === 'weighed_in') - Number(b.status === 'weighed_in'),
+        );
+        return (
+          <div key={`${group.lift ?? 'all'}-${group.sex}`}>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+              {groupLabel(group, isTeamCompetition)}
+            </h3>
+            <div className="mt-3 space-y-4">
+              {ordered.map((entry) => (
+                <WeighInCard
+                  key={entry.id}
+                  competitionId={competitionId}
+                  entry={entry}
+                  lifts={lifts}
+                  isTeamComp={isTeamCompetition}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {unflightedCount > 0 ? (
         <p className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
