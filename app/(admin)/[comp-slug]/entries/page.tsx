@@ -37,7 +37,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
     supabase
       .from('entries')
       .select(
-        'id, lifter_id, weight_class_id, division_id, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, rack_height_bench, status',
+        'id, lifter_id, weight_class_id, division_id, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, status',
       )
       .eq('competition_id', comp.id),
   ]);

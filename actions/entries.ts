@@ -172,7 +172,10 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
         opener_bench_kg: parsed.data.openerBenchKg,
         opener_deadlift_kg: parsed.data.openerDeadliftKg,
         rack_height_squat: parsed.data.rackHeightSquat,
+        squat_rack_setting: parsed.data.squatRackSetting,
         rack_height_bench: parsed.data.rackHeightBench,
+        bench_safety_height: parsed.data.benchSafetyHeight,
+        bench_spotting: parsed.data.benchSpotting,
         status: parsed.data.status,
       })
       .eq('id', parsed.data.id);
@@ -199,6 +202,14 @@ export async function weighInAction(input: WeighInInput): Promise<ActionResult> 
       return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
     }
 
+    // A lifter can only be marked weighed-in once their bodyweight is recorded; the rest of the card
+    // (openers, rack details) can follow. The UI also gates this, so this is a backstop.
+    if (parsed.data.status === 'weighed_in' && parsed.data.bodyweightKg === null) {
+      return fail('Please fix the highlighted fields.', {
+        bodyweightKg: ['Record a bodyweight before marking the lifter weighed in.'],
+      });
+    }
+
     const supabase = await createClient();
 
     const { data: entry, error: entryError } = await supabase
@@ -223,7 +234,10 @@ export async function weighInAction(input: WeighInInput): Promise<ActionResult> 
         opener_bench_kg: parsed.data.openerBenchKg,
         opener_deadlift_kg: parsed.data.openerDeadliftKg,
         rack_height_squat: parsed.data.rackHeightSquat,
+        squat_rack_setting: parsed.data.squatRackSetting,
         rack_height_bench: parsed.data.rackHeightBench,
+        bench_safety_height: parsed.data.benchSafetyHeight,
+        bench_spotting: parsed.data.benchSpotting,
         status: parsed.data.status,
       })
       .eq('id', parsed.data.id);

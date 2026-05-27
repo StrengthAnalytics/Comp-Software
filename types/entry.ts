@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BENCH_SPOTTINGS, SQUAT_RACK_SETTINGS } from '@/lib/constants';
 
 // Blank string → null, so optional text fields clear cleanly when the operator empties them.
 function optionalText(max: number, tooLong: string) {
@@ -30,6 +31,17 @@ const optionalLotNumber = z
   .int('Lot number must be a whole number.')
   .positive('Lot number must be positive.')
   .nullable();
+
+// Rack and bench heights are hole numbers on the rack — positive whole numbers. Clients convert
+// blank inputs to null before calling.
+const optionalRackHeight = z
+  .number()
+  .int('Height must be a whole number.')
+  .positive('Height must be positive.')
+  .nullable();
+
+const optionalSquatRackSetting = z.enum(SQUAT_RACK_SETTINGS).nullable();
+const optionalBenchSpotting = z.enum(BENCH_SPOTTINGS).nullable();
 
 const optionalUuid = z.uuid().nullable();
 
@@ -86,8 +98,11 @@ export const entryUpdateSchema = z.object({
   openerSquatKg: optionalWeightKg,
   openerBenchKg: optionalWeightKg,
   openerDeadliftKg: optionalWeightKg,
-  rackHeightSquat: optionalText(20, 'Rack height is too long.'),
-  rackHeightBench: optionalText(20, 'Rack height is too long.'),
+  rackHeightSquat: optionalRackHeight,
+  squatRackSetting: optionalSquatRackSetting,
+  rackHeightBench: optionalRackHeight,
+  benchSafetyHeight: optionalRackHeight,
+  benchSpotting: optionalBenchSpotting,
   status: z.enum(ENTRY_STATUS_VALUES),
 });
 
@@ -103,8 +118,11 @@ export const weighInSchema = z.object({
   openerSquatKg: optionalWeightKg,
   openerBenchKg: optionalWeightKg,
   openerDeadliftKg: optionalWeightKg,
-  rackHeightSquat: optionalText(20, 'Rack height is too long.'),
-  rackHeightBench: optionalText(20, 'Rack height is too long.'),
+  rackHeightSquat: optionalRackHeight,
+  squatRackSetting: optionalSquatRackSetting,
+  rackHeightBench: optionalRackHeight,
+  benchSafetyHeight: optionalRackHeight,
+  benchSpotting: optionalBenchSpotting,
   status: z.enum(ENTRY_STATUS_VALUES),
 });
 

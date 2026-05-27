@@ -37,7 +37,7 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
     supabase
       .from('entries')
       .select(
-        'id, lifter_id, flight_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, rack_height_bench, status',
+        'id, lifter_id, flight_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, status',
       )
       .eq('competition_id', comp.id),
   ]);
@@ -78,7 +78,10 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
         openerBenchKg: row.opener_bench_kg,
         openerDeadliftKg: row.opener_deadlift_kg,
         rackHeightSquat: row.rack_height_squat,
+        squatRackSetting: row.squat_rack_setting,
         rackHeightBench: row.rack_height_bench,
+        benchSafetyHeight: row.bench_safety_height,
+        benchSpotting: row.bench_spotting,
         status: row.status,
       };
     })

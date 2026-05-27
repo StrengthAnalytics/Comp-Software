@@ -5,12 +5,18 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { weighInAction } from '@/actions/entries';
 import {
+  BENCH_SPOTTING_LABELS,
+  BENCH_SPOTTINGS,
   ENTRY_STATUS_LABELS,
   ENTRY_STATUSES,
   GENDER_LABELS,
   LIFT_LABELS,
+  SQUAT_RACK_SETTING_LABELS,
+  SQUAT_RACK_SETTINGS,
+  type BenchSpotting,
   type Gender,
   type Lifts,
+  type SquatRackSetting,
 } from '@/lib/constants';
 import { buildWeighInGroups, type WeighInGroup } from '@/lib/weigh-in/order';
 import type { ActionResult } from '@/types/action-result';
@@ -32,8 +38,11 @@ export type WeighInEntry = {
   openerSquatKg: number | null;
   openerBenchKg: number | null;
   openerDeadliftKg: number | null;
-  rackHeightSquat: string | null;
-  rackHeightBench: string | null;
+  rackHeightSquat: number | null;
+  squatRackSetting: SquatRackSetting | null;
+  rackHeightBench: number | null;
+  benchSafetyHeight: number | null;
+  benchSpotting: BenchSpotting | null;
   status: EntryStatus;
 };
 
@@ -44,6 +53,8 @@ const INPUT_CLASS =
 const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
 const PRIMARY_BUTTON =
   'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
+const GHOST_BUTTON =
+  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
 const TAB_BASE = 'rounded-md px-3 py-2 text-sm font-medium';
 
 function parseOptionalNumber(value: string): number | null {
@@ -113,19 +124,36 @@ function NumberField({
   );
 }
 
-function TextField({
+// A select for an optional enum value, with a blank "—" choice that maps to no selection.
+function OptionalSelectField<T extends string>({
   label,
   value,
   onChange,
+  options,
+  labels,
 }: {
   label: string;
-  value: string;
-  onChange: (value: string) => void;
+  value: T | '';
+  onChange: (value: T | '') => void;
+  options: readonly T[];
+  labels: Record<T, string>;
 }) {
   return (
     <label className="flex flex-col gap-1">
       <span className={LABEL_CLASS}>{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} className={INPUT_CLASS} />
+      <select
+        value={value}
+        // The select only renders the given options plus the blank value, so this narrowing is exact.
+        onChange={(event) => onChange(event.target.value as T | '')}
+        className={INPUT_CLASS}
+      >
+        <option value="">—</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {labels[option]}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -147,8 +175,11 @@ function WeighInCard({
   const [openerSquat, setOpenerSquat] = useState(numberToInput(entry.openerSquatKg));
   const [openerBench, setOpenerBench] = useState(numberToInput(entry.openerBenchKg));
   const [openerDeadlift, setOpenerDeadlift] = useState(numberToInput(entry.openerDeadliftKg));
-  const [rackSquat, setRackSquat] = useState(entry.rackHeightSquat ?? '');
-  const [rackBench, setRackBench] = useState(entry.rackHeightBench ?? '');
+  const [rackSquat, setRackSquat] = useState(numberToInput(entry.rackHeightSquat));
+  const [squatSetting, setSquatSetting] = useState<SquatRackSetting | ''>(entry.squatRackSetting ?? '');
+  const [rackBench, setRackBench] = useState(numberToInput(entry.rackHeightBench));
+  const [benchSafety, setBenchSafety] = useState(numberToInput(entry.benchSafetyHeight));
+  const [benchSpotting, setBenchSpotting] = useState<BenchSpotting | ''>(entry.benchSpotting ?? '');
   const [status, setStatus] = useState<EntryStatus>(entry.status);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -164,8 +195,11 @@ function WeighInCard({
         openerSquatKg: shownLifts.squat ? parseOptionalNumber(openerSquat) : null,
         openerBenchKg: shownLifts.bench ? parseOptionalNumber(openerBench) : null,
         openerDeadliftKg: shownLifts.deadlift ? parseOptionalNumber(openerDeadlift) : null,
-        rackHeightSquat: shownLifts.squat ? rackSquat.trim() || null : null,
-        rackHeightBench: shownLifts.bench ? rackBench.trim() || null : null,
+        rackHeightSquat: shownLifts.squat ? parseOptionalNumber(rackSquat) : null,
+        squatRackSetting: shownLifts.squat && squatSetting !== '' ? squatSetting : null,
+        rackHeightBench: shownLifts.bench ? parseOptionalNumber(rackBench) : null,
+        benchSafetyHeight: shownLifts.bench ? parseOptionalNumber(benchSafety) : null,
+        benchSpotting: shownLifts.bench && benchSpotting !== '' ? benchSpotting : null,
         status: nextStatus,
       });
       if (result.status === 'error') {
@@ -179,6 +213,13 @@ function WeighInCard({
 
   const weighedIn = entry.status === 'weighed_in';
   const saveLabel = weighedIn ? 'Save weigh-in' : 'Save & mark weighed in';
+
+  // A lifter is weighed in on bodyweight and openers alone; rack details can follow at the platform.
+  const openerMissing =
+    (shownLifts.squat && parseOptionalNumber(openerSquat) === null) ||
+    (shownLifts.bench && parseOptionalNumber(openerBench) === null) ||
+    (shownLifts.deadlift && parseOptionalNumber(openerDeadlift) === null);
+  const canMarkWeighedIn = parseOptionalNumber(bodyweight) !== null && !openerMissing;
 
   return (
     <section className="rounded-lg border border-neutral-200 bg-white p-5">
@@ -206,8 +247,33 @@ function WeighInCard({
           <NumberField label="Opening deadlift (kg)" value={openerDeadlift} onChange={setOpenerDeadlift} step="0.5" />
         ) : null}
 
-        {shownLifts.squat ? <TextField label="Squat rack height" value={rackSquat} onChange={setRackSquat} /> : null}
-        {shownLifts.bench ? <TextField label="Bench rack height" value={rackBench} onChange={setRackBench} /> : null}
+        {shownLifts.squat ? (
+          <NumberField label="Squat rack height" value={rackSquat} onChange={setRackSquat} step="1" />
+        ) : null}
+        {shownLifts.squat ? (
+          <OptionalSelectField
+            label="Squat rack setting"
+            value={squatSetting}
+            onChange={setSquatSetting}
+            options={SQUAT_RACK_SETTINGS}
+            labels={SQUAT_RACK_SETTING_LABELS}
+          />
+        ) : null}
+        {shownLifts.bench ? (
+          <NumberField label="Bench height" value={rackBench} onChange={setRackBench} step="1" />
+        ) : null}
+        {shownLifts.bench ? (
+          <NumberField label="Bench safety height" value={benchSafety} onChange={setBenchSafety} step="1" />
+        ) : null}
+        {shownLifts.bench ? (
+          <OptionalSelectField
+            label="Bench spotting"
+            value={benchSpotting}
+            onChange={setBenchSpotting}
+            options={BENCH_SPOTTINGS}
+            labels={BENCH_SPOTTING_LABELS}
+          />
+        ) : null}
 
         <label className="flex flex-col gap-1">
           <span className={LABEL_CLASS}>Status</span>
@@ -229,9 +295,20 @@ function WeighInCard({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button type="button" onClick={() => save('weighed_in')} disabled={pending} className={PRIMARY_BUTTON}>
+        <button
+          type="button"
+          onClick={() => save('weighed_in')}
+          disabled={pending || !canMarkWeighedIn}
+          className={PRIMARY_BUTTON}
+        >
           {pending ? 'Saving…' : saveLabel}
         </button>
+        <button type="button" onClick={() => save(status)} disabled={pending} className={GHOST_BUTTON}>
+          Save progress
+        </button>
+        {canMarkWeighedIn ? null : (
+          <span className="text-xs text-neutral-500">Needs bodyweight and openers to weigh in</span>
+        )}
         {error ? (
           <p role="alert" className="text-sm text-red-600">
             {error}
