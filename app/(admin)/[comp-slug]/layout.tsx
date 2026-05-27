@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { createClient } from '@/lib/supabase/server';
+import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
 import { CompShell } from '@/components/comps/comp-shell';
 
 export default async function CompLayout({
@@ -11,13 +11,7 @@ export default async function CompLayout({
   params: Promise<{ 'comp-slug': string }>;
 }) {
   const { 'comp-slug': slug } = await params;
-  const supabase = await createClient();
-
-  const { data: comp } = await supabase
-    .from('competitions')
-    .select('id, name, slug, is_team_competition')
-    .eq('slug', slug)
-    .maybeSingle();
+  const comp = await getCompBySlug(slug);
 
   if (!comp) {
     notFound();

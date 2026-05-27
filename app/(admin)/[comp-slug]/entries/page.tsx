@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
 import {
@@ -10,17 +11,13 @@ import {
 
 export default async function EntriesPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
-  const supabase = await createClient();
-
-  const { data: comp } = await supabase
-    .from('competitions')
-    .select('id, name, slug, event_type, status')
-    .eq('slug', slug)
-    .maybeSingle();
+  const comp = await getCompBySlug(slug);
 
   if (!comp) {
     notFound();
   }
+
+  const supabase = await createClient();
 
   const [{ data: divisions }, { data: weightClasses }, { data: entryRows }] = await Promise.all([
     supabase

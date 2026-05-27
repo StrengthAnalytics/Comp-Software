@@ -56,6 +56,7 @@ export function CompNav({ slug, compId, compName, isTeamCompetition }: CompNavPr
             }
           >
             {item.label}
+            {item.newTab ? <span className="sr-only"> (opens in new tab)</span> : null}
           </Link>
         );
       })}

@@ -1,17 +1,12 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
 import { formatLifterName } from '@/lib/lifters/name';
 import { TeamsManager, type TeamMemberEntry } from '@/components/teams/teams-manager';
 
 export default async function TeamsPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
-  const supabase = await createClient();
-
-  const { data: comp } = await supabase
-    .from('competitions')
-    .select('id, name, slug, is_team_competition')
-    .eq('slug', slug)
-    .maybeSingle();
+  const comp = await getCompBySlug(slug);
 
   if (!comp) {
     notFound();
@@ -30,6 +25,8 @@ export default async function TeamsPage({ params }: { params: Promise<{ 'comp-sl
       </div>
     );
   }
+
+  const supabase = await createClient();
 
   const [{ data: teams }, { data: entryRows }] = await Promise.all([
     supabase
