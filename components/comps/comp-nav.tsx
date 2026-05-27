@@ -10,7 +10,7 @@ type CompNavProps = {
   isTeamCompetition: boolean;
 };
 
-type NavItem = { label: string; href: string };
+type NavItem = { label: string; href: string; newTab?: boolean };
 
 // Persistent left-hand navigation for a competition's admin section. Rendered by the comp-slug
 // layout (operational pages) and the comp edit page (Setup), which sit in different route segments,
@@ -26,7 +26,8 @@ export function CompNav({ slug, compId, compName, isTeamCompetition }: CompNavPr
     ...(isTeamCompetition
       ? [
           { label: 'Teams', href: `/${slug}/teams` },
-          { label: 'Team standings', href: `/${slug}/results` },
+          // The public results page sits outside the admin chrome, so open it in a new tab.
+          { label: 'Team standings', href: `/${slug}/results`, newTab: true },
         ]
       : []),
   ];
@@ -45,6 +46,8 @@ export function CompNav({ slug, compId, compName, isTeamCompetition }: CompNavPr
           <Link
             key={item.href}
             href={item.href}
+            target={item.newTab ? '_blank' : undefined}
+            rel={item.newTab ? 'noopener noreferrer' : undefined}
             aria-current={isActive ? 'page' : undefined}
             className={
               isActive
