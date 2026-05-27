@@ -21,11 +21,7 @@ import {
 } from '@/lib/attempts/running-order';
 import { useAttemptsSubscription } from '@/lib/realtime/use-attempts-subscription';
 import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
-import {
-  changeAttemptWeightAction,
-  declareAttemptAction,
-  setAttemptResultAction,
-} from '@/actions/attempts';
+import { setAttemptResultAction, setAttemptWeightAction } from '@/actions/attempts';
 import type { ActionResult } from '@/types/action-result';
 
 type AttemptRow = Database['public']['Tables']['attempts']['Row'];
@@ -59,7 +55,6 @@ export type BoardAttempt = {
   attemptNumber: number;
   weightKg: number | null;
   result: AttemptResult;
-  weightChanges: number;
 };
 
 type ScoresheetBoardProps = {
@@ -126,8 +121,8 @@ function rackText(entry: BoardEntry, lift: LiftType): string {
   return '—';
 }
 
-// Background tint for an attempt cell: green for a good lift, red for a no lift, neutral for other
-// terminal results, amber for the lifter currently on the platform, and untinted while pending.
+// Background tint for an attempt cell: green for a good lift, red for a no lift, neutral for another
+// terminal result, amber for the lifter currently on the platform, untinted while simply pending.
 function cellTint(attempt: BoardAttempt | undefined, isCurrent: boolean): string {
   if (attempt && attempt.weightKg !== null) {
     if (attempt.result === 'good_lift') {
@@ -151,7 +146,6 @@ function mapAttempt(row: AttemptRow): BoardAttempt {
     attemptNumber: row.attempt_number,
     weightKg: row.weight_kg,
     result: row.result,
-    weightChanges: row.weight_changes,
   };
 }
 
@@ -376,7 +370,9 @@ export function ScoresheetBoard({
     [platforms, sessions, flights, entries, attempts],
   );
 
-  function declare(entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) {
+  // Sets (or creates) an attempt's weight, optimistically. The existing result is preserved so a
+  // weight correction keeps a recorded good/no lift; the server enforces the progression guard.
+  function setWeight(entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) {
     const key = attemptKey(entry.id, lift, attemptNumber);
     const previous = attempts.get(key);
     setError(null);
@@ -388,13 +384,12 @@ export function ScoresheetBoard({
         lift,
         attemptNumber,
         weightKg,
-        result: 'pending',
-        weightChanges: previous?.weightChanges ?? 0,
+        result: previous?.result ?? 'pending',
       });
       return next;
     });
     startTransition(async () => {
-      const result = await declareAttemptAction({ competitionId, entryId: entry.id, lift, attemptNumber, weightKg });
+      const result = await setAttemptWeightAction({ competitionId, entryId: entry.id, lift, attemptNumber, weightKg });
       if (result.status === 'error') {
         setAttempts((current) => {
           const next = new Map(current);
@@ -408,7 +403,7 @@ export function ScoresheetBoard({
         setError(readError(result));
         return;
       }
-      // Adopt the real id so a follow-up result/change targets the persisted row.
+      // Adopt the real id so a follow-up result targets the persisted row.
       setAttempts((current) => {
         const existing = current.get(key);
         if (!existing) {
@@ -421,39 +416,30 @@ export function ScoresheetBoard({
     });
   }
 
-  function patchAttempt(key: string, patch: Partial<BoardAttempt>) {
+  function setResult(attempt: BoardAttempt, result: AttemptResult) {
+    const key = attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber);
+    setError(null);
     setAttempts((current) => {
       const existing = current.get(key);
       if (!existing) {
         return current;
       }
       const next = new Map(current);
-      next.set(key, { ...existing, ...patch });
+      next.set(key, { ...existing, result });
       return next;
     });
-  }
-
-  function changeWeight(attempt: BoardAttempt, weightKg: number) {
-    const key = attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber);
-    setError(null);
-    patchAttempt(key, { weightKg, weightChanges: attempt.weightChanges + 1 });
-    startTransition(async () => {
-      const result = await changeAttemptWeightAction({ competitionId, attemptId: attempt.id, weightKg });
-      if (result.status === 'error') {
-        patchAttempt(key, { weightKg: attempt.weightKg, weightChanges: attempt.weightChanges });
-        setError(readError(result));
-      }
-    });
-  }
-
-  function setResult(attempt: BoardAttempt, result: AttemptResult) {
-    const key = attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber);
-    setError(null);
-    patchAttempt(key, { result });
     startTransition(async () => {
       const outcome = await setAttemptResultAction({ competitionId, attemptId: attempt.id, result });
       if (outcome.status === 'error') {
-        patchAttempt(key, { result: attempt.result });
+        setAttempts((current) => {
+          const existing = current.get(key);
+          if (!existing) {
+            return current;
+          }
+          const next = new Map(current);
+          next.set(key, { ...existing, result: attempt.result });
+          return next;
+        });
         setError(readError(outcome));
       }
     });
@@ -485,8 +471,7 @@ export function ScoresheetBoard({
               attempts={attempts}
               columnLifts={columnLifts}
               isTeamCompetition={isTeamCompetition}
-              onDeclare={declare}
-              onChangeWeight={changeWeight}
+              onSetWeight={setWeight}
               onSetResult={setResult}
             />
           ))}
@@ -507,16 +492,14 @@ function PlatformPanel({
   attempts,
   columnLifts,
   isTeamCompetition,
-  onDeclare,
-  onChangeWeight,
+  onSetWeight,
   onSetResult,
 }: {
   view: PlatformView;
   attempts: Map<string, BoardAttempt>;
   columnLifts: LiftType[];
   isTeamCompetition: boolean;
-  onDeclare: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
-  onChangeWeight: (attempt: BoardAttempt, weightKg: number) => void;
+  onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
 }) {
   const { platformName, sessionName, positions, roster } = view;
@@ -609,8 +592,7 @@ function PlatformPanel({
                         best={best}
                         attempts={attempts}
                         current={current}
-                        onDeclare={onDeclare}
-                        onChangeWeight={onChangeWeight}
+                        onSetWeight={onSetWeight}
                         onSetResult={onSetResult}
                       />
                     );
@@ -657,8 +639,7 @@ function FragmentCells({
   best,
   attempts,
   current,
-  onDeclare,
-  onChangeWeight,
+  onSetWeight,
   onSetResult,
 }: {
   lift: LiftType;
@@ -667,8 +648,7 @@ function FragmentCells({
   best: number;
   attempts: Map<string, BoardAttempt>;
   current: RunRow | null;
-  onDeclare: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
-  onChangeWeight: (attempt: BoardAttempt, weightKg: number) => void;
+  onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
 }) {
   return (
@@ -690,8 +670,7 @@ function FragmentCells({
                 lift={lift}
                 attemptNumber={attemptNumber}
                 attempt={attempt}
-                onDeclare={onDeclare}
-                onChangeWeight={onChangeWeight}
+                onSetWeight={onSetWeight}
                 onSetResult={onSetResult}
               />
             ) : (
@@ -723,118 +702,99 @@ function PositionCard({ label, row, highlight }: { label: string; row: RunRow | 
   );
 }
 
+// One attempt square: the weight is click-to-edit (any value, any time — the scorer is the
+// authority; the server applies the progression guard). Once a weight exists, ✓ / ✗ toggle the
+// result, and clicking the active one again reopens the attempt to pending for a correction.
 function AttemptCell({
   entry,
   lift,
   attemptNumber,
   attempt,
-  onDeclare,
-  onChangeWeight,
+  onSetWeight,
   onSetResult,
 }: {
   entry: BoardEntry;
   lift: LiftType;
   attemptNumber: number;
   attempt: BoardAttempt | undefined;
-  onDeclare: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
-  onChangeWeight: (attempt: BoardAttempt, weightKg: number) => void;
+  onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
-  // Undeclared: capture the first weight (Enter or blur).
-  if (!attempt || attempt.weightKg === null) {
-    const submitDeclare = () => {
-      const value = Number(draft);
-      if (Number.isFinite(value) && value > 0) {
-        onDeclare(entry, lift, attemptNumber, value);
-        setDraft('');
-      }
-    };
-    return (
-      <input
-        aria-label={`Declare ${LIFT_LABELS[lift]} attempt ${attemptNumber} for ${entry.lifterName}`}
-        type="number"
-        inputMode="decimal"
-        step="0.5"
-        placeholder="–"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={submitDeclare}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            submitDeclare();
-          }
-        }}
-        className={CELL_INPUT}
-      />
-    );
-  }
+  const declaredAttempt = attempt && attempt.weightKg !== null ? attempt : null;
 
-  // Resulted: the cell is tinted (good/no lift); show just the weight, click to reopen for a fix.
-  if (attempt.result !== 'pending') {
-    const resulted = attempt;
-    return (
-      <button
-        type="button"
-        title="Reopen for a correction"
-        onClick={() => onSetResult(resulted, 'pending')}
-        className="w-full font-semibold tabular-nums text-neutral-900"
-      >
-        {resulted.weightKg}
-      </button>
-    );
-  }
-
-  // Declared and pending: record a good/no lift, and (for attempts 2 and 3) optionally raise the bar.
-  const declared = attempt;
-  const currentWeight = declared.weightKg ?? 0;
-  const canChange = (attemptNumber === 2 || attemptNumber === 3) && declared.weightChanges < 1;
-  const submitChange = () => {
-    const value = Number(draft);
-    if (Number.isFinite(value) && value > currentWeight) {
-      onChangeWeight(declared, value);
-      setDraft('');
-    }
+  const startEdit = () => {
+    setDraft(declaredAttempt ? String(declaredAttempt.weightKg) : '');
+    setEditing(true);
   };
+  const submit = () => {
+    const value = Number(draft);
+    if (Number.isFinite(value) && value > 0) {
+      onSetWeight(entry, lift, attemptNumber, value);
+    }
+    setEditing(false);
+  };
+
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="font-semibold tabular-nums text-neutral-900">{declared.weightKg}</span>
-      <div className="flex justify-center gap-1">
-        <button
-          type="button"
-          aria-label={`Good lift for ${entry.lifterName}`}
-          onClick={() => onSetResult(declared, 'good_lift')}
-          className="rounded bg-green-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-green-700"
-        >
-          ✓
-        </button>
-        <button
-          type="button"
-          aria-label={`No lift for ${entry.lifterName}`}
-          onClick={() => onSetResult(declared, 'no_lift')}
-          className="rounded bg-red-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-red-700"
-        >
-          ✗
-        </button>
-      </div>
-      {canChange ? (
+      {editing ? (
         <input
-          aria-label={`Raise the bar for ${entry.lifterName}`}
+          autoFocus
+          aria-label={`Weight for ${entry.lifterName}, ${LIFT_LABELS[lift]} attempt ${attemptNumber}`}
           type="number"
           inputMode="decimal"
           step="0.5"
-          placeholder="raise"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          onBlur={submitChange}
+          onBlur={submit}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
-              submitChange();
+              submit();
+            } else if (event.key === 'Escape') {
+              setEditing(false);
             }
           }}
           className={CELL_INPUT}
         />
+      ) : (
+        <button
+          type="button"
+          onClick={startEdit}
+          aria-label={`Set weight for ${entry.lifterName}, ${LIFT_LABELS[lift]} attempt ${attemptNumber}`}
+          className={declaredAttempt ? 'font-semibold tabular-nums text-neutral-900' : 'tabular-nums text-neutral-400'}
+        >
+          {declaredAttempt ? declaredAttempt.weightKg : '–'}
+        </button>
+      )}
+      {declaredAttempt ? (
+        <div className="flex justify-center gap-1">
+          <button
+            type="button"
+            aria-label={`Good lift for ${entry.lifterName}`}
+            onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'good_lift' ? 'pending' : 'good_lift')}
+            className={
+              declaredAttempt.result === 'good_lift'
+                ? 'rounded bg-green-600 px-2 py-0.5 text-xs font-bold text-white'
+                : 'rounded border border-green-500 px-2 py-0.5 text-xs font-bold text-green-700 hover:bg-green-50'
+            }
+          >
+            ✓
+          </button>
+          <button
+            type="button"
+            aria-label={`No lift for ${entry.lifterName}`}
+            onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'no_lift' ? 'pending' : 'no_lift')}
+            className={
+              declaredAttempt.result === 'no_lift'
+                ? 'rounded bg-red-600 px-2 py-0.5 text-xs font-bold text-white'
+                : 'rounded border border-red-500 px-2 py-0.5 text-xs font-bold text-red-700 hover:bg-red-50'
+            }
+          >
+            ✗
+          </button>
+        </div>
       ) : null}
     </div>
   );

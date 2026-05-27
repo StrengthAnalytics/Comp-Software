@@ -13,25 +13,17 @@ const weightKg = z
   .max(9999.9, 'Weight is too large.')
   .transform((value) => Math.round(value * 10) / 10);
 
-// Declaring (first-setting) an attempt's weight. Attempts 2 and 3 are created on declaration; the
-// action rejects re-declaring an attempt that already has a weight (that path is a weight change).
-export const declareAttemptSchema = z.object({
+// Setting an attempt's weight. Creates attempts 2 and 3 on demand and updates an existing weight in
+// place (an entry-error fix keeps the attempt's result). The progression guard against the previous
+// attempt is enforced in the action (see lib/attempts/weight-rule.ts).
+export const setAttemptWeightSchema = z.object({
   competitionId: z.uuid(),
   entryId: z.uuid(),
   lift: z.enum(LIFT_VALUES),
   attemptNumber: z.number().int().min(1).max(ATTEMPTS_PER_LIFT),
   weightKg,
 });
-export type DeclareAttemptInput = z.infer<typeof declareAttemptSchema>;
-
-// Changing an already-declared weight. The one-increase rule is enforced in the action against the
-// attempt's stored weight and change count (see lib/attempts/weight-change.ts).
-export const changeAttemptWeightSchema = z.object({
-  competitionId: z.uuid(),
-  attemptId: z.uuid(),
-  weightKg,
-});
-export type ChangeAttemptWeightInput = z.infer<typeof changeAttemptWeightSchema>;
+export type SetAttemptWeightInput = z.infer<typeof setAttemptWeightSchema>;
 
 // Recording (or overturning) an attempt's result. Any result is accepted so an operator can correct
 // a call — including back to 'pending' to reopen it.

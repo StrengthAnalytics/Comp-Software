@@ -1,15 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import {
-  changeAttemptWeightSchema,
-  declareAttemptSchema,
-  setAttemptResultSchema,
-} from '@/types/attempt';
+import { setAttemptResultSchema, setAttemptWeightSchema } from '@/types/attempt';
 
 const uuid = '00000000-0000-0000-0000-000000000000';
 
-describe('declareAttemptSchema', () => {
-  it('accepts a valid declaration and rounds the weight to one decimal', () => {
-    const parsed = declareAttemptSchema.parse({
+describe('setAttemptWeightSchema', () => {
+  it('accepts a valid weight and rounds to one decimal', () => {
+    const parsed = setAttemptWeightSchema.parse({
       competitionId: uuid,
       entryId: uuid,
       lift: 'squat',
@@ -21,7 +17,7 @@ describe('declareAttemptSchema', () => {
 
   it('rejects an attempt number outside 1–3', () => {
     expect(
-      declareAttemptSchema.safeParse({
+      setAttemptWeightSchema.safeParse({
         competitionId: uuid,
         entryId: uuid,
         lift: 'bench',
@@ -33,7 +29,7 @@ describe('declareAttemptSchema', () => {
 
   it('rejects a non-positive weight', () => {
     expect(
-      declareAttemptSchema.safeParse({
+      setAttemptWeightSchema.safeParse({
         competitionId: uuid,
         entryId: uuid,
         lift: 'deadlift',
@@ -41,14 +37,6 @@ describe('declareAttemptSchema', () => {
         weightKg: 0,
       }).success,
     ).toBe(false);
-  });
-});
-
-describe('changeAttemptWeightSchema', () => {
-  it('accepts a valid change', () => {
-    expect(
-      changeAttemptWeightSchema.safeParse({ competitionId: uuid, attemptId: uuid, weightKg: 110 }).success,
-    ).toBe(true);
   });
 });
 

@@ -5,15 +5,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { canRecordMeetResults, MEET_LOCKED_MESSAGE } from '@/lib/comps/meet-status';
-import { validateWeightChange } from '@/lib/attempts/weight-change';
+import { validateAttemptWeight } from '@/lib/attempts/weight-rule';
 import { toFieldErrors } from '@/lib/validation';
 import {
-  changeAttemptWeightSchema,
-  declareAttemptSchema,
   setAttemptResultSchema,
-  type ChangeAttemptWeightInput,
-  type DeclareAttemptInput,
+  setAttemptWeightSchema,
   type SetAttemptResultInput,
+  type SetAttemptWeightInput,
 } from '@/types/attempt';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
@@ -44,15 +42,16 @@ async function requireWritableComp(
   return null;
 }
 
-// Declares (first-sets) an attempt's weight, creating attempts 2 and 3 on demand. An attempt that
-// already has a weight must be increased via changeAttemptWeightAction so the one-increase rule holds.
+// Sets an attempt's weight, creating attempts 2 and 3 on demand and updating an existing weight in
+// place (the result is left untouched, so a head-table correction keeps a recorded good/no lift).
+// Enforces the progression guard against the previous attempt; first attempts are unconstrained.
 // Returns the attempt's id so an optimistic caller can adopt it before the realtime insert arrives.
-export async function declareAttemptAction(input: DeclareAttemptInput): Promise<ActionResult<{ id: string }>> {
-  return Sentry.withServerActionInstrumentation('declareAttempt', async () => {
+export async function setAttemptWeightAction(input: SetAttemptWeightInput): Promise<ActionResult<{ id: string }>> {
+  return Sentry.withServerActionInstrumentation('setAttemptWeight', async () => {
     const guard = await adminGuard();
     if (guard) return guard;
 
-    const parsed = declareAttemptSchema.safeParse(input);
+    const parsed = setAttemptWeightSchema.safeParse(input);
     if (!parsed.success) {
       return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
     }
@@ -70,25 +69,33 @@ export async function declareAttemptAction(input: DeclareAttemptInput): Promise<
       .maybeSingle();
     if (entryError) {
       Sentry.captureException(entryError);
-      return fail('Could not declare the attempt. Please try again.');
+      return fail('Could not set the weight. Please try again.');
     }
     if (!entry || entry.competition_id !== parsed.data.competitionId) {
       return fail('Could not find that entry.');
     }
 
-    const { data: existing, error: existingError } = await supabase
-      .from('attempts')
-      .select('weight_kg')
-      .eq('entry_id', parsed.data.entryId)
-      .eq('lift', parsed.data.lift)
-      .eq('attempt_number', parsed.data.attemptNumber)
-      .maybeSingle();
-    if (existingError) {
-      Sentry.captureException(existingError);
-      return fail('Could not declare the attempt. Please try again.');
-    }
-    if (existing && existing.weight_kg !== null) {
-      return fail('That attempt is already declared. Use a weight change to increase it.');
+    if (parsed.data.attemptNumber > 1) {
+      const { data: previous, error: previousError } = await supabase
+        .from('attempts')
+        .select('weight_kg, result')
+        .eq('entry_id', parsed.data.entryId)
+        .eq('lift', parsed.data.lift)
+        .eq('attempt_number', parsed.data.attemptNumber - 1)
+        .maybeSingle();
+      if (previousError) {
+        Sentry.captureException(previousError);
+        return fail('Could not set the weight. Please try again.');
+      }
+      const check = validateAttemptWeight({
+        attemptNumber: parsed.data.attemptNumber,
+        newWeightKg: parsed.data.weightKg,
+        previousWeightKg: previous?.weight_kg ?? null,
+        previousResult: previous?.result ?? null,
+      });
+      if (!check.ok) {
+        return fail(check.message);
+      }
     }
 
     const { data: saved, error } = await supabase
@@ -108,68 +115,10 @@ export async function declareAttemptAction(input: DeclareAttemptInput): Promise<
       .single();
     if (error || !saved) {
       Sentry.captureException(error);
-      return fail('Could not declare the attempt. Please try again.');
+      return fail('Could not set the weight. Please try again.');
     }
 
     return ok({ id: saved.id });
-  });
-}
-
-// Increases an already-declared attempt's weight, enforcing the one-increase rule (attempts 2 and 3,
-// pending only, no decrease, once).
-export async function changeAttemptWeightAction(input: ChangeAttemptWeightInput): Promise<ActionResult> {
-  return Sentry.withServerActionInstrumentation('changeAttemptWeight', async () => {
-    const guard = await adminGuard();
-    if (guard) return guard;
-
-    const parsed = changeAttemptWeightSchema.safeParse(input);
-    if (!parsed.success) {
-      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
-    }
-
-    const supabase = await createClient();
-
-    const locked = await requireWritableComp(supabase, parsed.data.competitionId);
-    if (locked) return locked;
-
-    const { data: attempt, error: attemptError } = await supabase
-      .from('attempts')
-      .select('competition_id, attempt_number, weight_kg, weight_changes, result')
-      .eq('id', parsed.data.attemptId)
-      .maybeSingle();
-    if (attemptError) {
-      Sentry.captureException(attemptError);
-      return fail('Could not change the weight. Please try again.');
-    }
-    if (!attempt || attempt.competition_id !== parsed.data.competitionId) {
-      return fail('Could not find that attempt.');
-    }
-
-    const check = validateWeightChange({
-      attemptNumber: attempt.attempt_number,
-      currentWeightKg: attempt.weight_kg,
-      newWeightKg: parsed.data.weightKg,
-      weightChanges: attempt.weight_changes,
-      result: attempt.result,
-    });
-    if (!check.ok) {
-      return fail(check.message);
-    }
-
-    const { error } = await supabase
-      .from('attempts')
-      .update({
-        weight_kg: parsed.data.weightKg,
-        weight_changes: attempt.weight_changes + 1,
-        declared_at: new Date().toISOString(),
-      })
-      .eq('id', parsed.data.attemptId);
-    if (error) {
-      Sentry.captureException(error);
-      return fail('Could not change the weight. Please try again.');
-    }
-
-    return ok();
   });
 }
 

@@ -46,9 +46,6 @@ export const LIFT_LABELS: Record<LiftType, string> = {
 // number they are on; within a round the platform runs in rising-bar order (weight ascending).
 export const ATTEMPTS_PER_LIFT = 3;
 
-// A declared attempt's weight may be increased once (attempts 2 and 3 only); never decreased.
-export const MAX_ATTEMPT_WEIGHT_CHANGES = 1;
-
 export const ATTEMPT_RESULT_LABELS: Record<AttemptResult, string> = {
   pending: 'Pending',
   good_lift: 'Good lift',
