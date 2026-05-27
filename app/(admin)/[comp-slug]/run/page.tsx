@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
+import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
 import {
   ScoresheetBoard,
@@ -34,10 +35,10 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
         .select('id, session_id, name, sort_order')
         .eq('competition_id', comp.id)
         .order('sort_order', { ascending: true }),
-      supabase.from('entries').select('id, lifter_id, flight_id, lot_number').eq('competition_id', comp.id),
+      supabase.from('entries').select('id, lifter_id, flight_id, lot_number, team_lift').eq('competition_id', comp.id),
       supabase
         .from('attempts')
-        .select('id, entry_id, lift, attempt_number, weight_kg, result')
+        .select('id, entry_id, lift, attempt_number, weight_kg, result, weight_changes')
         .eq('competition_id', comp.id),
     ]);
 
@@ -70,6 +71,7 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
       lifterName: lifter ? formatLifterName(lifter.surname, lifter.first_name) : '—',
       flightId: row.flight_id,
       lotNumber: row.lot_number,
+      teamLift: row.team_lift,
     };
   });
   const attempts: BoardAttempt[] = (attemptRows ?? []).map((row) => ({
@@ -79,6 +81,7 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
     attemptNumber: row.attempt_number,
     weightKg: row.weight_kg,
     result: row.result,
+    weightChanges: row.weight_changes,
   }));
 
   return (
@@ -89,6 +92,8 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
 
       <ScoresheetBoard
         competitionId={comp.id}
+        isTeamCompetition={comp.is_team_competition}
+        lifts={LIFTS_FOR_EVENT[comp.event_type]}
         platforms={platforms}
         sessions={sessions}
         flights={flights}

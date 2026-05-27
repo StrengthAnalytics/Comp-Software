@@ -46,7 +46,8 @@ async function requireWritableComp(
 
 // Declares (first-sets) an attempt's weight, creating attempts 2 and 3 on demand. An attempt that
 // already has a weight must be increased via changeAttemptWeightAction so the one-increase rule holds.
-export async function declareAttemptAction(input: DeclareAttemptInput): Promise<ActionResult> {
+// Returns the attempt's id so an optimistic caller can adopt it before the realtime insert arrives.
+export async function declareAttemptAction(input: DeclareAttemptInput): Promise<ActionResult<{ id: string }>> {
   return Sentry.withServerActionInstrumentation('declareAttempt', async () => {
     const guard = await adminGuard();
     if (guard) return guard;
@@ -90,23 +91,27 @@ export async function declareAttemptAction(input: DeclareAttemptInput): Promise<
       return fail('That attempt is already declared. Use a weight change to increase it.');
     }
 
-    const { error } = await supabase.from('attempts').upsert(
-      {
-        competition_id: parsed.data.competitionId,
-        entry_id: parsed.data.entryId,
-        lift: parsed.data.lift,
-        attempt_number: parsed.data.attemptNumber,
-        weight_kg: parsed.data.weightKg,
-        declared_at: new Date().toISOString(),
-      },
-      { onConflict: 'entry_id,lift,attempt_number' },
-    );
-    if (error) {
+    const { data: saved, error } = await supabase
+      .from('attempts')
+      .upsert(
+        {
+          competition_id: parsed.data.competitionId,
+          entry_id: parsed.data.entryId,
+          lift: parsed.data.lift,
+          attempt_number: parsed.data.attemptNumber,
+          weight_kg: parsed.data.weightKg,
+          declared_at: new Date().toISOString(),
+        },
+        { onConflict: 'entry_id,lift,attempt_number' },
+      )
+      .select('id')
+      .single();
+    if (error || !saved) {
       Sentry.captureException(error);
       return fail('Could not declare the attempt. Please try again.');
     }
 
-    return ok();
+    return ok({ id: saved.id });
   });
 }
 
