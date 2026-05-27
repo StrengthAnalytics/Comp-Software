@@ -614,7 +614,11 @@ function PlatformPanel({
         ) : null}
       </header>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div
+        aria-live="polite"
+        aria-label="Platform running order"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+      >
         <PositionCard label="On platform" row={positions.onPlatform} highlight />
         <PositionCard label="On deck" row={positions.onDeck} />
         <PositionCard label="In the hole" row={positions.inTheHole} />
@@ -858,6 +862,7 @@ function AttemptCell({
             type="button"
             disabled={declaredAttempt.id.startsWith(TEMP_ID_PREFIX)}
             aria-label={`Good lift for ${entry.lifterName}`}
+            aria-pressed={declaredAttempt.result === 'good_lift'}
             onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'good_lift' ? 'pending' : 'good_lift')}
             className={
               declaredAttempt.result === 'good_lift'
@@ -871,6 +876,7 @@ function AttemptCell({
             type="button"
             disabled={declaredAttempt.id.startsWith(TEMP_ID_PREFIX)}
             aria-label={`No lift for ${entry.lifterName}`}
+            aria-pressed={declaredAttempt.result === 'no_lift'}
             onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'no_lift' ? 'pending' : 'no_lift')}
             className={
               declaredAttempt.result === 'no_lift'

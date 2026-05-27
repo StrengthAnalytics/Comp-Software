@@ -77,7 +77,7 @@ Which screens subscribe to which tables.
 
 | Screen | Subscribes to | Filter |
 |--------|---------------|--------|
-| `/(admin)/[comp]/run` | attempts, referee_decisions, entries | `competition_id` |
+| `/(admin)/[comp]/run` | attempts, entries, flights | `competition_id` |
 | `/(admin)/[comp]/flights` | flights, entries | `competition_id` |
 | `/(overlay)/[comp]/scoreboard` | attempts, entries | `competition_id` + current session |
 | `/(overlay)/[comp]/lifter` | attempts, entries | `competition_id` + current attempt |
@@ -85,7 +85,9 @@ Which screens subscribe to which tables.
 | `/(overlay)/[comp]/weight-class` | attempts, entries | `competition_id` + visible weight class |
 | `/(public)/[comp]/live` | attempts, entries | `competition_id` |
 
-Subscription hooks live in `/lib/realtime` as typed wrappers (`useAttemptsSubscription`, `useFlightSubscription`, etc.). Components never subscribe inline.
+Subscription hooks live in `/lib/realtime` as typed wrappers (`useAttemptsSubscription`, `useEntriesSubscription`, `useFlightsSubscription`, etc.). Components never subscribe inline.
+
+The `referee_decisions` subscriptions (for `/run` and the attempt overlay) are deferred until 3-light refereeing is built: the scorekeeper currently records a good/no lift directly on the attempt rather than from per-referee decisions, so the overlays/run consume `attempts` for the result. Add the `referee_decisions` subscription when that table starts being written.
 
 Subscriptions inherit RLS: if a user can't read a row via a regular query, they won't receive change events for it either.
 
