@@ -39,6 +39,12 @@ export const LIFT_LABELS: Record<LiftType, string> = {
   deadlift: 'Deadlift',
 };
 
+// Live scorekeeping vocabulary ----------------------------------------------------------------
+
+// Three attempts per lift (3 squats, 3 benches, 3 deadlifts). A lifter's "round" is the attempt
+// number they are on; within a round the platform runs in rising-bar order (weight ascending).
+export const ATTEMPTS_PER_LIFT = 3;
+
 // Squat rack position and bench spotting choices, captured at weigh-in (or later at the platform).
 // The tuples mirror the matching Postgres enums; labels render in the all-caps house style.
 export const SQUAT_RACK_SETTINGS = ['in', 'out', 'left_in', 'right_in'] as const;

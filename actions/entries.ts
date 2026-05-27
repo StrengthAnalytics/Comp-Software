@@ -24,6 +24,52 @@ import { fail, ok, type ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
 
 type Client = SupabaseClient<Database>;
+type LiftType = Database['public']['Enums']['lift_type'];
+type EventType = Database['public']['Enums']['event_type'];
+
+// Mirrors a lifter's openers into their first attempt rows (attempt #1 = the opener). Attempts #2
+// and #3 are created later when declared at the platform. Idempotent: re-saving a weigh-in re-syncs
+// attempt #1 to the current opener. A platform-side correction to attempt #1 writes back to the
+// opener column (see setAttemptWeightAction), so the two stay in step and this re-sync never reverts
+// a correction. Only contested lifts are seeded — for a team member, just their assigned lift. A
+// failure here is logged but does not fail the weigh-in, which has already saved.
+async function seedOpenerAttempts(
+  supabase: Client,
+  input: WeighInInput,
+  comp: { event_type: EventType; is_team_competition: boolean },
+  teamLift: LiftType | null,
+): Promise<void> {
+  const openerByLift: Record<LiftType, number | null> = {
+    squat: input.openerSquatKg,
+    bench: input.openerBenchKg,
+    deadlift: input.openerDeadliftKg,
+  };
+
+  const contested: LiftType[] =
+    comp.is_team_competition && teamLift
+      ? [teamLift]
+      : (['squat', 'bench', 'deadlift'] as LiftType[]).filter((lift) => LIFTS_FOR_EVENT[comp.event_type][lift]);
+
+  const rows = contested
+    .filter((lift) => openerByLift[lift] !== null)
+    .map((lift) => ({
+      competition_id: input.competitionId,
+      entry_id: input.id,
+      lift,
+      attempt_number: 1,
+      weight_kg: openerByLift[lift],
+      declared_at: new Date().toISOString(),
+    }));
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const { error } = await supabase.from('attempts').upsert(rows, { onConflict: 'entry_id,lift,attempt_number' });
+  if (error) {
+    Sentry.captureException(error);
+  }
+}
 
 // Cross-entity checks RLS cannot make: a chosen weight class / division must belong to this comp,
 // and the weight class gender must match the lifter's. Returns an error result, or null when valid.
@@ -215,7 +261,7 @@ export async function weighInAction(input: WeighInInput): Promise<ActionResult> 
 
     const { data: entry, error: entryError } = await supabase
       .from('entries')
-      .select('competition_id')
+      .select('competition_id, team_lift')
       .eq('id', parsed.data.id)
       .maybeSingle();
 
@@ -225,6 +271,19 @@ export async function weighInAction(input: WeighInInput): Promise<ActionResult> 
     }
     if (!entry || entry.competition_id !== parsed.data.competitionId) {
       return fail('Could not find that entry.');
+    }
+
+    const { data: comp, error: compError } = await supabase
+      .from('competitions')
+      .select('event_type, is_team_competition')
+      .eq('id', entry.competition_id)
+      .maybeSingle();
+    if (compError) {
+      Sentry.captureException(compError);
+      return fail('Could not save the weigh-in. Please try again.');
+    }
+    if (!comp) {
+      return fail('Could not find that competition.');
     }
 
     const { error } = await supabase
@@ -247,6 +306,10 @@ export async function weighInAction(input: WeighInInput): Promise<ActionResult> 
       Sentry.captureException(error);
       return fail('Could not save the weigh-in. Please try again.');
     }
+
+    // Mirror the openers into attempt #1 once the entry has saved. Best-effort: a seeding failure is
+    // logged inside the helper and does not fail the weigh-in.
+    await seedOpenerAttempts(supabase, parsed.data, comp, entry.team_lift);
 
     return ok();
   });

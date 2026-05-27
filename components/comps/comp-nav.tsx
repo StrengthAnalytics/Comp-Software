@@ -23,6 +23,7 @@ export function CompNav({ slug, compId, compName, isTeamCompetition }: CompNavPr
     { label: 'Sessions & flights', href: `/${slug}/flights` },
     { label: 'Lifters', href: `/${slug}/entries` },
     { label: 'Weigh-in', href: `/${slug}/weigh-in` },
+    { label: 'Run', href: `/${slug}/run` },
     ...(isTeamCompetition
       ? [
           { label: 'Teams', href: `/${slug}/teams` },

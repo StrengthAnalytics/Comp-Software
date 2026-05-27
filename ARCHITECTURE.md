@@ -65,6 +65,8 @@ erDiagram
 
 Admins (email in `ADMIN_EMAILS`) can do everything. Anon can read data belonging to publicly visible competitions (status `published`, `active`, or `completed`). That's it — there are no per-comp roles.
 
+There is no permissions matrix or `requireRole` API in the codebase — `requireAdmin()` against `ADMIN_EMAILS` (`lib/auth/admin.ts`) plus the RLS predicates are the whole model.
+
 Enforcement: RLS grants every write to any authenticated session, and `requireAdmin()` in server actions is the real gate. This holds only because public sign-ups are disabled, so admins are the sole session holders (see section 5 and the ADR in section 7). Anon reads are gated by the `is_comp_public()` RLS predicate. Lifter PII (date of birth, IPF member ID) is never exposed to anon: the public reads the `public_lifters` view, which omits those columns and is scoped to lifters who appear in a publicly visible comp (`lifter_in_public_comp()`).
 
 ---
@@ -75,7 +77,7 @@ Which screens subscribe to which tables.
 
 | Screen | Subscribes to | Filter |
 |--------|---------------|--------|
-| `/(admin)/[comp]/run` | attempts, referee_decisions, entries | `competition_id` |
+| `/(admin)/[comp]/run` | attempts, entries, flights | `competition_id` |
 | `/(admin)/[comp]/flights` | flights, entries | `competition_id` |
 | `/(overlay)/[comp]/scoreboard` | attempts, entries | `competition_id` + current session |
 | `/(overlay)/[comp]/lifter` | attempts, entries | `competition_id` + current attempt |
@@ -83,7 +85,9 @@ Which screens subscribe to which tables.
 | `/(overlay)/[comp]/weight-class` | attempts, entries | `competition_id` + visible weight class |
 | `/(public)/[comp]/live` | attempts, entries | `competition_id` |
 
-Subscription hooks live in `/lib/realtime` as typed wrappers (`useAttemptsSubscription`, `useFlightSubscription`, etc.). Components never subscribe inline.
+Subscription hooks live in `/lib/realtime` as typed wrappers (`useAttemptsSubscription`, `useEntriesSubscription`, `useFlightsSubscription`, etc.). Components never subscribe inline.
+
+The `referee_decisions` subscriptions (for `/run` and the attempt overlay) are deferred until 3-light refereeing is built: the scorekeeper currently records a good/no lift directly on the attempt rather than from per-referee decisions, so the overlays/run consume `attempts` for the result. Add the `referee_decisions` subscription when that table starts being written.
 
 Subscriptions inherit RLS: if a user can't read a row via a regular query, they won't receive change events for it either.
 

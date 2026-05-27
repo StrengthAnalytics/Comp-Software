@@ -156,7 +156,7 @@ Use React `useOptimistic` where it fits. Otherwise hand-roll with local state pl
 - Each entry has up to 9 attempts (3 squats, 3 benches, 3 deadlifts).
 - Attempt order within a flight: by declared weight ascending, then by lot number ascending at equal weights.
 - Attempt result values: pending, good_lift, no_lift, not_taken, withdrawn.
-- Once declared, a weight increase is allowed once for attempts 2 and 3. No decreases.
+- The scorekeeper is the authority and can set any attempt's weight at any time (to fix entry errors). The enforced guard is a progression check against the *previous* attempt: a 2nd or 3rd attempt must be heavier than the previous attempt if it was a good lift, or at least the same if it was a no lift (a repeat is allowed after a miss). First attempts are unconstrained. The guard lives in `lib/attempts/weight-rule.ts` (`validateAttemptWeight`). (This supersedes the original "one increase, no decrease" rule and its `weight_changes` counter, which is no longer enforced.)
 - Best successful attempt per lift counts toward the total.
 
 ### Referee decisions

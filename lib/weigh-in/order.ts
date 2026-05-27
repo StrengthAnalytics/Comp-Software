@@ -7,6 +7,7 @@
 // without a flight or lot leads the order.
 
 import type { Gender } from '@/lib/constants';
+import { compareValues, nullsLast } from '@/lib/ordering';
 import { TEAM_LIFTS, type TeamLift } from '@/types/team';
 
 export type WeighInEntryFields = {
@@ -25,22 +26,6 @@ export type WeighInGroup<T> = {
 };
 
 const SEX_ORDER: readonly Gender[] = ['female', 'male'];
-
-function nullsLast(value: number | null): number {
-  return value === null ? Number.POSITIVE_INFINITY : value;
-}
-
-// Ordered comparison rather than subtraction: two missing values both map to Infinity, and
-// Infinity - Infinity is NaN, which would corrupt the sort.
-function compareValues(a: number, b: number): number {
-  if (a < b) {
-    return -1;
-  }
-  if (a > b) {
-    return 1;
-  }
-  return 0;
-}
 
 function compareWithinGroup(a: WeighInEntryFields, b: WeighInEntryFields): number {
   const byFlight = compareValues(nullsLast(a.flightSortOrder), nullsLast(b.flightSortOrder));

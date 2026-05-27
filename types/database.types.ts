@@ -364,6 +364,7 @@ export type Database = {
           declared_at: string | null;
           result: Database['public']['Enums']['attempt_result'];
           is_record_attempt: boolean;
+          weight_changes: number;
           created_at: string;
           updated_at: string;
         };
@@ -377,6 +378,7 @@ export type Database = {
           declared_at?: string | null;
           result?: Database['public']['Enums']['attempt_result'];
           is_record_attempt?: boolean;
+          weight_changes?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -390,6 +392,7 @@ export type Database = {
           declared_at?: string | null;
           result?: Database['public']['Enums']['attempt_result'];
           is_record_attempt?: boolean;
+          weight_changes?: number;
           created_at?: string;
           updated_at?: string;
         };
