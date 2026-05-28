@@ -259,6 +259,26 @@ describe('orderSessionRoster', () => {
     expect(ids(orderSessionRoster(roster, attempts))).toEqual(['a', 'done']);
   });
 
+  it('orders a single-discipline flight (e.g. bench-only) that has no squat or deadlift attempts', () => {
+    const roster = [lifter('a', 1), lifter('b', 2), lifter('c', 3)];
+    const attempts = [
+      attempt('a', 'bench', 1, 100, 'pending'),
+      attempt('b', 'bench', 1, 80, 'pending'),
+      attempt('c', 'bench', 1, 120, 'pending'),
+    ];
+    // The lead skips the lifts the flight does not contest and lands on bench round 1.
+    expect(ids(orderSessionRoster(roster, attempts))).toEqual(['b', 'a', 'c']);
+  });
+
+  it('ignores attempts whose entry is not in the roster', () => {
+    const roster = [lifter('a', 1)];
+    const attempts = [
+      attempt('a', 'squat', 1, 100, 'pending'),
+      attempt('ghost', 'squat', 1, 50, 'pending'),
+    ];
+    expect(ids(orderSessionRoster(roster, attempts))).toEqual(['a']);
+  });
+
   it('falls back to flight-then-lot order when no attempts exist yet', () => {
     const roster = [lifter('a', 2), lifter('b', 1)];
     expect(ids(orderSessionRoster(roster, []))).toEqual(['b', 'a']);
