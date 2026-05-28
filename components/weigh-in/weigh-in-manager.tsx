@@ -1121,8 +1121,8 @@ function WeighInPrintTable({
   classNameById: Map<string, string>;
 }) {
   return (
-    <div className="mb-6 break-inside-avoid">
-      <h3 className="mb-1 text-sm font-bold uppercase tracking-wide">{label}</h3>
+    <div className="mb-6">
+      <h3 className="mb-1 break-after-avoid text-sm font-bold uppercase tracking-wide">{label}</h3>
       <table className="w-full border-collapse text-xs text-neutral-900">
         <thead>
           <tr>
@@ -1145,7 +1145,7 @@ function WeighInPrintTable({
         </thead>
         <tbody>
           {entries.map((entry, index) => (
-            <tr key={entry.id}>
+            <tr key={entry.id} className="break-inside-avoid">
               <td className={PRINT_TD}>{index + 1}</td>
               <td className={`${PRINT_TD} whitespace-nowrap text-left`}>{entry.lifterName}</td>
               <td className={PRINT_TD}>{entry.flightName ?? ''}</td>
