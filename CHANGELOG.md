@@ -15,6 +15,12 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 ## [Unreleased]
 
 ### Fixed
+- Second round of code-review fixes on the weigh-in screen (`components/weigh-in/weigh-in-manager.tsx`), cleanup/perf/UX:
+  - Stale feedback cleared: a validation error message now clears as soon as the operator edits the field (not only on the next save attempt), and the inline "Saved ✓" tick now fades after a couple of seconds instead of pinning indefinitely.
+  - Re-render storm removed: the row cards, the table, and the hidden print sheet are now `memo`-wrapped and fed referentially-stable props (a memoised `renderGroups`), so one row reporting its save state to the page indicator no longer re-renders all 50+ rows (and their JSON.stringify/weight-class scans) every keystroke.
+  - Rack/bench columns are now driven by a single shared descriptor per surface — one for the screen table (header + row cells) and one for the printed backup (header + blank cells) — so a column can't end up with a header but no cell (or vice versa), the on-screen and silent-on-paper desync the duplicated lists risked.
+  - Extracted a shared `SegmentedToggle` (the Cards/Table and Simple/Full pills) and a shared `NumberInput` (used by both the card field and the dense table cell) so their markup and a11y stay consistent.
+  - Documented the known limits: the print auto-orientation relies on the named-`@page` `page` property (Chromium/recent Safari; Firefox falls back to the dialog's orientation, columns still correct), and the connectivity indicator's optimistic green on first paint is cosmetic only (the autosave debounce means no save is attempted before the mount effect reads `navigator.onLine`).
 - Code-review fixes on the weigh-in autosave/offline work (`components/weigh-in/weigh-in-manager.tsx`):
   - Autosave no longer loops on a server-rejected value: a deterministic validation error (e.g. typing `0`, an out-of-range weight, or clearing the bodyweight of an already-weighed-in lifter) now blocks that exact payload from auto-retrying (it was re-fired every 800ms, hammering the server), and waits for the operator to edit the value or reconnect.
   - Transient (thrown) save failures now schedule one delayed automatic retry (4s) so a brief blip self-heals, instead of only retrying on a further edit or reconnect.

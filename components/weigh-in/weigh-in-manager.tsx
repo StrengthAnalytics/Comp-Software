@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  memo,
   useCallback,
   useContext,
   useEffect,
@@ -9,6 +10,7 @@ import {
   useRef,
   useState,
   useTransition,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
@@ -127,6 +129,9 @@ const AUTOSAVE_DEBOUNCE_MS = 800;
 // After a transient (thrown) save failure, wait this long before one automatic retry — slow enough not
 // to hammer a struggling server, fast enough to self-heal a brief blip without an operator edit.
 const SAVE_RETRY_MS = 4000;
+// How long the inline "Saved ✓" confirmation lingers before fading, so it reads as a momentary
+// acknowledgement rather than a permanent badge.
+const SAVED_TICK_MS = 2500;
 
 // Per-row save state, reported up to the page-level indicator (clean rows report null) and shown
 // inline. 'offline' = a held edit we couldn't attempt; 'failed' = an attempt that errored on the wire.
@@ -144,7 +149,9 @@ const WeighInSaveContext = createContext<WeighInSaveContextValue>({ online: true
 
 // Tracks browser connectivity so the page can show an online/offline indicator and hold autosaves
 // while offline. navigator.onLine flips on the online/offline events; optimistic true on first paint
-// so server and client markup agree.
+// so server and client markup agree (navigator is undefined during SSR). If the page is opened while
+// already offline the indicator shows green for one render until the mount effect corrects it — purely
+// cosmetic, since the mount effect runs long before the 800ms autosave debounce could fire a save.
 function useOnline(): boolean {
   const [online, setOnline] = useState(true);
   useEffect(() => {
@@ -292,11 +299,23 @@ function useWeighInForm({
   useEffect(() => {
     failedSnapshotRef.current = null;
   }, [online]);
-  // A fresh edit clears the transient saved/failed flags (and unblocks a retry of the new value).
+  // A fresh edit clears the transient saved/failed/error flags so stale feedback (a red validation
+  // message, a "Saved ✓" tick, or a "couldn't save" flag) doesn't linger over a value the operator is
+  // now changing, and unblocks a retry of the new value.
   useEffect(() => {
     setSavedTick(false);
     setSaveFailed(false);
+    setError(null);
   }, [serialized]);
+  // "Saved ✓" is a brief confirmation, not a permanent badge: clear it shortly after a save so it
+  // fades on an idle row instead of pinning indefinitely.
+  useEffect(() => {
+    if (!savedTick) {
+      return;
+    }
+    const timer = setTimeout(() => setSavedTick(false), SAVED_TICK_MS);
+    return () => clearTimeout(timer);
+  }, [savedTick]);
 
   // Builds the weigh-in payload from the current field values, sending only the lifts this entry
   // contests (the Simple/Full display toggle never changes what is saved).
@@ -553,6 +572,76 @@ function useWeighInForm({
   };
 }
 
+// A pill of mutually-exclusive options (the Cards/Table and Simple/Full toolbars). One implementation
+// so the markup, active styling and `role=group`/`aria-pressed` wiring stay consistent.
+function SegmentedToggle<T extends string>({
+  ariaLabel,
+  options,
+  value,
+  onChange,
+}: {
+  ariaLabel: string;
+  options: readonly { value: T; label: string; title?: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-neutral-300 p-0.5" role="group" aria-label={ariaLabel}>
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            aria-pressed={active}
+            title={option.title}
+            className={`${TAB_BASE} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Shared number `<input>` for both the card field (labelled wrapper) and the dense table cell (bare,
+// aria-labelled), so the type/step/blur/aria-invalid handling lives in one place.
+function NumberInput({
+  value,
+  onChange,
+  onBlur,
+  step,
+  invalid = false,
+  className,
+  ariaLabel,
+  ariaRequired = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onBlur?: () => void;
+  step: string;
+  invalid?: boolean;
+  className: string;
+  ariaLabel?: string;
+  ariaRequired?: boolean;
+}) {
+  return (
+    <input
+      type="number"
+      step={step}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={onBlur}
+      aria-label={ariaLabel}
+      aria-required={ariaRequired || undefined}
+      aria-invalid={invalid || undefined}
+      className={className}
+    />
+  );
+}
+
 // Inline per-row save feedback for autosave. The validation error ('error') is rendered separately as
 // a role="alert" message, so nothing is shown for it here.
 function SaveStatus({ state, savedTick }: { state: RowSaveState; savedTick: boolean }) {
@@ -594,21 +683,22 @@ function NumberField({
         {label}
         {required ? <span className="text-red-500"> *</span> : null}
       </span>
-      <input
-        type="number"
-        step={step}
+      <NumberInput
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={onChange}
         onBlur={onBlur}
-        aria-required={required || undefined}
-        aria-invalid={invalid || undefined}
+        step={step}
+        invalid={invalid}
+        ariaRequired={required}
         className={`${invalid ? INPUT_REQUIRED_CLASS : INPUT_CLASS} text-center`}
       />
     </label>
   );
 }
 
-function WeighInCard({
+// Memoised so a sibling row reporting its save state up to the page indicator (which re-renders the
+// manager) doesn't re-render every card; props are kept referentially stable via renderGroups.
+const WeighInCard = memo(function WeighInCard({
   competitionId,
   entry,
   shownLifts,
@@ -851,7 +941,7 @@ function WeighInCard({
       </div>
     </section>
   );
-}
+});
 
 function CellNumber({
   label,
@@ -869,18 +959,105 @@ function CellNumber({
   invalid?: boolean;
 }) {
   return (
-    <input
-      type="number"
-      step={step}
+    <NumberInput
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={onChange}
       onBlur={onBlur}
-      aria-label={label}
-      aria-invalid={invalid || undefined}
+      step={step}
+      invalid={invalid}
+      ariaLabel={label}
       className={invalid ? CELL_INPUT_REQUIRED : CELL_INPUT}
     />
   );
 }
+
+// Rack/bench columns shared by the screen table's header and row cells, so the two can't fall out of
+// sync (a header without its cell, or vice versa). `lift` gates which contested lifts show the column;
+// the whole block is also gated by the Full detail toggle (showRacks) at the call sites.
+type WeighInFormApi = ReturnType<typeof useWeighInForm>;
+const RACK_TABLE_COLUMNS: readonly {
+  key: string;
+  header: string;
+  lift: 'squat' | 'bench';
+  cell: (form: WeighInFormApi) => ReactNode;
+}[] = [
+  {
+    key: 'rackSquat',
+    header: 'Squat rack',
+    lift: 'squat',
+    cell: (form) => (
+      <CellNumber
+        label="Squat rack height"
+        value={form.rackSquat}
+        onChange={form.setRackSquat}
+        onBlur={form.flushSave}
+        step="1"
+      />
+    ),
+  },
+  {
+    key: 'squatSetting',
+    header: 'Rack set',
+    lift: 'squat',
+    cell: (form) => (
+      <OptionalSelectField
+        label="Squat rack setting"
+        value={form.squatSetting}
+        onChange={form.setSquatSetting}
+        options={SQUAT_RACK_SETTINGS}
+        labels={SQUAT_RACK_SETTING_LABELS}
+        wrapperClassName="block"
+        labelClassName="sr-only"
+        selectClassName={CELL_SELECT}
+      />
+    ),
+  },
+  {
+    key: 'rackBench',
+    header: 'Bench ht',
+    lift: 'bench',
+    cell: (form) => (
+      <CellNumber
+        label="Bench height"
+        value={form.rackBench}
+        onChange={form.setRackBench}
+        onBlur={form.flushSave}
+        step="1"
+      />
+    ),
+  },
+  {
+    key: 'benchSafety',
+    header: 'Safety ht',
+    lift: 'bench',
+    cell: (form) => (
+      <CellNumber
+        label="Bench safety height"
+        value={form.benchSafety}
+        onChange={form.setBenchSafety}
+        onBlur={form.flushSave}
+        step="1"
+      />
+    ),
+  },
+  {
+    key: 'benchSpotting',
+    header: 'Spotting',
+    lift: 'bench',
+    cell: (form) => (
+      <OptionalSelectField
+        label="Bench spotting"
+        value={form.benchSpotting}
+        onChange={form.setBenchSpotting}
+        options={BENCH_SPOTTINGS}
+        labels={BENCH_SPOTTING_LABELS}
+        wrapperClassName="block"
+        labelClassName="sr-only"
+        selectClassName={CELL_SELECT}
+      />
+    ),
+  },
+];
 
 function WeighInRow({
   competitionId,
@@ -981,67 +1158,13 @@ function WeighInRow({
         </td>
       ) : null}
 
-      {showRacks && shownLifts.squat ? (
-        <td className={TABLE_TD}>
-          <CellNumber
-            label="Squat rack height"
-            value={form.rackSquat}
-            onChange={form.setRackSquat}
-            onBlur={form.flushSave}
-            step="1"
-          />
-        </td>
-      ) : null}
-      {showRacks && shownLifts.squat ? (
-        <td className={TABLE_TD}>
-          <OptionalSelectField
-            label="Squat rack setting"
-            value={form.squatSetting}
-            onChange={form.setSquatSetting}
-            options={SQUAT_RACK_SETTINGS}
-            labels={SQUAT_RACK_SETTING_LABELS}
-            wrapperClassName="block"
-            labelClassName="sr-only"
-            selectClassName={CELL_SELECT}
-          />
-        </td>
-      ) : null}
-      {showRacks && shownLifts.bench ? (
-        <td className={TABLE_TD}>
-          <CellNumber
-            label="Bench height"
-            value={form.rackBench}
-            onChange={form.setRackBench}
-            onBlur={form.flushSave}
-            step="1"
-          />
-        </td>
-      ) : null}
-      {showRacks && shownLifts.bench ? (
-        <td className={TABLE_TD}>
-          <CellNumber
-            label="Bench safety height"
-            value={form.benchSafety}
-            onChange={form.setBenchSafety}
-            onBlur={form.flushSave}
-            step="1"
-          />
-        </td>
-      ) : null}
-      {showRacks && shownLifts.bench ? (
-        <td className={TABLE_TD}>
-          <OptionalSelectField
-            label="Bench spotting"
-            value={form.benchSpotting}
-            onChange={form.setBenchSpotting}
-            options={BENCH_SPOTTINGS}
-            labels={BENCH_SPOTTING_LABELS}
-            wrapperClassName="block"
-            labelClassName="sr-only"
-            selectClassName={CELL_SELECT}
-          />
-        </td>
-      ) : null}
+      {showRacks
+        ? RACK_TABLE_COLUMNS.filter((column) => shownLifts[column.lift]).map((column) => (
+            <td key={column.key} className={TABLE_TD}>
+              {column.cell(form)}
+            </td>
+          ))
+        : null}
 
       <td className={TABLE_TD}>
         <select
@@ -1085,7 +1208,9 @@ function WeighInRow({
   );
 }
 
-function WeighInTable({
+// Memoised for the same reason as WeighInCard: a stable-prop table skips re-rendering (and so its rows
+// skip too) when the manager re-renders for an unrelated row's save-state report.
+const WeighInTable = memo(function WeighInTable({
   label,
   competitionId,
   entries,
@@ -1134,31 +1259,13 @@ function WeighInTable({
                 DL open
               </th>
             ) : null}
-            {showRacks && shownLifts.squat ? (
-              <th scope="col" className={TABLE_TH_CENTER}>
-                Squat rack
-              </th>
-            ) : null}
-            {showRacks && shownLifts.squat ? (
-              <th scope="col" className={TABLE_TH_CENTER}>
-                Rack set
-              </th>
-            ) : null}
-            {showRacks && shownLifts.bench ? (
-              <th scope="col" className={TABLE_TH_CENTER}>
-                Bench ht
-              </th>
-            ) : null}
-            {showRacks && shownLifts.bench ? (
-              <th scope="col" className={TABLE_TH_CENTER}>
-                Safety ht
-              </th>
-            ) : null}
-            {showRacks && shownLifts.bench ? (
-              <th scope="col" className={TABLE_TH_CENTER}>
-                Spotting
-              </th>
-            ) : null}
+            {showRacks
+              ? RACK_TABLE_COLUMNS.filter((column) => shownLifts[column.lift]).map((column) => (
+                  <th key={column.key} scope="col" className={TABLE_TH_CENTER}>
+                    {column.header}
+                  </th>
+                ))
+              : null}
             <th scope="col" className={TABLE_TH_CENTER}>
               Status
             </th>
@@ -1183,7 +1290,17 @@ function WeighInTable({
       </table>
     </div>
   );
-}
+});
+
+// Rack/bench columns for the printed backup sheet, shared by its header and its blank body cells so a
+// header can't end up over the wrong (or a missing) write-in column — the silent-on-paper desync risk.
+const RACK_PRINT_COLUMNS: readonly { key: string; header: string; lift: 'squat' | 'bench' }[] = [
+  { key: 'rackSquat', header: 'Sq rack ht', lift: 'squat' },
+  { key: 'squatSetting', header: 'Sq rack set', lift: 'squat' },
+  { key: 'rackBench', header: 'Bench ht', lift: 'bench' },
+  { key: 'benchSafety', header: 'Safety ht', lift: 'bench' },
+  { key: 'benchSpotting', header: 'Spotting', lift: 'bench' },
+];
 
 function WeighInPrintTable({
   label,
@@ -1215,11 +1332,13 @@ function WeighInPrintTable({
             {shownLifts.squat ? <th className={PRINT_TH}>Squat open</th> : null}
             {shownLifts.bench ? <th className={PRINT_TH}>Bench open</th> : null}
             {shownLifts.deadlift ? <th className={PRINT_TH}>DL open</th> : null}
-            {showRacks && shownLifts.squat ? <th className={PRINT_TH}>Sq rack ht</th> : null}
-            {showRacks && shownLifts.squat ? <th className={PRINT_TH}>Sq rack set</th> : null}
-            {showRacks && shownLifts.bench ? <th className={PRINT_TH}>Bench ht</th> : null}
-            {showRacks && shownLifts.bench ? <th className={PRINT_TH}>Safety ht</th> : null}
-            {showRacks && shownLifts.bench ? <th className={PRINT_TH}>Spotting</th> : null}
+            {showRacks
+              ? RACK_PRINT_COLUMNS.filter((column) => shownLifts[column.lift]).map((column) => (
+                  <th key={column.key} className={PRINT_TH}>
+                    {column.header}
+                  </th>
+                ))
+              : null}
             <th className={PRINT_TH}>Weighed in</th>
           </tr>
         </thead>
@@ -1239,11 +1358,11 @@ function WeighInPrintTable({
               {shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
               {shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
               {shownLifts.deadlift ? <td className={PRINT_BLANK} /> : null}
-              {showRacks && shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
-              {showRacks && shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
-              {showRacks && shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
-              {showRacks && shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
-              {showRacks && shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
+              {showRacks
+                ? RACK_PRINT_COLUMNS.filter((column) => shownLifts[column.lift]).map((column) => (
+                    <td key={column.key} className={PRINT_BLANK} />
+                  ))
+                : null}
               <td className={PRINT_BLANK} />
             </tr>
           ))}
@@ -1258,7 +1377,9 @@ function WeighInPrintTable({
 // pre-printed. Mirrors the Simple/Full toggle: Simple prints bodyweight + openers (portrait), Full adds
 // the rack/bench columns (landscape) — the orientation is set via the named-@page classes in
 // globals.css.
-function WeighInPrintSheet({
+// Memoised: it renders the whole session into a hidden portal at all times (so Cmd+P works, not just
+// the button), but with stable props it skips re-rendering on every keystroke/save-state report.
+const WeighInPrintSheet = memo(function WeighInPrintSheet({
   compName,
   sessionName,
   isTeamComp,
@@ -1324,7 +1445,7 @@ function WeighInPrintSheet({
     </div>,
     document.body,
   );
-}
+});
 
 export function WeighInManager({
   competitionId,
@@ -1408,6 +1529,23 @@ export function WeighInManager({
     () => buildWeighInGroups(visibleEntries, isTeamCompetition),
     [visibleEntries, isTeamCompetition],
   );
+  // Precompute the per-group ordering and lift-set once (not on every render) so the row props stay
+  // referentially stable — that lets the memoised rows skip re-rendering when an unrelated row reports
+  // its save state up to the page indicator.
+  const renderGroups = useMemo(
+    () =>
+      groups.map((group) => ({
+        key: `${group.lift ?? 'all'}-${group.sex}`,
+        label: groupLabel(group, isTeamCompetition),
+        // Lifters still to weigh in stay at the top in calling order; the weighed-in ones sink to the
+        // bottom (sort is stable, so calling order holds within each part).
+        ordered: group.entries.toSorted(
+          (a, b) => Number(a.status === 'weighed_in') - Number(b.status === 'weighed_in'),
+        ),
+        groupLifts: liftsForGroup(group, lifts, isTeamCompetition),
+      })),
+    [groups, lifts, isTeamCompetition],
+  );
   // The backup sheet prints the whole session in calling order, never trimmed by the on-screen search.
   const printGroups = useMemo(
     () => buildWeighInGroups(sessionEntries, isTeamCompetition),
@@ -1464,39 +1602,24 @@ export function WeighInManager({
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-md border border-neutral-300 p-0.5" role="group" aria-label="Layout view">
-              {(['cards', 'table'] as const).map((mode) => {
-                const active = view === mode;
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setStoredView(mode)}
-                    aria-pressed={active}
-                    className={`${TAB_BASE} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
-                  >
-                    {mode === 'cards' ? 'Cards' : 'Table'}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="inline-flex rounded-md border border-neutral-300 p-0.5" role="group" aria-label="Detail level">
-              {(['simple', 'full'] as const).map((mode) => {
-                const active = detail === mode;
-                return (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setStoredDetail(mode)}
-                    aria-pressed={active}
-                    title={mode === 'simple' ? 'Bodyweight and openers only' : 'Include rack and bench settings'}
-                    className={`${TAB_BASE} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
-                  >
-                    {mode === 'simple' ? 'Simple' : 'Full'}
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedToggle
+              ariaLabel="Layout view"
+              value={view}
+              onChange={setStoredView}
+              options={[
+                { value: 'cards', label: 'Cards' },
+                { value: 'table', label: 'Table' },
+              ]}
+            />
+            <SegmentedToggle
+              ariaLabel="Detail level"
+              value={detail}
+              onChange={setStoredDetail}
+              options={[
+                { value: 'simple', label: 'Simple', title: 'Bodyweight and openers only' },
+                { value: 'full', label: 'Full', title: 'Include rack and bench settings' },
+              ]}
+            />
           </div>
           <div
             role="status"
@@ -1562,19 +1685,11 @@ export function WeighInManager({
           <p className="text-sm text-neutral-500">No lifters match “{query.trim()}”.</p>
         ) : null}
 
-        {groups.map((group) => {
-          // Lifters still to weigh in stay at the top in calling order; the weighed-in ones sink to
-          // the bottom (sort is stable, so calling order holds within each part).
-          const ordered = group.entries.toSorted(
-            (a, b) => Number(a.status === 'weighed_in') - Number(b.status === 'weighed_in'),
-          );
-          const groupLifts = liftsForGroup(group, lifts, isTeamCompetition);
-          const label = groupLabel(group, isTeamCompetition);
-
+        {renderGroups.map(({ key, label, ordered, groupLifts }) => {
           if (view === 'table') {
             return (
               <WeighInTable
-                key={`${group.lift ?? 'all'}-${group.sex}`}
+                key={key}
                 label={label}
                 competitionId={competitionId}
                 entries={ordered}
@@ -1587,7 +1702,7 @@ export function WeighInManager({
           }
 
           return (
-            <div key={`${group.lift ?? 'all'}-${group.sex}`}>
+            <div key={key}>
               <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{label}</h2>
               <div className="mt-3 space-y-4">
                 {ordered.map((entry) => (

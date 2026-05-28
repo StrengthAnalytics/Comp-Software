@@ -17,7 +17,12 @@
      portrait, the wide Full sheet (with rack/bench columns) prints landscape. The named page is set on
      the document root (via :has on the sheet's orientation class) rather than on the sheet element
      itself — applying a named page to a descendant box makes Chromium emit a spurious trailing blank
-     page, whereas setting it on the root keeps the whole printout in one page context. */
+     page, whereas setting it on the root keeps the whole printout in one page context.
+
+     Browser support: the named-page `page` property is implemented in Chromium (Chrome/Edge — the
+     operators' and OBS browser) and recent Safari. Firefox ignores it, so there the columns are still
+     correct but the auto-orientation falls back to the print dialog's default (the operator can flip
+     it manually). Acceptable given the Chromium-first deployment. */
   html:has(.weigh-in-print-portrait) {
     page: weigh-in-portrait;
   }
