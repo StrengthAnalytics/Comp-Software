@@ -25,8 +25,10 @@ import {
 } from '@/lib/constants';
 import { BulkImport } from '@/components/entries/bulk-import';
 import { DeleteAllEntries } from '@/components/entries/delete-all-entries';
+import { OptionalSelectField } from '@/components/optional-select-field';
 import { formatBulkExport, type ExportRow } from '@/lib/entries/bulk-import';
 import { formatLifterName } from '@/lib/lifters/name';
+import { numberToInput, parseOptionalNumber } from '@/lib/number-input';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
 
@@ -71,19 +73,6 @@ const GHOST_BUTTON =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
 const PRIMARY_BUTTON =
   'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
-
-function parseOptionalNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === '') {
-    return null;
-  }
-  const parsed = Number(trimmed);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function numberToInput(value: number | null): string {
-  return value === null ? '' : String(value);
-}
 
 // Surfaces the most specific message an action returned: a field error when present, else the
 // form-level message. Entry validation reports failures per field (e.g. mismatched gender).
@@ -141,40 +130,6 @@ function TextField({
     <label className="flex flex-col gap-1">
       <span className={LABEL_CLASS}>{label}</span>
       <input value={value} onChange={(event) => onChange(event.target.value)} className={INPUT_CLASS} />
-    </label>
-  );
-}
-
-// A select for an optional enum value, with a blank "—" choice that maps to no selection.
-function OptionalSelectField<T extends string>({
-  label,
-  value,
-  onChange,
-  options,
-  labels,
-}: {
-  label: string;
-  value: T | '';
-  onChange: (value: T | '') => void;
-  options: readonly T[];
-  labels: Record<T, string>;
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className={LABEL_CLASS}>{label}</span>
-      <select
-        value={value}
-        // The select only renders the given options plus the blank value, so this narrowing is exact.
-        onChange={(event) => onChange(event.target.value as T | '')}
-        className={INPUT_CLASS}
-      >
-        <option value="">—</option>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {labels[option]}
-          </option>
-        ))}
-      </select>
     </label>
   );
 }

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { CompForm } from '@/components/comps/comp-form';
 import { CompShell } from '@/components/comps/comp-shell';
+import { DeleteCompetition } from '@/components/comps/delete-competition';
 import { DivisionsEditor } from '@/components/comps/divisions-editor';
 import { WeightClassesEditor } from '@/components/comps/weight-classes-editor';
 
@@ -20,7 +21,7 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
     notFound();
   }
 
-  const [{ data: divisions }, { data: weightClasses }] = await Promise.all([
+  const [{ data: divisions }, { data: weightClasses }, { count: entryCount }] = await Promise.all([
     supabase
       .from('divisions')
       .select('id, name, sort_order')
@@ -31,6 +32,7 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
       .select('id, name, gender, lower_kg, upper_kg, sort_order')
       .eq('competition_id', id)
       .order('sort_order', { ascending: true }),
+    supabase.from('entries').select('id', { count: 'exact', head: true }).eq('competition_id', id),
   ]);
 
   return (
@@ -67,6 +69,13 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
 
         <DivisionsEditor competitionId={comp.id} divisions={divisions ?? []} />
         <WeightClassesEditor competitionId={comp.id} weightClasses={weightClasses ?? []} />
+
+        <DeleteCompetition
+          competitionId={comp.id}
+          competitionName={comp.name}
+          competitionStatus={comp.status}
+          entryCount={entryCount ?? 0}
+        />
       </div>
     </CompShell>
   );

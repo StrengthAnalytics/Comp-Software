@@ -6,8 +6,10 @@ import type { Database } from '@/types/database.types';
 import {
   ATTEMPTS_PER_LIFT,
   BENCH_SPOTTING_LABELS,
+  BENCH_SPOTTINGS,
   LIFT_LABELS,
   SQUAT_RACK_SETTING_LABELS,
+  SQUAT_RACK_SETTINGS,
   type BenchSpotting,
   type Lifts,
   type SquatRackSetting,
@@ -23,6 +25,9 @@ import { useAttemptsSubscription } from '@/lib/realtime/use-attempts-subscriptio
 import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
 import { useFlightsSubscription } from '@/lib/realtime/use-flights-subscription';
 import { setAttemptResultAction, setAttemptWeightAction } from '@/actions/attempts';
+import { updateEntryRackSettingsAction } from '@/actions/entries';
+import { OptionalSelectField } from '@/components/optional-select-field';
+import { parseOptionalNumber } from '@/lib/number-input';
 import type { ActionResult } from '@/types/action-result';
 
 type AttemptRow = Database['public']['Tables']['attempts']['Row'];
@@ -102,9 +107,21 @@ function attemptKey(entryId: string, lift: LiftType, attemptNumber: number): str
   return `${entryId}:${lift}:${attemptNumber}`;
 }
 
-function liftHasRack(lift: LiftType): boolean {
+// Only squat and bench have rack settings; deadlift has none. A type guard so the rack cell narrows
+// the lift to the two rack disciplines.
+function liftHasRack(lift: LiftType): lift is 'squat' | 'bench' {
   return lift === 'squat' || lift === 'bench';
 }
+
+// A single lift's rack edit, applied optimistically to the entry and sent to updateEntryRackSettingsAction.
+type RackPatch =
+  | { lift: 'squat'; rackHeightSquat: number | null; squatRackSetting: SquatRackSetting | null }
+  | {
+      lift: 'bench';
+      rackHeightBench: number | null;
+      benchSafetyHeight: number | null;
+      benchSpotting: BenchSpotting | null;
+    };
 
 function rackText(entry: BoardEntry, lift: LiftType): string {
   if (lift === 'squat') {
@@ -512,6 +529,38 @@ export function ScoresheetBoard({
     });
   }
 
+  // Updates a lifter's rack settings for one lift, optimistically. The rack columns live on the entry,
+  // so this edits local entries state first, then persists; the entries subscription reconciles on
+  // success (and on other devices). On failure the previous entry is restored and a toast shown.
+  function setRackSettings(entry: BoardEntry, patch: RackPatch) {
+    const previous = entry;
+    setError(null);
+    setEntries((current) =>
+      current.map((row) => {
+        if (row.id !== entry.id) {
+          return row;
+        }
+        return patch.lift === 'squat'
+          ? { ...row, rackHeightSquat: patch.rackHeightSquat, squatRackSetting: patch.squatRackSetting }
+          : {
+              ...row,
+              rackHeightBench: patch.rackHeightBench,
+              benchSafetyHeight: patch.benchSafetyHeight,
+              benchSpotting: patch.benchSpotting,
+            };
+      }),
+    );
+    startTransition(async () => {
+      // RackPatch is exactly the action payload minus the ids, so it spreads straight in — no per-lift
+      // branch needed here (the optimistic merge above still branches, to map onto BoardEntry's fields).
+      const result = await updateEntryRackSettingsAction({ entryId: entry.id, competitionId, ...patch });
+      if (result.status === 'error') {
+        setEntries((current) => current.map((row) => (row.id === previous.id ? previous : row)));
+        setError(readError(result));
+      }
+    });
+  }
+
   function setResult(attempt: BoardAttempt, result: AttemptResult) {
     const key = attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber);
     setError(null);
@@ -569,6 +618,7 @@ export function ScoresheetBoard({
               isTeamCompetition={isTeamCompetition}
               onSetWeight={setWeight}
               onSetResult={setResult}
+              onSetRack={setRackSettings}
             />
           ))}
         </div>
@@ -590,6 +640,7 @@ function PlatformPanel({
   isTeamCompetition,
   onSetWeight,
   onSetResult,
+  onSetRack,
 }: {
   view: PlatformView;
   attempts: Map<string, BoardAttempt>;
@@ -597,6 +648,7 @@ function PlatformPanel({
   isTeamCompetition: boolean;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
+  onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
 }) {
   const { platformName, sessionName, positions, roster } = view;
   const current = positions.onPlatform;
@@ -696,6 +748,7 @@ function PlatformPanel({
                         current={current}
                         onSetWeight={onSetWeight}
                         onSetResult={onSetResult}
+                        onSetRack={onSetRack}
                       />
                     );
                   })}
@@ -744,6 +797,7 @@ function FragmentCells({
   current,
   onSetWeight,
   onSetResult,
+  onSetRack,
 }: {
   lift: LiftType;
   entry: BoardEntry;
@@ -753,12 +807,17 @@ function FragmentCells({
   current: RunRow | null;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
+  onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
 }) {
   return (
     <>
       {liftHasRack(lift) ? (
-        <td className={`whitespace-nowrap text-center text-xs text-neutral-500 ${CELL}`}>
-          {active ? rackText(entry, lift) : '—'}
+        <td className={`text-center text-xs text-neutral-500 ${CELL}`}>
+          {active ? (
+            <RackCell entry={entry} lift={lift} onSetRack={onSetRack} />
+          ) : (
+            <span className="text-neutral-300">—</span>
+          )}
         </td>
       ) : null}
       {ATTEMPT_NUMBERS.map((attemptNumber) => {
@@ -906,6 +965,157 @@ function AttemptCell({
           </button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+const RACK_FIELD_INPUT =
+  'w-full rounded border border-neutral-400 px-1 py-1 text-sm tabular-nums text-neutral-900 focus:outline-none';
+const RACK_FIELD_SELECT = 'w-full rounded border border-neutral-400 px-1 py-1 text-sm text-neutral-900 focus:outline-none';
+const RACK_FIELD_LABEL = 'text-[10px] font-medium uppercase tracking-wide text-neutral-500';
+
+// The rack column for squat and bench: shows the current settings and is click-to-edit so the head
+// table can adjust a lifter's rack height and setting (squat) or rack/safety height and spotting
+// (bench) live on the scoresheet. Edits are optimistic; the entries subscription reconciles.
+function RackCell({
+  entry,
+  lift,
+  onSetRack,
+}: {
+  entry: BoardEntry;
+  lift: 'squat' | 'bench';
+  onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [height, setHeight] = useState('');
+  const [squatSetting, setSquatSetting] = useState<SquatRackSetting | ''>('');
+  const [safety, setSafety] = useState('');
+  const [spotting, setSpotting] = useState<BenchSpotting | ''>('');
+
+  // Seed the drafts from the entry each time the editor opens, so it always reflects current settings.
+  const openEditor = () => {
+    if (lift === 'squat') {
+      setHeight(entry.rackHeightSquat === null ? '' : String(entry.rackHeightSquat));
+      setSquatSetting(entry.squatRackSetting ?? '');
+    } else {
+      setHeight(entry.rackHeightBench === null ? '' : String(entry.rackHeightBench));
+      setSafety(entry.benchSafetyHeight === null ? '' : String(entry.benchSafetyHeight));
+      setSpotting(entry.benchSpotting ?? '');
+    }
+    setEditing(true);
+  };
+
+  const submit = () => {
+    if (lift === 'squat') {
+      onSetRack(entry, {
+        lift: 'squat',
+        rackHeightSquat: parseOptionalNumber(height),
+        squatRackSetting: squatSetting === '' ? null : squatSetting,
+      });
+    } else {
+      onSetRack(entry, {
+        lift: 'bench',
+        rackHeightBench: parseOptionalNumber(height),
+        benchSafetyHeight: parseOptionalNumber(safety),
+        benchSpotting: spotting === '' ? null : spotting,
+      });
+    }
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={openEditor}
+        aria-label={`Edit ${LIFT_LABELS[lift]} rack settings for ${entry.lifterName}`}
+        className="flex min-h-[2.75rem] w-full items-center justify-center whitespace-nowrap rounded px-1 hover:bg-black/5"
+      >
+        {rackText(entry, lift)}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex w-36 flex-col gap-1.5 text-left">
+      <label className="flex flex-col gap-0.5">
+        <span className={RACK_FIELD_LABEL}>{lift === 'squat' ? 'Rack height' : 'Bench height'}</span>
+        <input
+          autoFocus
+          type="number"
+          inputMode="numeric"
+          step="1"
+          value={height}
+          onChange={(event) => setHeight(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              submit();
+            } else if (event.key === 'Escape') {
+              setEditing(false);
+            }
+          }}
+          className={RACK_FIELD_INPUT}
+        />
+      </label>
+      {lift === 'squat' ? (
+        <OptionalSelectField
+          label="Setting"
+          value={squatSetting}
+          onChange={setSquatSetting}
+          options={SQUAT_RACK_SETTINGS}
+          labels={SQUAT_RACK_SETTING_LABELS}
+          wrapperClassName="flex flex-col gap-0.5"
+          labelClassName={RACK_FIELD_LABEL}
+          selectClassName={RACK_FIELD_SELECT}
+        />
+      ) : (
+        <>
+          <label className="flex flex-col gap-0.5">
+            <span className={RACK_FIELD_LABEL}>Safety height</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              step="1"
+              value={safety}
+              onChange={(event) => setSafety(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  submit();
+                } else if (event.key === 'Escape') {
+                  setEditing(false);
+                }
+              }}
+              className={RACK_FIELD_INPUT}
+            />
+          </label>
+          <OptionalSelectField
+            label="Spotting"
+            value={spotting}
+            onChange={setSpotting}
+            options={BENCH_SPOTTINGS}
+            labels={BENCH_SPOTTING_LABELS}
+            wrapperClassName="flex flex-col gap-0.5"
+            labelClassName={RACK_FIELD_LABEL}
+            selectClassName={RACK_FIELD_SELECT}
+          />
+        </>
+      )}
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={submit}
+          className="flex-1 rounded bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

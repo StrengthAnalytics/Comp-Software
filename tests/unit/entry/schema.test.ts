@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entryUpdateSchema, lifterInputSchema, lifterSearchSchema } from '@/types/entry';
+import { entryUpdateSchema, lifterInputSchema, lifterSearchSchema, rackSettingsSchema } from '@/types/entry';
 
 const UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -136,5 +136,74 @@ describe('entryUpdateSchema', () => {
 
   it('rejects a non-uuid weight class', () => {
     expect(entryUpdateSchema.safeParse({ ...base, weightClassId: 'not-a-uuid' }).success).toBe(false);
+  });
+});
+
+describe('rackSettingsSchema', () => {
+  const squatBase = {
+    entryId: UUID,
+    competitionId: UUID,
+    lift: 'squat',
+    rackHeightSquat: null,
+    squatRackSetting: null,
+  };
+  const benchBase = {
+    entryId: UUID,
+    competitionId: UUID,
+    lift: 'bench',
+    rackHeightBench: null,
+    benchSafetyHeight: null,
+    benchSpotting: null,
+  };
+
+  it('accepts a squat rack edit with a height and setting', () => {
+    const result = rackSettingsSchema.safeParse({ ...squatBase, rackHeightSquat: 12, squatRackSetting: 'left_in' });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a bench rack edit with heights and spotting', () => {
+    const result = rackSettingsSchema.safeParse({
+      ...benchBase,
+      rackHeightBench: 4,
+      benchSafetyHeight: 2,
+      benchSpotting: 'hand_out',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts nulls to clear a lift’s rack settings', () => {
+    expect(rackSettingsSchema.safeParse(squatBase).success).toBe(true);
+    expect(rackSettingsSchema.safeParse(benchBase).success).toBe(true);
+  });
+
+  it('rejects a fractional rack height', () => {
+    expect(rackSettingsSchema.safeParse({ ...squatBase, rackHeightSquat: 12.5 }).success).toBe(false);
+  });
+
+  it('rejects a non-positive rack height', () => {
+    expect(rackSettingsSchema.safeParse({ ...benchBase, rackHeightBench: 0 }).success).toBe(false);
+  });
+
+  it('rejects an unknown squat rack setting', () => {
+    expect(rackSettingsSchema.safeParse({ ...squatBase, squatRackSetting: 'sideways' }).success).toBe(false);
+  });
+
+  it('rejects an unknown bench spotting choice', () => {
+    expect(rackSettingsSchema.safeParse({ ...benchBase, benchSpotting: 'liftoff' }).success).toBe(false);
+  });
+
+  it('rejects an unknown lift', () => {
+    expect(rackSettingsSchema.safeParse({ entryId: UUID, competitionId: UUID, lift: 'deadlift' }).success).toBe(false);
+  });
+
+  it('rejects a squat-shaped payload sent under the bench lift', () => {
+    // Discriminated on lift: a bench edit must carry the bench fields, so a squat-shaped payload
+    // relabelled as bench is missing them and is rejected.
+    const result = rackSettingsSchema.safeParse({ ...squatBase, lift: 'bench' });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-uuid entry id', () => {
+    expect(rackSettingsSchema.safeParse({ ...squatBase, entryId: 'not-a-uuid' }).success).toBe(false);
   });
 });

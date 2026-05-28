@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { COMP_STATUS_LABELS, EVENT_TYPE_LABELS, KIT_TYPE_LABELS } from '@/lib/constants';
+import { DuplicateCompButton } from '@/components/comps/duplicate-comp-button';
 
 function formatDateRange(startsOn: string | null, endsOn: string | null): string {
   if (!startsOn && !endsOn) {
@@ -51,6 +52,7 @@ export default async function CompsPage() {
                 <th className="px-4 py-3 font-medium">Event</th>
                 <th className="px-4 py-3 font-medium">Kit</th>
                 <th className="px-4 py-3 font-medium">Dates</th>
+                <th className="px-4 py-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -67,6 +69,9 @@ export default async function CompsPage() {
                   <td className="px-4 py-3 text-neutral-700">{KIT_TYPE_LABELS[comp.kit_type]}</td>
                   <td className="px-4 py-3 text-neutral-700">
                     {formatDateRange(comp.starts_on, comp.ends_on)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <DuplicateCompButton competitionId={comp.id} name={comp.name} />
                   </td>
                 </tr>
               ))}
