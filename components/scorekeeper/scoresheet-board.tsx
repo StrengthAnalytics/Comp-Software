@@ -394,7 +394,10 @@ export function ScoresheetBoard({
   const [entries, setEntries] = useState<BoardEntry[]>(initialEntries);
   const [flights, setFlights] = useState<BoardFlight[]>(initialFlights);
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  // Default to the full-window view: the admin chrome caps content at max-w-6xl minus the comp-nav
+  // sidebar (~840px), which crushes the wide scoresheet. Full screen reclaims the whole window; Esc or
+  // Collapse drops back to the in-flow view (which now scrolls horizontally rather than compressing).
+  const [expanded, setExpanded] = useState(true);
   const [, startTransition] = useTransition();
 
   const nameById = useMemo(
@@ -636,7 +639,7 @@ function PlatformPanel({
 
       {roster.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="border-collapse text-sm">
+          <table className="w-full min-w-max border-collapse text-sm">
             <thead className="sticky top-0 z-20">
               <tr>
                 <th scope="col" className={`sticky left-0 z-30 min-w-[11rem] text-left ${HEAD}`}>
