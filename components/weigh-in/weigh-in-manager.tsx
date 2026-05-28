@@ -103,8 +103,12 @@ const CELL_PRIMARY =
 // column (10), so each layer covers the scrolling cells beneath it.
 const TABLE_LABEL =
   'sticky top-0 z-30 flex h-9 items-center bg-neutral-100 px-2 text-xs font-semibold uppercase tracking-wide text-neutral-500';
-const TABLE_TH =
-  'sticky top-9 z-20 border-b border-neutral-300 bg-neutral-100 px-2 py-2 text-left text-xs font-medium text-neutral-600 whitespace-nowrap';
+const TABLE_TH_BASE =
+  'sticky top-9 z-20 border-b border-neutral-300 bg-neutral-100 px-2 py-2 text-xs font-medium text-neutral-600 whitespace-nowrap';
+// The lifter column stays left-aligned over the names; the data columns centre to sit over their
+// centred values.
+const TABLE_TH = `${TABLE_TH_BASE} text-left`;
+const TABLE_TH_CENTER = `${TABLE_TH_BASE} text-center`;
 const TABLE_TD = 'border-b border-neutral-200 px-2 py-1.5 align-top';
 
 // Printable backup sheet: plain ruled cells; the blank cells get extra height to write into by hand.
@@ -1028,57 +1032,57 @@ function WeighInTable({
               Lifter
             </th>
             {showWeightClass ? (
-              <th scope="col" className={TABLE_TH}>
+              <th scope="col" className={TABLE_TH_CENTER}>
                 Class
               </th>
             ) : null}
-            <th scope="col" className={TABLE_TH}>
+            <th scope="col" className={TABLE_TH_CENTER}>
               BW (kg)
             </th>
             {shownLifts.squat ? (
-              <th scope="col" className={TABLE_TH}>
+              <th scope="col" className={TABLE_TH_CENTER}>
                 Squat open
               </th>
             ) : null}
             {shownLifts.bench ? (
-              <th scope="col" className={TABLE_TH}>
+              <th scope="col" className={TABLE_TH_CENTER}>
                 Bench open
               </th>
             ) : null}
             {shownLifts.deadlift ? (
-              <th scope="col" className={TABLE_TH}>
+              <th scope="col" className={TABLE_TH_CENTER}>
                 DL open
               </th>
             ) : null}
             {showRacks && shownLifts.squat ? (
-              <th scope="col" className={TABLE_TH}>
+              <th scope="col" className={TABLE_TH_CENTER}>
                 Squat rack
               </th>
             ) : null}
             {showRacks && shownLifts.squat ? (
-              <th scope="col" className={TABLE_TH}>
+              <th scope="col" className={TABLE_TH_CENTER}>
                 Rack set
               </th>
             ) : null}
             {showRacks && shownLifts.bench ? (
-              <th scope="col" className={TABLE_TH}>
+              <th scope="col" className={TABLE_TH_CENTER}>
                 Bench ht
               </th>
             ) : null}
             {showRacks && shownLifts.bench ? (
-              <th scope="col" className={TABLE_TH}>
+              <th scope="col" className={TABLE_TH_CENTER}>
                 Safety ht
               </th>
             ) : null}
             {showRacks && shownLifts.bench ? (
-              <th scope="col" className={TABLE_TH}>
+              <th scope="col" className={TABLE_TH_CENTER}>
                 Spotting
               </th>
             ) : null}
-            <th scope="col" className={TABLE_TH}>
+            <th scope="col" className={TABLE_TH_CENTER}>
               Status
             </th>
-            <th scope="col" className={TABLE_TH}>
+            <th scope="col" className={TABLE_TH_CENTER}>
               <span className="sr-only">Actions</span>
             </th>
           </tr>
