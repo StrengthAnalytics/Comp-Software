@@ -111,6 +111,7 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
       <WeighInManager
         competitionId={comp.id}
         compSlug={comp.slug}
+        compName={comp.name}
         isTeamCompetition={comp.is_team_competition}
         lifts={LIFTS_FOR_EVENT[comp.event_type]}
         sessions={sessions ?? []}

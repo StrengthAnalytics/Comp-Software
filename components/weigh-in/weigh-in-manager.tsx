@@ -93,6 +93,11 @@ const TABLE_TH =
   'sticky top-9 z-20 border-b border-neutral-300 bg-neutral-100 px-2 py-2 text-left text-xs font-medium text-neutral-600 whitespace-nowrap';
 const TABLE_TD = 'border-b border-neutral-200 px-2 py-1.5 align-top';
 
+// Printable backup sheet: plain ruled cells; the blank cells get extra height to write into by hand.
+const PRINT_TH = 'border border-neutral-500 px-2 py-1 text-center text-[11px] font-semibold uppercase';
+const PRINT_TD = 'border border-neutral-400 px-2 py-1 text-center';
+const PRINT_BLANK = 'border border-neutral-400 px-2 py-3';
+
 const VIEW_STORAGE_KEY = 'comp-software:weigh-in:view';
 const LAYOUT_STORAGE_KEY = 'comp-software:weigh-in:layout';
 
@@ -126,6 +131,19 @@ function groupLabel(group: WeighInGroup<WeighInEntry>, isTeamComp: boolean): str
     return `${LIFT_LABELS[group.lift]} · ${sex}`;
   }
   return isTeamComp ? `No team role · ${sex}` : sex;
+}
+
+// Within a group every lifter contests the same lifts: the whole comp's lifts for an individual comp,
+// or just the group's role for a team comp.
+function liftsForGroup(group: WeighInGroup<WeighInEntry>, lifts: Lifts, isTeamComp: boolean): Lifts {
+  if (isTeamComp && group.lift) {
+    return {
+      squat: group.lift === 'squat',
+      bench: group.lift === 'bench',
+      deadlift: group.lift === 'deadlift',
+    };
+  }
+  return lifts;
 }
 
 // Remembers a string preference in localStorage. The first paint uses the fallback (so server and
@@ -855,9 +873,130 @@ function WeighInTable({
   );
 }
 
+function WeighInPrintTable({
+  label,
+  entries,
+  shownLifts,
+  showWeightClass,
+  classNameById,
+}: {
+  label: string;
+  entries: WeighInEntry[];
+  shownLifts: Lifts;
+  showWeightClass: boolean;
+  classNameById: Map<string, string>;
+}) {
+  return (
+    <div className="mb-6 break-inside-avoid">
+      <h3 className="mb-1 text-sm font-bold uppercase tracking-wide">{label}</h3>
+      <table className="w-full border-collapse text-xs text-neutral-900">
+        <thead>
+          <tr>
+            <th className={PRINT_TH}>#</th>
+            <th className={`${PRINT_TH} text-left`}>Lifter</th>
+            <th className={PRINT_TH}>Flight</th>
+            <th className={PRINT_TH}>Lot</th>
+            {showWeightClass ? <th className={PRINT_TH}>Class</th> : null}
+            <th className={PRINT_TH}>Bodyweight</th>
+            {shownLifts.squat ? <th className={PRINT_TH}>Squat open</th> : null}
+            {shownLifts.bench ? <th className={PRINT_TH}>Bench open</th> : null}
+            {shownLifts.deadlift ? <th className={PRINT_TH}>DL open</th> : null}
+            {shownLifts.squat ? <th className={PRINT_TH}>Sq rack ht</th> : null}
+            {shownLifts.squat ? <th className={PRINT_TH}>Sq rack set</th> : null}
+            {shownLifts.bench ? <th className={PRINT_TH}>Bench ht</th> : null}
+            {shownLifts.bench ? <th className={PRINT_TH}>Safety ht</th> : null}
+            {shownLifts.bench ? <th className={PRINT_TH}>Spotting</th> : null}
+            <th className={PRINT_TH}>Weighed in</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry, index) => (
+            <tr key={entry.id}>
+              <td className={PRINT_TD}>{index + 1}</td>
+              <td className={`${PRINT_TD} whitespace-nowrap text-left`}>{entry.lifterName}</td>
+              <td className={PRINT_TD}>{entry.flightName ?? ''}</td>
+              <td className={PRINT_TD}>{entry.lotNumber ?? ''}</td>
+              {showWeightClass ? (
+                <td className={PRINT_TD}>
+                  {entry.weightClassId ? (classNameById.get(entry.weightClassId) ?? '') : ''}
+                </td>
+              ) : null}
+              <td className={PRINT_BLANK} />
+              {shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
+              {shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
+              {shownLifts.deadlift ? <td className={PRINT_BLANK} /> : null}
+              {shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
+              {shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
+              {shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
+              {shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
+              {shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
+              <td className={PRINT_BLANK} />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Print-only (hidden on screen) backup sheet for the selected session, ordered the same way lifters
+// are called to the scale. Capture fields are left blank for hand-recording; name/flight/lot/class are
+// pre-printed.
+function WeighInPrintSheet({
+  compName,
+  sessionName,
+  isTeamComp,
+  lifts,
+  groups,
+  weightClasses,
+}: {
+  compName: string;
+  sessionName: string;
+  isTeamComp: boolean;
+  lifts: Lifts;
+  groups: WeighInGroup<WeighInEntry>[];
+  weightClasses: WeightClassOption[];
+}) {
+  const classNameById = useMemo(
+    () => new Map(weightClasses.map((weightClass) => [weightClass.id, weightClass.name])),
+    [weightClasses],
+  );
+  const totalLifters = groups.reduce((sum, group) => sum + group.entries.length, 0);
+
+  return (
+    <div className="weigh-in-print-sheet hidden text-neutral-900 print:block">
+      <div className="mb-4 flex items-end justify-between gap-6 border-b border-neutral-500 pb-2">
+        <div>
+          <h1 className="text-lg font-bold">{compName}</h1>
+          <p className="text-sm">Weigh-in sheet (backup) — {sessionName}</p>
+        </div>
+        <div className="text-right text-xs leading-6">
+          <p>Date: __________________</p>
+          <p>Recorder: __________________</p>
+        </div>
+      </div>
+      {totalLifters === 0 ? (
+        <p className="text-sm">No lifters assigned to this session.</p>
+      ) : (
+        groups.map((group) => (
+          <WeighInPrintTable
+            key={`${group.lift ?? 'all'}-${group.sex}`}
+            label={groupLabel(group, isTeamComp)}
+            entries={group.entries}
+            shownLifts={liftsForGroup(group, lifts, isTeamComp)}
+            showWeightClass={!isTeamComp}
+            classNameById={classNameById}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
 export function WeighInManager({
   competitionId,
   compSlug,
+  compName,
   isTeamCompetition,
   lifts,
   sessions,
@@ -867,6 +1006,7 @@ export function WeighInManager({
 }: {
   competitionId: string;
   compSlug: string;
+  compName: string;
   isTeamCompetition: boolean;
   lifts: Lifts;
   sessions: WeighInSessionOption[];
@@ -911,6 +1051,12 @@ export function WeighInManager({
     () => buildWeighInGroups(visibleEntries, isTeamCompetition),
     [visibleEntries, isTeamCompetition],
   );
+  // The backup sheet prints the whole session in calling order, never trimmed by the on-screen search.
+  const printGroups = useMemo(
+    () => buildWeighInGroups(sessionEntries, isTeamCompetition),
+    [sessionEntries, isTeamCompetition],
+  );
+  const selectedSessionName = sessions.find((session) => session.id === selectedSessionId)?.name ?? '';
   const weighedInCount = sessionEntries.filter((entry) => entry.status === 'weighed_in').length;
 
   if (sessions.length === 0) {
@@ -926,6 +1072,7 @@ export function WeighInManager({
   }
 
   return (
+    <>
     <div className={fullScreen ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -945,13 +1092,18 @@ export function WeighInManager({
               );
             })}
           </div>
-          <button
-            type="button"
-            onClick={() => setStoredLayout(fullScreen ? 'normal' : 'full')}
-            className={GHOST_BUTTON}
-          >
-            {fullScreen ? 'Collapse (Esc)' : 'Fill screen'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => globalThis.print()} className={GHOST_BUTTON}>
+              Print sheet
+            </button>
+            <button
+              type="button"
+              onClick={() => setStoredLayout(fullScreen ? 'normal' : 'full')}
+              className={GHOST_BUTTON}
+            >
+              {fullScreen ? 'Collapse (Esc)' : 'Fill screen'}
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -1002,16 +1154,7 @@ export function WeighInManager({
           const ordered = group.entries.toSorted(
             (a, b) => Number(a.status === 'weighed_in') - Number(b.status === 'weighed_in'),
           );
-          // Within a group every lifter contests the same lifts: the whole comp's lifts for an
-          // individual comp, or just the group's role for a team comp.
-          const groupLifts: Lifts =
-            isTeamCompetition && group.lift
-              ? {
-                  squat: group.lift === 'squat',
-                  bench: group.lift === 'bench',
-                  deadlift: group.lift === 'deadlift',
-                }
-              : lifts;
+          const groupLifts = liftsForGroup(group, lifts, isTeamCompetition);
           const label = groupLabel(group, isTeamCompetition);
 
           if (view === 'table') {
@@ -1059,5 +1202,15 @@ export function WeighInManager({
         ) : null}
       </div>
     </div>
+
+      <WeighInPrintSheet
+        compName={compName}
+        sessionName={selectedSessionName}
+        isTeamComp={isTeamCompetition}
+        lifts={lifts}
+        groups={printGroups}
+        weightClasses={weightClasses}
+      />
+    </>
   );
 }

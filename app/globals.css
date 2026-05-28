@@ -1,1 +1,25 @@
 @import "tailwindcss";
+
+/* Weigh-in backup sheet: when printing, hide the whole app and show only the sheet, laid out from
+   the page origin so the (hidden but still-present) chrome doesn't offset it. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .weigh-in-print-sheet,
+  .weigh-in-print-sheet * {
+    visibility: visible;
+  }
+
+  .weigh-in-print-sheet {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+  }
+
+  @page {
+    size: landscape;
+    margin: 12mm;
+  }
+}
