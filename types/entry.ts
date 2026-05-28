@@ -136,3 +136,27 @@ export const weighInSchema = z.object({
 });
 
 export type WeighInInput = z.infer<typeof weighInSchema>;
+
+// Editing one lift's rack settings on its own — the run screen lets the head table adjust rack heights
+// and settings live without leaving the scoresheet. Kept narrow (like assignWeightClassSchema) and
+// keyed by lift so a squat edit touches only the squat rack columns and a bench edit only the bench
+// ones; nothing else on the entry is at risk. A null value clears that field.
+export const rackSettingsSchema = z.discriminatedUnion('lift', [
+  z.object({
+    entryId: z.uuid(),
+    competitionId: z.uuid(),
+    lift: z.literal('squat'),
+    rackHeightSquat: optionalRackHeight,
+    squatRackSetting: optionalSquatRackSetting,
+  }),
+  z.object({
+    entryId: z.uuid(),
+    competitionId: z.uuid(),
+    lift: z.literal('bench'),
+    rackHeightBench: optionalRackHeight,
+    benchSafetyHeight: optionalRackHeight,
+    benchSpotting: optionalBenchSpotting,
+  }),
+]);
+
+export type RackSettingsInput = z.infer<typeof rackSettingsSchema>;

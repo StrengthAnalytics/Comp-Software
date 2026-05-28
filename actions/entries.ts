@@ -14,8 +14,10 @@ import {
   createEntrySchema,
   entryUpdateSchema,
   lifterInputSchema,
+  rackSettingsSchema,
   weighInSchema,
   type EntryUpdateInput,
+  type RackSettingsInput,
   type WeighInInput,
 } from '@/types/entry';
 import { assignFlightSchema } from '@/types/flight';
@@ -386,6 +388,56 @@ export async function assignEntryWeightClassAction(input: {
     if (error) {
       Sentry.captureException(error);
       return fail('Could not change the weight class. Please try again.');
+    }
+
+    return ok();
+  });
+}
+
+// Updates one lift's rack settings on an entry (squat: rack height + setting; bench: rack height +
+// safety height + spotting). The run screen fires this so the head table can correct rack details
+// live without leaving the scoresheet. Narrow by design — like assignEntryWeightClassAction — so it
+// writes only the chosen lift's rack columns and cannot clobber weigh-in or registration data. Not
+// gated on comp status: rack settings are setup-side data, matching the other setup writes
+// (ARCHITECTURE.md §7).
+export async function updateEntryRackSettingsAction(input: RackSettingsInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('updateEntryRackSettings', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = rackSettingsSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+
+    const { data: entry, error: entryError } = await supabase
+      .from('entries')
+      .select('competition_id')
+      .eq('id', parsed.data.entryId)
+      .maybeSingle();
+    if (entryError) {
+      Sentry.captureException(entryError);
+      return fail('Could not save the rack settings. Please try again.');
+    }
+    if (!entry || entry.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that entry.');
+    }
+
+    const update =
+      parsed.data.lift === 'squat'
+        ? { rack_height_squat: parsed.data.rackHeightSquat, squat_rack_setting: parsed.data.squatRackSetting }
+        : {
+            rack_height_bench: parsed.data.rackHeightBench,
+            bench_safety_height: parsed.data.benchSafetyHeight,
+            bench_spotting: parsed.data.benchSpotting,
+          };
+
+    const { error } = await supabase.from('entries').update(update).eq('id', parsed.data.entryId);
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not save the rack settings. Please try again.');
     }
 
     return ok();
