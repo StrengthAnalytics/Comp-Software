@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { assignEntryWeightClassAction, weighInAction } from '@/actions/entries';
@@ -961,9 +962,18 @@ function WeighInPrintSheet({
     () => new Map(weightClasses.map((weightClass) => [weightClass.id, weightClass.name])),
     [weightClasses],
   );
+  // Portal to <body> so the print rule (which display:none's body's other children) leaves the sheet
+  // standing instead of hiding it along with the app chrome it would otherwise nest inside. Mount
+  // guard: portals need the client DOM, absent during server render.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const totalLifters = groups.reduce((sum, group) => sum + group.entries.length, 0);
 
-  return (
+  if (!mounted) {
+    return null;
+  }
+
+  return createPortal(
     <div className="weigh-in-print-sheet hidden text-neutral-900 print:block">
       <div className="mb-4 flex items-end justify-between gap-6 border-b border-neutral-500 pb-2">
         <div>
@@ -989,7 +999,8 @@ function WeighInPrintSheet({
           />
         ))
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

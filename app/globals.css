@@ -1,21 +1,16 @@
 @import "tailwindcss";
 
-/* Weigh-in backup sheet: when printing, hide the whole app and show only the sheet, laid out from
-   the page origin so the (hidden but still-present) chrome doesn't offset it. */
+/* Weigh-in backup sheet: when printing, drop the app chrome from the flow entirely (display:none,
+   not just hidden) so it leaves no trailing blank pages, and show only the sheet. Scoped with :has so
+   every other page still prints normally; the sheet is portalled to <body> so this rule (which hides
+   body's other children) leaves it standing. */
 @media print {
-  body * {
-    visibility: hidden;
-  }
-
-  .weigh-in-print-sheet,
-  .weigh-in-print-sheet * {
-    visibility: visible;
+  body:has(.weigh-in-print-sheet) > *:not(.weigh-in-print-sheet) {
+    display: none !important;
   }
 
   .weigh-in-print-sheet {
-    position: absolute;
-    inset: 0;
-    width: 100%;
+    display: block !important;
   }
 
   @page {
