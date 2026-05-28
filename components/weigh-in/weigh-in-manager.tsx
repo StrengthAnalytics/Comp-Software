@@ -69,6 +69,10 @@ export type WeightClassOption = WeightClassBounds & { gender: Gender };
 export type WeighInSessionOption = { id: string; name: string };
 
 type ViewMode = 'cards' | 'table';
+// How much of each lifter to show. 'simple' is bodyweight + openers only; 'full' adds the rack/bench
+// settings. This is a display choice only — it never changes what is saved, so hidden rack values are
+// retained and reappear when switched back to full.
+type DetailMode = 'simple' | 'full';
 
 const INPUT_BASE = 'rounded-md border px-3 py-2 text-sm text-neutral-900 focus:outline-none';
 const INPUT_CLASS = `${INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
@@ -85,10 +89,12 @@ const GHOST_BUTTON =
 const TAB_BASE = 'rounded-md px-3 py-2 text-sm font-medium';
 
 // Compact controls for the dense table view (the column header carries the label, so cells are bare).
-const CELL_INPUT_BASE = 'w-24 rounded border px-2 py-1 text-sm text-neutral-900 focus:outline-none';
+// Values are centred in their box and the box is centred in the cell, so the numbers line up down a
+// column.
+const CELL_INPUT_BASE = 'mx-auto block w-24 rounded border px-2 py-1 text-center text-sm text-neutral-900 focus:outline-none';
 const CELL_INPUT = `${CELL_INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
 const CELL_INPUT_REQUIRED = `${CELL_INPUT_BASE} border-red-400 bg-red-50 focus:border-red-500`;
-const CELL_SELECT = 'w-full rounded border border-neutral-300 px-2 py-1 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+const CELL_SELECT = 'w-full rounded border border-neutral-300 px-2 py-1 text-center text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const CELL_PRIMARY =
   'rounded bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
 // Two-row sticky header: the group-label bar pins at the top, the column headers pin just below it.
@@ -108,6 +114,7 @@ const PRINT_BLANK = 'border border-neutral-400 px-2 py-3';
 
 const VIEW_STORAGE_KEY = 'comp-software:weigh-in:view';
 const LAYOUT_STORAGE_KEY = 'comp-software:weigh-in:layout';
+const DETAIL_STORAGE_KEY = 'comp-software:weigh-in:detail';
 
 // Debounce between the last keystroke and an autosave fire. Long enough not to save every digit of a
 // weight mid-typing, short enough that walking away from a field persists it almost immediately.
@@ -518,7 +525,7 @@ function NumberField({
         onBlur={onBlur}
         aria-required={required || undefined}
         aria-invalid={invalid || undefined}
-        className={invalid ? INPUT_REQUIRED_CLASS : INPUT_CLASS}
+        className={`${invalid ? INPUT_REQUIRED_CLASS : INPUT_CLASS} text-center`}
       />
     </label>
   );
@@ -529,12 +536,14 @@ function WeighInCard({
   entry,
   shownLifts,
   showWeightClass,
+  showRacks,
   weightClasses,
 }: {
   competitionId: string;
   entry: WeighInEntry;
   shownLifts: Lifts;
   showWeightClass: boolean;
+  showRacks: boolean;
   weightClasses: WeightClassOption[];
 }) {
   const [manuallyExpanded, setManuallyExpanded] = useState(false);
@@ -657,7 +666,7 @@ function WeighInCard({
           />
         ) : null}
 
-        {shownLifts.squat ? (
+        {showRacks && shownLifts.squat ? (
           <NumberField
             label="Squat rack height"
             value={form.rackSquat}
@@ -666,7 +675,7 @@ function WeighInCard({
             step="1"
           />
         ) : null}
-        {shownLifts.squat ? (
+        {showRacks && shownLifts.squat ? (
           <OptionalSelectField
             label="Squat rack setting"
             value={form.squatSetting}
@@ -677,7 +686,7 @@ function WeighInCard({
             selectClassName={INPUT_CLASS}
           />
         ) : null}
-        {shownLifts.bench ? (
+        {showRacks && shownLifts.bench ? (
           <NumberField
             label="Bench height"
             value={form.rackBench}
@@ -686,7 +695,7 @@ function WeighInCard({
             step="1"
           />
         ) : null}
-        {shownLifts.bench ? (
+        {showRacks && shownLifts.bench ? (
           <NumberField
             label="Bench safety height"
             value={form.benchSafety}
@@ -695,7 +704,7 @@ function WeighInCard({
             step="1"
           />
         ) : null}
-        {shownLifts.bench ? (
+        {showRacks && shownLifts.bench ? (
           <OptionalSelectField
             label="Bench spotting"
             value={form.benchSpotting}
@@ -794,12 +803,14 @@ function WeighInRow({
   entry,
   shownLifts,
   showWeightClass,
+  showRacks,
   weightClasses,
 }: {
   competitionId: string;
   entry: WeighInEntry;
   shownLifts: Lifts;
   showWeightClass: boolean;
+  showRacks: boolean;
   weightClasses: WeightClassOption[];
 }) {
   const form = useWeighInForm({ competitionId, entry, shownLifts, showWeightClass, weightClasses });
@@ -886,7 +897,7 @@ function WeighInRow({
         </td>
       ) : null}
 
-      {shownLifts.squat ? (
+      {showRacks && shownLifts.squat ? (
         <td className={TABLE_TD}>
           <CellNumber
             label="Squat rack height"
@@ -897,7 +908,7 @@ function WeighInRow({
           />
         </td>
       ) : null}
-      {shownLifts.squat ? (
+      {showRacks && shownLifts.squat ? (
         <td className={TABLE_TD}>
           <OptionalSelectField
             label="Squat rack setting"
@@ -911,7 +922,7 @@ function WeighInRow({
           />
         </td>
       ) : null}
-      {shownLifts.bench ? (
+      {showRacks && shownLifts.bench ? (
         <td className={TABLE_TD}>
           <CellNumber
             label="Bench height"
@@ -922,7 +933,7 @@ function WeighInRow({
           />
         </td>
       ) : null}
-      {shownLifts.bench ? (
+      {showRacks && shownLifts.bench ? (
         <td className={TABLE_TD}>
           <CellNumber
             label="Bench safety height"
@@ -933,7 +944,7 @@ function WeighInRow({
           />
         </td>
       ) : null}
-      {shownLifts.bench ? (
+      {showRacks && shownLifts.bench ? (
         <td className={TABLE_TD}>
           <OptionalSelectField
             label="Bench spotting"
@@ -996,6 +1007,7 @@ function WeighInTable({
   entries,
   shownLifts,
   showWeightClass,
+  showRacks,
   weightClasses,
 }: {
   label: string;
@@ -1003,6 +1015,7 @@ function WeighInTable({
   entries: WeighInEntry[];
   shownLifts: Lifts;
   showWeightClass: boolean;
+  showRacks: boolean;
   weightClasses: WeightClassOption[];
 }) {
   return (
@@ -1037,27 +1050,27 @@ function WeighInTable({
                 DL open
               </th>
             ) : null}
-            {shownLifts.squat ? (
+            {showRacks && shownLifts.squat ? (
               <th scope="col" className={TABLE_TH}>
                 Squat rack
               </th>
             ) : null}
-            {shownLifts.squat ? (
+            {showRacks && shownLifts.squat ? (
               <th scope="col" className={TABLE_TH}>
                 Rack set
               </th>
             ) : null}
-            {shownLifts.bench ? (
+            {showRacks && shownLifts.bench ? (
               <th scope="col" className={TABLE_TH}>
                 Bench ht
               </th>
             ) : null}
-            {shownLifts.bench ? (
+            {showRacks && shownLifts.bench ? (
               <th scope="col" className={TABLE_TH}>
                 Safety ht
               </th>
             ) : null}
-            {shownLifts.bench ? (
+            {showRacks && shownLifts.bench ? (
               <th scope="col" className={TABLE_TH}>
                 Spotting
               </th>
@@ -1078,6 +1091,7 @@ function WeighInTable({
               entry={entry}
               shownLifts={shownLifts}
               showWeightClass={showWeightClass}
+              showRacks={showRacks}
               weightClasses={weightClasses}
             />
           ))}
@@ -1242,8 +1256,11 @@ export function WeighInManager({
   const [query, setQuery] = useState('');
   const [storedView, setStoredView] = usePersistentString(VIEW_STORAGE_KEY, 'cards');
   const [storedLayout, setStoredLayout] = usePersistentString(LAYOUT_STORAGE_KEY, 'normal');
+  const [storedDetail, setStoredDetail] = usePersistentString(DETAIL_STORAGE_KEY, 'full');
   const view: ViewMode = storedView === 'table' ? 'table' : 'cards';
   const fullScreen = storedLayout === 'full';
+  const detail: DetailMode = storedDetail === 'simple' ? 'simple' : 'full';
+  const showRacks = detail === 'full';
 
   const online = useOnline();
   // Each row reports its non-clean save state here; the page-level indicator rolls them up so the
@@ -1351,21 +1368,40 @@ export function WeighInManager({
     <div className={fullScreen ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex rounded-md border border-neutral-300 p-0.5" role="group" aria-label="Layout view">
-            {(['cards', 'table'] as const).map((mode) => {
-              const active = view === mode;
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setStoredView(mode)}
-                  aria-pressed={active}
-                  className={`${TAB_BASE} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
-                >
-                  {mode === 'cards' ? 'Cards' : 'Table'}
-                </button>
-              );
-            })}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-md border border-neutral-300 p-0.5" role="group" aria-label="Layout view">
+              {(['cards', 'table'] as const).map((mode) => {
+                const active = view === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setStoredView(mode)}
+                    aria-pressed={active}
+                    className={`${TAB_BASE} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
+                  >
+                    {mode === 'cards' ? 'Cards' : 'Table'}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="inline-flex rounded-md border border-neutral-300 p-0.5" role="group" aria-label="Detail level">
+              {(['simple', 'full'] as const).map((mode) => {
+                const active = detail === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setStoredDetail(mode)}
+                    aria-pressed={active}
+                    title={mode === 'simple' ? 'Bodyweight and openers only' : 'Include rack and bench settings'}
+                    className={`${TAB_BASE} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
+                  >
+                    {mode === 'simple' ? 'Simple' : 'Full'}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div
             role="status"
@@ -1449,6 +1485,7 @@ export function WeighInManager({
                 entries={ordered}
                 shownLifts={groupLifts}
                 showWeightClass={!isTeamCompetition}
+                showRacks={showRacks}
                 weightClasses={weightClasses}
               />
             );
@@ -1465,6 +1502,7 @@ export function WeighInManager({
                     entry={entry}
                     shownLifts={groupLifts}
                     showWeightClass={!isTeamCompetition}
+                    showRacks={showRacks}
                     weightClasses={weightClasses}
                   />
                 ))}
