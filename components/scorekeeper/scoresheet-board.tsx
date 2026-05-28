@@ -76,9 +76,12 @@ type ScoresheetBoardProps = {
 const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => index + 1);
 
 const GHOST_BUTTON = 'rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const HEAD = 'border border-neutral-300 bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600';
-const CELL = 'border border-neutral-200 px-2 py-1 align-middle';
-const CELL_INPUT = 'w-14 rounded border border-neutral-300 px-1 py-0.5 text-center text-sm tabular-nums text-neutral-900 focus:border-neutral-500 focus:outline-none';
+const HEAD = 'border-[1.5px] border-black bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600';
+const CELL = 'border-[1.5px] border-black px-2 py-1 align-middle';
+// Attempt cells drop their inner padding so the weight button can fill the whole square as one large
+// touch target; the button carries its own padding.
+const CELL_ATTEMPT = 'border-[1.5px] border-black p-1 align-middle';
+const CELL_INPUT = 'min-h-[2.75rem] w-full rounded border border-neutral-500 px-1 text-center text-base tabular-nums text-neutral-900 focus:outline-none';
 
 function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {
@@ -756,7 +759,7 @@ function FragmentCells({
         const isCurrent =
           current?.entryId === entry.id && current.lift === lift && current.attemptNumber === attemptNumber;
         return (
-          <td key={`${entry.id}-${lift}-${attemptNumber}`} className={`text-center ${CELL} ${active ? cellTint(attempt, isCurrent) : ''}`}>
+          <td key={`${entry.id}-${lift}-${attemptNumber}`} className={`text-center ${CELL_ATTEMPT} ${active ? cellTint(attempt, isCurrent) : ''}`}>
             {active ? (
               <AttemptCell
                 entry={entry}
@@ -831,7 +834,7 @@ function AttemptCell({
   };
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex h-full flex-col gap-1">
       {editing ? (
         <input
           autoFocus
@@ -852,17 +855,18 @@ function AttemptCell({
           className={CELL_INPUT}
         />
       ) : (
+        // The weight fills the whole cell so tapping anywhere in the square opens the editor.
         <button
           type="button"
           onClick={startEdit}
           aria-label={`Set weight for ${entry.lifterName}, ${LIFT_LABELS[lift]} attempt ${attemptNumber}`}
-          className={declaredAttempt ? 'font-semibold tabular-nums text-neutral-900' : 'tabular-nums text-neutral-400'}
+          className={`flex min-h-[2.75rem] w-full flex-1 items-center justify-center rounded text-base tabular-nums hover:bg-black/5 ${declaredAttempt ? 'font-semibold text-neutral-900' : 'text-neutral-400'}`}
         >
           {declaredAttempt ? declaredAttempt.weightKg : '–'}
         </button>
       )}
       {declaredAttempt ? (
-        <div className="flex justify-center gap-1">
+        <div className="flex justify-center gap-1.5">
           {/* Disabled until the optimistic weight write returns a real id — otherwise a result write
               would be sent with the temp placeholder id and rejected. */}
           <button
@@ -873,8 +877,8 @@ function AttemptCell({
             onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'good_lift' ? 'pending' : 'good_lift')}
             className={
               declaredAttempt.result === 'good_lift'
-                ? 'rounded bg-green-600 px-2 py-0.5 text-xs font-bold text-white disabled:opacity-50'
-                : 'rounded border border-green-500 px-2 py-0.5 text-xs font-bold text-green-700 hover:bg-green-50 disabled:opacity-50'
+                ? 'rounded bg-green-600 px-3 py-1 text-sm font-bold text-white disabled:opacity-50'
+                : 'rounded border border-green-500 px-3 py-1 text-sm font-bold text-green-700 hover:bg-green-50 disabled:opacity-50'
             }
           >
             ✓
@@ -887,8 +891,8 @@ function AttemptCell({
             onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'no_lift' ? 'pending' : 'no_lift')}
             className={
               declaredAttempt.result === 'no_lift'
-                ? 'rounded bg-red-600 px-2 py-0.5 text-xs font-bold text-white disabled:opacity-50'
-                : 'rounded border border-red-500 px-2 py-0.5 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-50'
+                ? 'rounded bg-red-600 px-3 py-1 text-sm font-bold text-white disabled:opacity-50'
+                : 'rounded border border-red-500 px-3 py-1 text-sm font-bold text-red-700 hover:bg-red-50 disabled:opacity-50'
             }
           >
             ✗
