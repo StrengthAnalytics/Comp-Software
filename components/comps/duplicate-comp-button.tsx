@@ -30,7 +30,11 @@ export function DuplicateCompButton({ competitionId, name }: { competitionId: st
   if (!confirming) {
     return (
       <div className="flex items-center justify-end gap-2">
-        {error ? <span className="text-xs text-red-600">{error}</span> : null}
+        {error ? (
+          <span role="alert" className="text-xs text-red-600">
+            {error}
+          </span>
+        ) : null}
         <button
           type="button"
           onClick={() => setConfirming(true)}

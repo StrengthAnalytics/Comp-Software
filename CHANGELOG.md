@@ -15,6 +15,7 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 ## [Unreleased]
 
 ### Fixed
+- Pre-merge review fixes: the "Duplicate" button's failure message on the comps list now carries `role="alert"` so it's announced to assistive tech (matching the rack and delete error messages); ARCHITECTURE.md §7 now records that whole-competition deletion — not just bulk-entrant deletion — is blocked once a comp is `completed`, while duplicating (a read-only copy of the source) stays allowed at any status.
 - Code-review fixes on the duplicate/delete-competition and run-screen rack work:
   - `duplicateCompetitionAction` now captures the rollback-`delete` error to Sentry when a mid-copy failure's cleanup itself fails, instead of swallowing it — so a failed duplicate can't leave an orphan partial comp in the list with no trace.
   - Extracted the duplicated `parseOptionalNumber` / `numberToInput` input helpers to `lib/number-input.ts` (was copied across the entries, weigh-in and run-screen forms) and promoted the `OptionalSelectField` enum-select to a shared `components/optional-select-field.tsx` (was re-implemented in three places, including the run-screen rack cell), with class-name overrides for the denser grid layout.
