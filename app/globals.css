@@ -12,9 +12,25 @@
   .weigh-in-print-sheet {
     display: block !important;
   }
+}
 
-  @page {
-    size: landscape;
-    margin: 12mm;
-  }
+/* Orientation follows the Simple/Full toggle: the narrow Simple sheet (bodyweight + openers) prints
+   portrait, the wide Full sheet (with rack/bench columns) prints landscape. Named pages let the React
+   component pick the orientation via a class, since @page size can't be set from a prop. */
+@page weigh-in-portrait {
+  size: portrait;
+  margin: 12mm;
+}
+
+@page weigh-in-landscape {
+  size: landscape;
+  margin: 12mm;
+}
+
+.weigh-in-print-portrait {
+  page: weigh-in-portrait;
+}
+
+.weigh-in-print-landscape {
+  page: weigh-in-landscape;
 }

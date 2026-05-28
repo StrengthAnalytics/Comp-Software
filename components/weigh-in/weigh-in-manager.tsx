@@ -1110,12 +1110,14 @@ function WeighInPrintTable({
   entries,
   shownLifts,
   showWeightClass,
+  showRacks,
   classNameById,
 }: {
   label: string;
   entries: WeighInEntry[];
   shownLifts: Lifts;
   showWeightClass: boolean;
+  showRacks: boolean;
   classNameById: Map<string, string>;
 }) {
   return (
@@ -1133,11 +1135,11 @@ function WeighInPrintTable({
             {shownLifts.squat ? <th className={PRINT_TH}>Squat open</th> : null}
             {shownLifts.bench ? <th className={PRINT_TH}>Bench open</th> : null}
             {shownLifts.deadlift ? <th className={PRINT_TH}>DL open</th> : null}
-            {shownLifts.squat ? <th className={PRINT_TH}>Sq rack ht</th> : null}
-            {shownLifts.squat ? <th className={PRINT_TH}>Sq rack set</th> : null}
-            {shownLifts.bench ? <th className={PRINT_TH}>Bench ht</th> : null}
-            {shownLifts.bench ? <th className={PRINT_TH}>Safety ht</th> : null}
-            {shownLifts.bench ? <th className={PRINT_TH}>Spotting</th> : null}
+            {showRacks && shownLifts.squat ? <th className={PRINT_TH}>Sq rack ht</th> : null}
+            {showRacks && shownLifts.squat ? <th className={PRINT_TH}>Sq rack set</th> : null}
+            {showRacks && shownLifts.bench ? <th className={PRINT_TH}>Bench ht</th> : null}
+            {showRacks && shownLifts.bench ? <th className={PRINT_TH}>Safety ht</th> : null}
+            {showRacks && shownLifts.bench ? <th className={PRINT_TH}>Spotting</th> : null}
             <th className={PRINT_TH}>Weighed in</th>
           </tr>
         </thead>
@@ -1157,11 +1159,11 @@ function WeighInPrintTable({
               {shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
               {shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
               {shownLifts.deadlift ? <td className={PRINT_BLANK} /> : null}
-              {shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
-              {shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
-              {shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
-              {shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
-              {shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
+              {showRacks && shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
+              {showRacks && shownLifts.squat ? <td className={PRINT_BLANK} /> : null}
+              {showRacks && shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
+              {showRacks && shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
+              {showRacks && shownLifts.bench ? <td className={PRINT_BLANK} /> : null}
               <td className={PRINT_BLANK} />
             </tr>
           ))}
@@ -1173,7 +1175,9 @@ function WeighInPrintTable({
 
 // Print-only (hidden on screen) backup sheet for the selected session, ordered the same way lifters
 // are called to the scale. Capture fields are left blank for hand-recording; name/flight/lot/class are
-// pre-printed.
+// pre-printed. Mirrors the Simple/Full toggle: Simple prints bodyweight + openers (portrait), Full adds
+// the rack/bench columns (landscape) — the orientation is set via the named-@page classes in
+// globals.css.
 function WeighInPrintSheet({
   compName,
   sessionName,
@@ -1181,6 +1185,7 @@ function WeighInPrintSheet({
   lifts,
   groups,
   weightClasses,
+  showRacks,
 }: {
   compName: string;
   sessionName: string;
@@ -1188,6 +1193,7 @@ function WeighInPrintSheet({
   lifts: Lifts;
   groups: WeighInGroup<WeighInEntry>[];
   weightClasses: WeightClassOption[];
+  showRacks: boolean;
 }) {
   const classNameById = useMemo(
     () => new Map(weightClasses.map((weightClass) => [weightClass.id, weightClass.name])),
@@ -1205,7 +1211,11 @@ function WeighInPrintSheet({
   }
 
   return createPortal(
-    <div className="weigh-in-print-sheet hidden text-neutral-900 print:block">
+    <div
+      className={`weigh-in-print-sheet hidden text-neutral-900 print:block ${
+        showRacks ? 'weigh-in-print-landscape' : 'weigh-in-print-portrait'
+      }`}
+    >
       <div className="mb-4 flex items-end justify-between gap-6 border-b border-neutral-500 pb-2">
         <div>
           <h1 className="text-lg font-bold">{compName}</h1>
@@ -1226,6 +1236,7 @@ function WeighInPrintSheet({
             entries={group.entries}
             shownLifts={liftsForGroup(group, lifts, isTeamComp)}
             showWeightClass={!isTeamComp}
+            showRacks={showRacks}
             classNameById={classNameById}
           />
         ))
@@ -1535,6 +1546,7 @@ export function WeighInManager({
         lifts={lifts}
         groups={printGroups}
         weightClasses={weightClasses}
+        showRacks={showRacks}
       />
     </WeighInSaveContext.Provider>
   );
