@@ -1,1 +1,43 @@
 @import "tailwindcss";
+
+/* Weigh-in backup sheet: when printing, drop the app chrome from the flow entirely (display:none,
+   not just hidden) so it leaves no trailing blank pages, and show only the sheet. Scoped with :has so
+   every other page still prints normally; the sheet is portalled to <body> so this rule (which hides
+   body's other children) leaves it standing. */
+@media print {
+  body:has(.weigh-in-print-sheet) > *:not(.weigh-in-print-sheet) {
+    display: none !important;
+  }
+
+  .weigh-in-print-sheet {
+    display: block !important;
+  }
+
+  /* Orientation follows the Simple/Full toggle: the narrow Simple sheet (bodyweight + openers) prints
+     portrait, the wide Full sheet (with rack/bench columns) prints landscape. The named page is set on
+     the document root (via :has on the sheet's orientation class) rather than on the sheet element
+     itself — applying a named page to a descendant box makes Chromium emit a spurious trailing blank
+     page, whereas setting it on the root keeps the whole printout in one page context.
+
+     Browser support: the named-page `page` property is implemented in Chromium (Chrome/Edge — the
+     operators' and OBS browser) and recent Safari. Firefox ignores it, so there the columns are still
+     correct but the auto-orientation falls back to the print dialog's default (the operator can flip
+     it manually). Acceptable given the Chromium-first deployment. */
+  html:has(.weigh-in-print-portrait) {
+    page: weigh-in-portrait;
+  }
+
+  html:has(.weigh-in-print-landscape) {
+    page: weigh-in-landscape;
+  }
+}
+
+@page weigh-in-portrait {
+  size: portrait;
+  margin: 12mm;
+}
+
+@page weigh-in-landscape {
+  size: landscape;
+  margin: 12mm;
+}
