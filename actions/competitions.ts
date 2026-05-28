@@ -432,8 +432,12 @@ export async function duplicateCompetitionAction(input: { competitionId: string 
     const copyError = await copyCompetitionChildren(supabase, sourceId, newCompId);
     if (copyError) {
       // Roll back: deleting the new comp cascades to anything already copied, so a failed duplicate
-      // leaves nothing half-built behind.
-      await supabase.from('competitions').delete().eq('id', newCompId);
+      // leaves nothing half-built behind. If the cleanup itself fails, capture it — otherwise an
+      // orphan partial comp would sit in the list with no trace of why.
+      const { error: cleanupError } = await supabase.from('competitions').delete().eq('id', newCompId);
+      if (cleanupError) {
+        Sentry.captureException(cleanupError);
+      }
       return copyError;
     }
 
@@ -444,9 +448,11 @@ export async function duplicateCompetitionAction(input: { competitionId: string 
 
 // Permanently deletes a competition and everything that hangs off it — divisions, weight classes,
 // platforms, teams, sessions, flights, entries, attempts and referee decisions all cascade away.
-// Lifters are a shared table and are kept. Allowed at any status; the robust type-to-confirm in the UI
-// (type the comp name) is the safeguard against accidents. adminGuard()-gated and Sentry-wrapped. On
-// success the operator is returned to the comps list, since the edit page they came from is now gone.
+// Lifters are a shared table and are kept. Blocked once a comp is `completed`: that cascade would
+// destroy the meet's final record, the one deliberate status guard on the setup side (ARCHITECTURE.md
+// §7, matching deleteAllEntriesAction). For draft/published/active comps the robust type-to-confirm in
+// the UI (type the comp name) is the safeguard against accidents. adminGuard()-gated and Sentry-wrapped.
+// On success the operator is returned to the comps list, since the edit page they came from is now gone.
 export async function deleteCompetitionAction(input: { competitionId: string }): Promise<ActionResult> {
   return Sentry.withServerActionInstrumentation('deleteCompetition', async () => {
     const guard = await adminGuard();
@@ -458,6 +464,25 @@ export async function deleteCompetitionAction(input: { competitionId: string }):
     }
 
     const supabase = await createClient();
+
+    const { data: comp, error: compError } = await supabase
+      .from('competitions')
+      .select('status')
+      .eq('id', parsed.data.competitionId)
+      .maybeSingle();
+    if (compError) {
+      Sentry.captureException(compError);
+      return fail('Could not delete the competition. Please try again.');
+    }
+    if (!comp) {
+      return fail('Could not find that competition.');
+    }
+    if (comp.status === 'completed') {
+      return fail(
+        'This competition is completed, so it cannot be deleted — that would destroy its final record. Change the status back to active or draft first if you genuinely need to remove it.',
+      );
+    }
+
     const { error } = await supabase.from('competitions').delete().eq('id', parsed.data.competitionId);
     if (error) {
       Sentry.captureException(error);

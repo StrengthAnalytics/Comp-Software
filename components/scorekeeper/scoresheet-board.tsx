@@ -26,6 +26,8 @@ import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription'
 import { useFlightsSubscription } from '@/lib/realtime/use-flights-subscription';
 import { setAttemptResultAction, setAttemptWeightAction } from '@/actions/attempts';
 import { updateEntryRackSettingsAction } from '@/actions/entries';
+import { OptionalSelectField } from '@/components/optional-select-field';
+import { parseOptionalNumber } from '@/lib/number-input';
 import type { ActionResult } from '@/types/action-result';
 
 type AttemptRow = Database['public']['Tables']['attempts']['Row'];
@@ -120,17 +122,6 @@ type RackPatch =
       benchSafetyHeight: number | null;
       benchSpotting: BenchSpotting | null;
     };
-
-// Blank → null (clears the field); anything non-numeric also falls to null. The Zod schema enforces
-// positive-integer hole numbers, so an invalid value is rejected server-side and rolled back.
-function parseRackInput(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === '') {
-    return null;
-  }
-  const parsed = Number(trimmed);
-  return Number.isNaN(parsed) ? null : parsed;
-}
 
 function rackText(entry: BoardEntry, lift: LiftType): string {
   if (lift === 'squat') {
@@ -560,23 +551,9 @@ export function ScoresheetBoard({
       }),
     );
     startTransition(async () => {
-      const result =
-        patch.lift === 'squat'
-          ? await updateEntryRackSettingsAction({
-              entryId: entry.id,
-              competitionId,
-              lift: 'squat',
-              rackHeightSquat: patch.rackHeightSquat,
-              squatRackSetting: patch.squatRackSetting,
-            })
-          : await updateEntryRackSettingsAction({
-              entryId: entry.id,
-              competitionId,
-              lift: 'bench',
-              rackHeightBench: patch.rackHeightBench,
-              benchSafetyHeight: patch.benchSafetyHeight,
-              benchSpotting: patch.benchSpotting,
-            });
+      // RackPatch is exactly the action payload minus the ids, so it spreads straight in — no per-lift
+      // branch needed here (the optimistic merge above still branches, to map onto BoardEntry's fields).
+      const result = await updateEntryRackSettingsAction({ entryId: entry.id, competitionId, ...patch });
       if (result.status === 'error') {
         setEntries((current) => current.map((row) => (row.id === previous.id ? previous : row)));
         setError(readError(result));
@@ -1032,14 +1009,14 @@ function RackCell({
     if (lift === 'squat') {
       onSetRack(entry, {
         lift: 'squat',
-        rackHeightSquat: parseRackInput(height),
+        rackHeightSquat: parseOptionalNumber(height),
         squatRackSetting: squatSetting === '' ? null : squatSetting,
       });
     } else {
       onSetRack(entry, {
         lift: 'bench',
-        rackHeightBench: parseRackInput(height),
-        benchSafetyHeight: parseRackInput(safety),
+        rackHeightBench: parseOptionalNumber(height),
+        benchSafetyHeight: parseOptionalNumber(safety),
         benchSpotting: spotting === '' ? null : spotting,
       });
     }
@@ -1081,22 +1058,16 @@ function RackCell({
         />
       </label>
       {lift === 'squat' ? (
-        <label className="flex flex-col gap-0.5">
-          <span className={RACK_FIELD_LABEL}>Setting</span>
-          <select
-            value={squatSetting}
-            // The select only renders SQUAT_RACK_SETTINGS plus the blank value, so this narrowing is exact.
-            onChange={(event) => setSquatSetting(event.target.value as SquatRackSetting | '')}
-            className={RACK_FIELD_SELECT}
-          >
-            <option value="">—</option>
-            {SQUAT_RACK_SETTINGS.map((option) => (
-              <option key={option} value={option}>
-                {SQUAT_RACK_SETTING_LABELS[option]}
-              </option>
-            ))}
-          </select>
-        </label>
+        <OptionalSelectField
+          label="Setting"
+          value={squatSetting}
+          onChange={setSquatSetting}
+          options={SQUAT_RACK_SETTINGS}
+          labels={SQUAT_RACK_SETTING_LABELS}
+          wrapperClassName="flex flex-col gap-0.5"
+          labelClassName={RACK_FIELD_LABEL}
+          selectClassName={RACK_FIELD_SELECT}
+        />
       ) : (
         <>
           <label className="flex flex-col gap-0.5">
@@ -1117,22 +1088,16 @@ function RackCell({
               className={RACK_FIELD_INPUT}
             />
           </label>
-          <label className="flex flex-col gap-0.5">
-            <span className={RACK_FIELD_LABEL}>Spotting</span>
-            <select
-              value={spotting}
-              // The select only renders BENCH_SPOTTINGS plus the blank value, so this narrowing is exact.
-              onChange={(event) => setSpotting(event.target.value as BenchSpotting | '')}
-              className={RACK_FIELD_SELECT}
-            >
-              <option value="">—</option>
-              {BENCH_SPOTTINGS.map((option) => (
-                <option key={option} value={option}>
-                  {BENCH_SPOTTING_LABELS[option]}
-                </option>
-              ))}
-            </select>
-          </label>
+          <OptionalSelectField
+            label="Spotting"
+            value={spotting}
+            onChange={setSpotting}
+            options={BENCH_SPOTTINGS}
+            labels={BENCH_SPOTTING_LABELS}
+            wrapperClassName="flex flex-col gap-0.5"
+            labelClassName={RACK_FIELD_LABEL}
+            selectClassName={RACK_FIELD_SELECT}
+          />
         </>
       )}
       <div className="flex gap-1">

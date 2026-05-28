@@ -32,9 +32,24 @@ export function DeleteCompetition({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // A completed comp's final record is protected: deleting it would cascade away its results
+  // (ARCHITECTURE.md §7). The server enforces this too; the UI just explains it rather than offering
+  // a button that would always fail.
+  if (competitionStatus === 'completed') {
+    return (
+      <section className="rounded-lg border border-neutral-200 bg-white p-6">
+        <h2 className="text-lg font-semibold tracking-tight text-neutral-800">Danger zone</h2>
+        <p className="mt-1 text-sm text-neutral-600">
+          This competition is completed, so it can&rsquo;t be deleted — that would destroy its final record. Change the
+          status back to active or draft on the competition details above if you genuinely need to remove it.
+        </p>
+      </section>
+    );
+  }
+
   const confirmed = typed.trim() === competitionName.trim();
   const plural = entryCount === 1 ? '' : 's';
-  // A draft has no real results to lose; published/active/completed comps may, so flag it harder.
+  // A draft has no real results to lose; published/active comps may, so flag it harder.
   const hasLiveData = competitionStatus !== 'draft';
 
   function close() {

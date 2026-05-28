@@ -18,6 +18,8 @@ import {
   type Lifts,
   type SquatRackSetting,
 } from '@/lib/constants';
+import { OptionalSelectField } from '@/components/optional-select-field';
+import { numberToInput, parseOptionalNumber } from '@/lib/number-input';
 import { buildWeighInGroups, type WeighInGroup } from '@/lib/weigh-in/order';
 import {
   findWeightClassForBodyweight,
@@ -69,19 +71,6 @@ const PRIMARY_BUTTON =
 const GHOST_BUTTON =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
 const TAB_BASE = 'rounded-md px-3 py-2 text-sm font-medium';
-
-function parseOptionalNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (trimmed === '') {
-    return null;
-  }
-  const parsed = Number(trimmed);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function numberToInput(value: number | null): string {
-  return value === null ? '' : String(value);
-}
 
 function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {
@@ -158,40 +147,6 @@ function NumberField({
         aria-invalid={invalid || undefined}
         className={invalid ? INPUT_REQUIRED_CLASS : INPUT_CLASS}
       />
-    </label>
-  );
-}
-
-// A select for an optional enum value, with a blank "—" choice that maps to no selection.
-function OptionalSelectField<T extends string>({
-  label,
-  value,
-  onChange,
-  options,
-  labels,
-}: {
-  label: string;
-  value: T | '';
-  onChange: (value: T | '') => void;
-  options: readonly T[];
-  labels: Record<T, string>;
-}) {
-  return (
-    <label className={FIELD_CLASS}>
-      <span className={LABEL_CLASS}>{label}</span>
-      <select
-        value={value}
-        // The select only renders the given options plus the blank value, so this narrowing is exact.
-        onChange={(event) => onChange(event.target.value as T | '')}
-        className={INPUT_CLASS}
-      >
-        <option value="">—</option>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {labels[option]}
-          </option>
-        ))}
-      </select>
     </label>
   );
 }
@@ -426,6 +381,8 @@ function WeighInCard({
             onChange={setSquatSetting}
             options={SQUAT_RACK_SETTINGS}
             labels={SQUAT_RACK_SETTING_LABELS}
+            wrapperClassName={FIELD_CLASS}
+            selectClassName={INPUT_CLASS}
           />
         ) : null}
         {shownLifts.bench ? (
@@ -441,6 +398,8 @@ function WeighInCard({
             onChange={setBenchSpotting}
             options={BENCH_SPOTTINGS}
             labels={BENCH_SPOTTING_LABELS}
+            wrapperClassName={FIELD_CLASS}
+            selectClassName={INPUT_CLASS}
           />
         ) : null}
 
