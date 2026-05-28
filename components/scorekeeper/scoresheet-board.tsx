@@ -14,6 +14,7 @@ import {
 } from '@/lib/constants';
 import { bestGoodLift } from '@/lib/attempts/best-lift';
 import {
+  orderSessionRoster,
   selectPlatformPositions,
   type PlatformPositions,
   type RunningOrderFields,
@@ -346,13 +347,19 @@ function buildPlatformViews({
       continue;
     }
 
-    const roster = (rosterBySession.get(liveSession.id) ?? [])
-      .toSorted((a, b) =>
-        a.flight.sortOrder === b.flight.sortOrder
-          ? (a.entry.lotNumber ?? Number.POSITIVE_INFINITY) - (b.entry.lotNumber ?? Number.POSITIVE_INFINITY)
-          : a.flight.sortOrder - b.flight.sortOrder,
-      )
-      .map((item) => ({ entry: item.entry, flightName: item.flight.name }));
+    // Rows follow the running order of the round in progress (lightest bar first), re-sorting as each
+    // round, lift and flight advances — rather than a static flight-then-lot scoresheet.
+    const roster = orderSessionRoster(
+      (rosterBySession.get(liveSession.id) ?? []).map((item) => ({
+        entryId: item.entry.id,
+        flightId: item.flight.id,
+        flightSortOrder: item.flight.sortOrder,
+        lotNumber: item.entry.lotNumber,
+        entry: item.entry,
+        flightName: item.flight.name,
+      })),
+      rowsBySession.get(liveSession.id) ?? [],
+    ).map(({ entry, flightName }) => ({ entry, flightName }));
 
     views.push({
       key,
