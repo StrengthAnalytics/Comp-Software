@@ -175,16 +175,54 @@ describe('orderSessionRoster', () => {
   it('advances to the next lift once every round of the current lift is done', () => {
     const roster = [lifter('a', 1), lifter('b', 2), lifter('c', 3)];
     const attempts = [
-      // All squats resolved.
+      // All three squat rounds resolved for everyone.
       attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('a', 'squat', 2, 110, 'good_lift'),
+      attempt('a', 'squat', 3, 120, 'good_lift'),
       attempt('b', 'squat', 1, 120, 'good_lift'),
+      attempt('b', 'squat', 2, 130, 'good_lift'),
+      attempt('b', 'squat', 3, 140, 'good_lift'),
       attempt('c', 'squat', 1, 90, 'good_lift'),
-      // Bench openers in progress.
+      attempt('c', 'squat', 2, 100, 'good_lift'),
+      attempt('c', 'squat', 3, 110, 'good_lift'),
+      // Bench openers seeded, none lifted yet — order should now be by bench openers.
       attempt('a', 'bench', 1, 80, 'pending'),
       attempt('b', 'bench', 1, 100, 'pending'),
       attempt('c', 'bench', 1, 60, 'pending'),
     ];
     expect(ids(orderSessionRoster(roster, attempts))).toEqual(['c', 'a', 'b']);
+  });
+
+  it('holds the current lift through the gap before the next round is declared', () => {
+    const roster = [lifter('a', 1), lifter('b', 2), lifter('c', 3)];
+    const attempts = [
+      // Squat round 1 fully resolved; round 2 not declared yet.
+      attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('b', 'squat', 1, 120, 'good_lift'),
+      attempt('c', 'squat', 1, 90, 'good_lift'),
+      // Bench openers are seeded pending at weigh-in, but bench has not started.
+      attempt('a', 'bench', 1, 60, 'pending'),
+      attempt('b', 'bench', 1, 50, 'pending'),
+      attempt('c', 'bench', 1, 70, 'pending'),
+    ];
+    // Order holds in squat round-1 order (c, a, b), NOT bench-opener order (b, a, c).
+    expect(ids(orderSessionRoster(roster, attempts))).toEqual(['c', 'a', 'b']);
+  });
+
+  it('advances once the next lift has started, even if no third attempt was taken', () => {
+    const roster = [lifter('a', 1), lifter('b', 2)];
+    const attempts = [
+      // Squats stopped at round 2 (no third attempts) for both.
+      attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('a', 'squat', 2, 110, 'good_lift'),
+      attempt('b', 'squat', 1, 120, 'good_lift'),
+      attempt('b', 'squat', 2, 130, 'good_lift'),
+      // Bench has begun: a's opener is resolved, b's is pending.
+      attempt('a', 'bench', 1, 70, 'good_lift'),
+      attempt('b', 'bench', 1, 90, 'pending'),
+    ];
+    // Lead is on bench (it has started), ordered by bench opener: a (70) then b (90).
+    expect(ids(orderSessionRoster(roster, attempts))).toEqual(['a', 'b']);
   });
 
   it('keeps each flight together, flight A before flight B', () => {

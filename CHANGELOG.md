@@ -15,6 +15,9 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 ## [Unreleased]
 
 ### Fixed
+- Code-review fixes on the new live running order (`/run`):
+  - The roster no longer jumps to the next lift's order during the gap between rounds. Because every lift's opener is seeded pending at weigh-in, the lead-lift detection used to flip to bench the moment squat round 1 resolved before round 2 was declared; `leadRoundByFlight` now treats a lift as still in progress until its final round is reached or a later lift has actually started lifting, and holds the last round's order through the gap. Added regression tests for the gap and for advancing once the next lift starts.
+  - Scoresheet gridlines switched from `border-collapse` to a `border-separate` model (per-cell right/bottom borders, top on the header row, left on the frozen column) so the bold black lines stay attached to the sticky header and frozen lifter column when the table scrolls, instead of dropping off as collapsed borders do on sticky cells.
 - Pre-merge review fixes on the scorekeeper grid:
   - Re-saving a weigh-in no longer reverts a platform-side correction to a first attempt: editing attempt 1's weight on `/run` now writes back to the entry's opener column (`setAttemptWeightAction`), so the opener and attempt 1 stay in step and the weigh-in re-seed is a no-op rather than a clobber.
   - The ✓ / ✗ result buttons are disabled until an optimistically-declared attempt has its real id, so a fast click can no longer send a `temp:` placeholder id that the result action rejects.

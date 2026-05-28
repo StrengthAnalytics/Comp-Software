@@ -76,11 +76,15 @@ type ScoresheetBoardProps = {
 const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => index + 1);
 
 const GHOST_BUTTON = 'rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const HEAD = 'border-[1.5px] border-black bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600';
-const CELL = 'border-[1.5px] border-black px-2 py-1 align-middle';
+// Gridlines use a border-separate model — right+bottom on every cell, top on the header row, left on
+// the frozen first column — so the bold lines stay attached to the sticky header and frozen column when
+// the table scrolls. (With border-collapse the collapsed borders are owned by the table and drop off
+// the sticky cells on scroll.)
+const HEAD = 'border-b-[1.5px] border-r-[1.5px] border-t-[1.5px] border-black bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600';
+const CELL = 'border-b-[1.5px] border-r-[1.5px] border-black px-2 py-1 align-middle';
 // Attempt cells drop their inner padding so the weight button can fill the whole square as one large
 // touch target; the button carries its own padding.
-const CELL_ATTEMPT = 'border-[1.5px] border-black p-1 align-middle';
+const CELL_ATTEMPT = 'border-b-[1.5px] border-r-[1.5px] border-black p-1 align-middle';
 const CELL_INPUT = 'min-h-[2.75rem] w-full rounded border border-neutral-500 px-1 text-center text-base tabular-nums text-neutral-900 focus:outline-none';
 
 function readError(result: ActionResult<unknown>): string {
@@ -639,10 +643,10 @@ function PlatformPanel({
 
       {roster.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-max border-collapse text-sm">
+          <table className="w-full min-w-max border-separate border-spacing-0 text-sm">
             <thead className="sticky top-0 z-20">
               <tr>
-                <th scope="col" className={`sticky left-0 z-30 min-w-[11rem] text-left ${HEAD}`}>
+                <th scope="col" className={`sticky left-0 z-30 min-w-[11rem] border-l-[1.5px] text-left ${HEAD}`}>
                   Lifter
                 </th>
                 <th scope="col" className={`w-12 text-center ${HEAD}`}>
@@ -670,7 +674,7 @@ function PlatformPanel({
                 const total = entryTotal(entry);
                 return (
                   <tr key={entry.id}>
-                    <td className={`sticky left-0 z-10 whitespace-nowrap bg-white ${CELL}`}>
+                    <td className={`sticky left-0 z-10 whitespace-nowrap border-l-[1.5px] bg-white ${CELL}`}>
                     <span className="font-medium text-neutral-900">{entry.lifterName}</span>
                     <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                   </td>
