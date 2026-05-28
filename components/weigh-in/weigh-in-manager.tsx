@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { assignEntryWeightClassAction, weighInAction } from '@/actions/entries';
@@ -58,6 +58,8 @@ export type WeightClassOption = WeightClassBounds & { gender: Gender };
 
 export type WeighInSessionOption = { id: string; name: string };
 
+type ViewMode = 'cards' | 'table';
+
 const INPUT_BASE = 'rounded-md border px-3 py-2 text-sm text-neutral-900 focus:outline-none';
 const INPUT_CLASS = `${INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
 // Empty fields that must be filled before a lifter can be marked weighed-in (bodyweight, openers).
@@ -72,25 +74,34 @@ const GHOST_BUTTON =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
 const TAB_BASE = 'rounded-md px-3 py-2 text-sm font-medium';
 
+// Compact controls for the dense table view (the column header carries the label, so cells are bare).
+const CELL_INPUT_BASE = 'w-24 rounded border px-2 py-1 text-sm text-neutral-900 focus:outline-none';
+const CELL_INPUT = `${CELL_INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
+const CELL_INPUT_REQUIRED = `${CELL_INPUT_BASE} border-red-400 bg-red-50 focus:border-red-500`;
+const CELL_SELECT = 'w-full rounded border border-neutral-300 px-2 py-1 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+const CELL_PRIMARY =
+  'rounded bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
+const CELL_GHOST =
+  'rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
+// Two-row sticky header: the group-label bar pins at the top, the column headers pin just below it.
+// TABLE_TH's `top-9` must equal the label bar's `h-9` so the headers tuck directly under the label
+// rather than overlapping it. z-order: label (30) over column headers (20) over the frozen lifter
+// column (10), so each layer covers the scrolling cells beneath it.
+const TABLE_LABEL =
+  'sticky top-0 z-30 flex h-9 items-center bg-neutral-100 px-2 text-xs font-semibold uppercase tracking-wide text-neutral-500';
+const TABLE_TH =
+  'sticky top-9 z-20 border-b border-neutral-300 bg-neutral-100 px-2 py-2 text-left text-xs font-medium text-neutral-600 whitespace-nowrap';
+const TABLE_TD = 'border-b border-neutral-200 px-2 py-1.5 align-top';
+
+const VIEW_STORAGE_KEY = 'comp-software:weigh-in:view';
+const LAYOUT_STORAGE_KEY = 'comp-software:weigh-in:layout';
+
 function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {
     return '';
   }
   const firstField = result.fieldErrors ? Object.values(result.fieldErrors)[0] : undefined;
   return firstField?.[0] ?? result.message;
-}
-
-// A team member contests only their assigned lift, so only that opener (and its rack height) is
-// captured at the scale. Everyone else shows the comp's contested lifts.
-function liftsForEntry(entry: WeighInEntry, lifts: Lifts, isTeamComp: boolean): Lifts {
-  if (isTeamComp && entry.teamLift) {
-    return {
-      squat: entry.teamLift === 'squat',
-      bench: entry.teamLift === 'bench',
-      deadlift: entry.teamLift === 'deadlift',
-    };
-  }
-  return lifts;
 }
 
 // Compact opener readout for the collapsed (weighed-in) row, covering only the lifts this entry
@@ -115,6 +126,168 @@ function groupLabel(group: WeighInGroup<WeighInEntry>, isTeamComp: boolean): str
     return `${LIFT_LABELS[group.lift]} · ${sex}`;
   }
   return isTeamComp ? `No team role · ${sex}` : sex;
+}
+
+// Remembers a string preference in localStorage. The first paint uses the fallback (so server and
+// client markup match), then an effect snaps to the saved value on mount.
+function usePersistentString(key: string, fallback: string): readonly [string, (next: string) => void] {
+  const [value, setValue] = useState(fallback);
+  useEffect(() => {
+    const stored = globalThis.localStorage.getItem(key);
+    if (stored !== null) {
+      setValue(stored);
+    }
+  }, [key]);
+  const update = useCallback(
+    (next: string) => {
+      setValue(next);
+      globalThis.localStorage.setItem(key, next);
+    },
+    [key],
+  );
+  return [value, update];
+}
+
+// All the per-lifter weigh-in editing state, save logic and derived flags, shared verbatim by the
+// card and table-row layouts so both behave identically.
+function useWeighInForm({
+  competitionId,
+  entry,
+  shownLifts,
+  showWeightClass,
+  weightClasses,
+}: {
+  competitionId: string;
+  entry: WeighInEntry;
+  shownLifts: Lifts;
+  showWeightClass: boolean;
+  weightClasses: WeightClassOption[];
+}) {
+  const router = useRouter();
+  const [weightClassId, setWeightClassId] = useState(entry.weightClassId ?? '');
+  const [bodyweight, setBodyweight] = useState(numberToInput(entry.bodyweightKg));
+  const [openerSquat, setOpenerSquat] = useState(numberToInput(entry.openerSquatKg));
+  const [openerBench, setOpenerBench] = useState(numberToInput(entry.openerBenchKg));
+  const [openerDeadlift, setOpenerDeadlift] = useState(numberToInput(entry.openerDeadliftKg));
+  const [rackSquat, setRackSquat] = useState(numberToInput(entry.rackHeightSquat));
+  const [squatSetting, setSquatSetting] = useState<SquatRackSetting | ''>(entry.squatRackSetting ?? '');
+  const [rackBench, setRackBench] = useState(numberToInput(entry.rackHeightBench));
+  const [benchSafety, setBenchSafety] = useState(numberToInput(entry.benchSafetyHeight));
+  const [benchSpotting, setBenchSpotting] = useState<BenchSpotting | ''>(entry.benchSpotting ?? '');
+  const [status, setStatus] = useState<EntryStatus>(entry.status);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function save(nextStatus: EntryStatus, onSaved?: () => void) {
+    setStatus(nextStatus);
+    setError(null);
+    startTransition(async () => {
+      const result = await weighInAction({
+        id: entry.id,
+        competitionId,
+        bodyweightKg: parseOptionalNumber(bodyweight),
+        openerSquatKg: shownLifts.squat ? parseOptionalNumber(openerSquat) : null,
+        openerBenchKg: shownLifts.bench ? parseOptionalNumber(openerBench) : null,
+        openerDeadliftKg: shownLifts.deadlift ? parseOptionalNumber(openerDeadlift) : null,
+        rackHeightSquat: shownLifts.squat ? parseOptionalNumber(rackSquat) : null,
+        squatRackSetting: shownLifts.squat && squatSetting !== '' ? squatSetting : null,
+        rackHeightBench: shownLifts.bench ? parseOptionalNumber(rackBench) : null,
+        benchSafetyHeight: shownLifts.bench ? parseOptionalNumber(benchSafety) : null,
+        benchSpotting: shownLifts.bench && benchSpotting !== '' ? benchSpotting : null,
+        status: nextStatus,
+      });
+      if (result.status === 'error') {
+        setStatus(entry.status);
+        setError(readError(result));
+        return;
+      }
+      onSaved?.();
+      router.refresh();
+    });
+  }
+
+  function changeWeightClass(next: string) {
+    const previous = weightClassId;
+    setWeightClassId(next);
+    setError(null);
+    startTransition(async () => {
+      const result = await assignEntryWeightClassAction({
+        entryId: entry.id,
+        competitionId,
+        weightClassId: next === '' ? null : next,
+      });
+      if (result.status === 'error') {
+        setWeightClassId(previous);
+        setError(readError(result));
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  const weighedIn = entry.status === 'weighed_in';
+  const saveLabel = weighedIn ? 'Save weigh-in' : 'Save & mark weighed in';
+  // A lifter only competes in classes for their own gender.
+  const classOptions = weightClasses.filter((weightClass) => weightClass.gender === entry.sex);
+  const assignedClass = weightClasses.find((weightClass) => weightClass.id === weightClassId) ?? null;
+  const bodyweightValue = parseOptionalNumber(bodyweight);
+  // Flag a bodyweight that does not sit in the assigned class (or no class set), and point at the
+  // class it does fit. Only meaningful once a bodyweight is recorded.
+  const suggestedClass = bodyweightValue === null ? null : findWeightClassForBodyweight(bodyweightValue, classOptions);
+  let classWarning: string | null = null;
+  if (showWeightClass && bodyweightValue !== null) {
+    if (assignedClass) {
+      if (!isBodyweightInClass(bodyweightValue, assignedClass)) {
+        classWarning = `${bodyweightValue} kg is outside ${assignedClass.name}${
+          suggestedClass ? ` — try ${suggestedClass.name}` : ''
+        }.`;
+      }
+    } else {
+      classWarning = `No weight class set${suggestedClass ? ` — ${bodyweightValue} kg fits ${suggestedClass.name}` : ''}.`;
+    }
+  }
+
+  // A lifter is weighed in on bodyweight and openers alone; rack details can follow at the platform.
+  const openerMissing =
+    (shownLifts.squat && parseOptionalNumber(openerSquat) === null) ||
+    (shownLifts.bench && parseOptionalNumber(openerBench) === null) ||
+    (shownLifts.deadlift && parseOptionalNumber(openerDeadlift) === null);
+  const canMarkWeighedIn = bodyweightValue !== null && !openerMissing;
+
+  return {
+    weightClassId,
+    bodyweight,
+    setBodyweight,
+    openerSquat,
+    setOpenerSquat,
+    openerBench,
+    setOpenerBench,
+    openerDeadlift,
+    setOpenerDeadlift,
+    rackSquat,
+    setRackSquat,
+    squatSetting,
+    setSquatSetting,
+    rackBench,
+    setRackBench,
+    benchSafety,
+    setBenchSafety,
+    benchSpotting,
+    setBenchSpotting,
+    status,
+    setStatus,
+    error,
+    pending,
+    save,
+    changeWeightClass,
+    weighedIn,
+    saveLabel,
+    classOptions,
+    assignedClass,
+    bodyweightValue,
+    classWarning,
+    canMarkWeighedIn,
+  };
 }
 
 function NumberField({
@@ -154,115 +327,22 @@ function NumberField({
 function WeighInCard({
   competitionId,
   entry,
-  lifts,
-  isTeamComp,
+  shownLifts,
+  showWeightClass,
   weightClasses,
 }: {
   competitionId: string;
   entry: WeighInEntry;
-  lifts: Lifts;
-  isTeamComp: boolean;
+  shownLifts: Lifts;
+  showWeightClass: boolean;
   weightClasses: WeightClassOption[];
 }) {
-  const router = useRouter();
-  const shownLifts = liftsForEntry(entry, lifts, isTeamComp);
-  const [weightClassId, setWeightClassId] = useState(entry.weightClassId ?? '');
-  const [bodyweight, setBodyweight] = useState(numberToInput(entry.bodyweightKg));
-  const [openerSquat, setOpenerSquat] = useState(numberToInput(entry.openerSquatKg));
-  const [openerBench, setOpenerBench] = useState(numberToInput(entry.openerBenchKg));
-  const [openerDeadlift, setOpenerDeadlift] = useState(numberToInput(entry.openerDeadliftKg));
-  const [rackSquat, setRackSquat] = useState(numberToInput(entry.rackHeightSquat));
-  const [squatSetting, setSquatSetting] = useState<SquatRackSetting | ''>(entry.squatRackSetting ?? '');
-  const [rackBench, setRackBench] = useState(numberToInput(entry.rackHeightBench));
-  const [benchSafety, setBenchSafety] = useState(numberToInput(entry.benchSafetyHeight));
-  const [benchSpotting, setBenchSpotting] = useState<BenchSpotting | ''>(entry.benchSpotting ?? '');
-  const [status, setStatus] = useState<EntryStatus>(entry.status);
-  const [error, setError] = useState<string | null>(null);
   const [manuallyExpanded, setManuallyExpanded] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const form = useWeighInForm({ competitionId, entry, shownLifts, showWeightClass, weightClasses });
 
-  function save(nextStatus: EntryStatus) {
-    setStatus(nextStatus);
-    setError(null);
-    startTransition(async () => {
-      const result = await weighInAction({
-        id: entry.id,
-        competitionId,
-        bodyweightKg: parseOptionalNumber(bodyweight),
-        openerSquatKg: shownLifts.squat ? parseOptionalNumber(openerSquat) : null,
-        openerBenchKg: shownLifts.bench ? parseOptionalNumber(openerBench) : null,
-        openerDeadliftKg: shownLifts.deadlift ? parseOptionalNumber(openerDeadlift) : null,
-        rackHeightSquat: shownLifts.squat ? parseOptionalNumber(rackSquat) : null,
-        squatRackSetting: shownLifts.squat && squatSetting !== '' ? squatSetting : null,
-        rackHeightBench: shownLifts.bench ? parseOptionalNumber(rackBench) : null,
-        benchSafetyHeight: shownLifts.bench ? parseOptionalNumber(benchSafety) : null,
-        benchSpotting: shownLifts.bench && benchSpotting !== '' ? benchSpotting : null,
-        status: nextStatus,
-      });
-      if (result.status === 'error') {
-        setStatus(entry.status);
-        setError(readError(result));
-        return;
-      }
-      // Collapse once saved; a freshly weighed-in lifter folds away to keep the to-do list short.
-      setManuallyExpanded(false);
-      router.refresh();
-    });
-  }
-
-  function changeWeightClass(next: string) {
-    const previous = weightClassId;
-    setWeightClassId(next);
-    setError(null);
-    startTransition(async () => {
-      const result = await assignEntryWeightClassAction({
-        entryId: entry.id,
-        competitionId,
-        weightClassId: next === '' ? null : next,
-      });
-      if (result.status === 'error') {
-        setWeightClassId(previous);
-        setError(readError(result));
-        return;
-      }
-      router.refresh();
-    });
-  }
-
-  const weighedIn = entry.status === 'weighed_in';
-  const saveLabel = weighedIn ? 'Save weigh-in' : 'Save & mark weighed in';
+  const weighedIn = form.weighedIn;
   // Weighed-in lifters collapse to a compact row; everyone still to do stays open.
   const expanded = !weighedIn || manuallyExpanded;
-
-  // Team comps score purely on IPF GL points, so weight class is irrelevant — the field and its
-  // bodyweight check are dropped for team weigh-ins.
-  const showWeightClass = !isTeamComp;
-  // A lifter only competes in classes for their own gender.
-  const classOptions = weightClasses.filter((weightClass) => weightClass.gender === entry.sex);
-  const assignedClass = weightClasses.find((weightClass) => weightClass.id === weightClassId) ?? null;
-  const bodyweightValue = parseOptionalNumber(bodyweight);
-  // Flag a bodyweight that does not sit in the assigned class (or no class set), and point at the
-  // class it does fit. Only meaningful once a bodyweight is recorded.
-  const suggestedClass = bodyweightValue === null ? null : findWeightClassForBodyweight(bodyweightValue, classOptions);
-  let classWarning: string | null = null;
-  if (showWeightClass && bodyweightValue !== null) {
-    if (assignedClass) {
-      if (!isBodyweightInClass(bodyweightValue, assignedClass)) {
-        classWarning = `${bodyweightValue} kg is outside ${assignedClass.name}${
-          suggestedClass ? ` — try ${suggestedClass.name}` : ''
-        }.`;
-      }
-    } else {
-      classWarning = `No weight class set${suggestedClass ? ` — ${bodyweightValue} kg fits ${suggestedClass.name}` : ''}.`;
-    }
-  }
-
-  // A lifter is weighed in on bodyweight and openers alone; rack details can follow at the platform.
-  const openerMissing =
-    (shownLifts.squat && parseOptionalNumber(openerSquat) === null) ||
-    (shownLifts.bench && parseOptionalNumber(openerBench) === null) ||
-    (shownLifts.deadlift && parseOptionalNumber(openerDeadlift) === null);
-  const canMarkWeighedIn = parseOptionalNumber(bodyweight) !== null && !openerMissing;
 
   if (!expanded) {
     const summary = openerSummary(entry, shownLifts);
@@ -276,10 +356,12 @@ function WeighInCard({
           </span>
           <span className="text-xs text-neutral-700">
             BW {entry.bodyweightKg ?? '—'}
-            {showWeightClass && assignedClass ? ` · ${assignedClass.name}` : ''}
+            {showWeightClass && form.assignedClass ? ` · ${form.assignedClass.name}` : ''}
             {summary ? ` · ${summary}` : ''}
           </span>
-          {classWarning ? <span className="text-xs font-medium text-amber-700">⚠ {classWarning}</span> : null}
+          {form.classWarning ? (
+            <span className="text-xs font-medium text-amber-700">⚠ {form.classWarning}</span>
+          ) : null}
         </div>
         <button type="button" onClick={() => setManuallyExpanded(true)} className={GHOST_BUTTON}>
           Edit
@@ -305,9 +387,9 @@ function WeighInCard({
         </div>
       </div>
 
-      {classWarning ? (
+      {form.classWarning ? (
         <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
-          {classWarning}
+          {form.classWarning}
         </p>
       ) : null}
 
@@ -316,13 +398,13 @@ function WeighInCard({
           <label className={FIELD_CLASS}>
             <span className={LABEL_CLASS}>Weight class</span>
             <select
-              value={weightClassId}
-              onChange={(event) => changeWeightClass(event.target.value)}
-              disabled={pending}
+              value={form.weightClassId}
+              onChange={(event) => form.changeWeightClass(event.target.value)}
+              disabled={form.pending}
               className={INPUT_CLASS}
             >
               <option value="">—</option>
-              {classOptions.map((weightClass) => (
+              {form.classOptions.map((weightClass) => (
                 <option key={weightClass.id} value={weightClass.id}>
                   {weightClass.name}
                 </option>
@@ -333,52 +415,52 @@ function WeighInCard({
 
         <NumberField
           label="Bodyweight (kg)"
-          value={bodyweight}
-          onChange={setBodyweight}
+          value={form.bodyweight}
+          onChange={form.setBodyweight}
           step="0.1"
           required
-          invalid={parseOptionalNumber(bodyweight) === null}
+          invalid={form.bodyweightValue === null}
         />
 
         {shownLifts.squat ? (
           <NumberField
             label="Opening squat (kg)"
-            value={openerSquat}
-            onChange={setOpenerSquat}
+            value={form.openerSquat}
+            onChange={form.setOpenerSquat}
             step="0.5"
             required
-            invalid={parseOptionalNumber(openerSquat) === null}
+            invalid={parseOptionalNumber(form.openerSquat) === null}
           />
         ) : null}
         {shownLifts.bench ? (
           <NumberField
             label="Opening bench (kg)"
-            value={openerBench}
-            onChange={setOpenerBench}
+            value={form.openerBench}
+            onChange={form.setOpenerBench}
             step="0.5"
             required
-            invalid={parseOptionalNumber(openerBench) === null}
+            invalid={parseOptionalNumber(form.openerBench) === null}
           />
         ) : null}
         {shownLifts.deadlift ? (
           <NumberField
             label="Opening deadlift (kg)"
-            value={openerDeadlift}
-            onChange={setOpenerDeadlift}
+            value={form.openerDeadlift}
+            onChange={form.setOpenerDeadlift}
             step="0.5"
             required
-            invalid={parseOptionalNumber(openerDeadlift) === null}
+            invalid={parseOptionalNumber(form.openerDeadlift) === null}
           />
         ) : null}
 
         {shownLifts.squat ? (
-          <NumberField label="Squat rack height" value={rackSquat} onChange={setRackSquat} step="1" />
+          <NumberField label="Squat rack height" value={form.rackSquat} onChange={form.setRackSquat} step="1" />
         ) : null}
         {shownLifts.squat ? (
           <OptionalSelectField
             label="Squat rack setting"
-            value={squatSetting}
-            onChange={setSquatSetting}
+            value={form.squatSetting}
+            onChange={form.setSquatSetting}
             options={SQUAT_RACK_SETTINGS}
             labels={SQUAT_RACK_SETTING_LABELS}
             wrapperClassName={FIELD_CLASS}
@@ -386,16 +468,16 @@ function WeighInCard({
           />
         ) : null}
         {shownLifts.bench ? (
-          <NumberField label="Bench height" value={rackBench} onChange={setRackBench} step="1" />
+          <NumberField label="Bench height" value={form.rackBench} onChange={form.setRackBench} step="1" />
         ) : null}
         {shownLifts.bench ? (
-          <NumberField label="Bench safety height" value={benchSafety} onChange={setBenchSafety} step="1" />
+          <NumberField label="Bench safety height" value={form.benchSafety} onChange={form.setBenchSafety} step="1" />
         ) : null}
         {shownLifts.bench ? (
           <OptionalSelectField
             label="Bench spotting"
-            value={benchSpotting}
-            onChange={setBenchSpotting}
+            value={form.benchSpotting}
+            onChange={form.setBenchSpotting}
             options={BENCH_SPOTTINGS}
             labels={BENCH_SPOTTING_LABELS}
             wrapperClassName={FIELD_CLASS}
@@ -406,10 +488,10 @@ function WeighInCard({
         <label className={FIELD_CLASS}>
           <span className={LABEL_CLASS}>Status</span>
           <select
-            value={status}
+            value={form.status}
             onChange={(event) => {
               // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
-              setStatus(event.target.value as EntryStatus);
+              form.setStatus(event.target.value as EntryStatus);
             }}
             className={INPUT_CLASS}
           >
@@ -425,35 +507,351 @@ function WeighInCard({
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => save('weighed_in')}
-          disabled={pending || !canMarkWeighedIn}
+          onClick={() => form.save('weighed_in', () => setManuallyExpanded(false))}
+          disabled={form.pending || !form.canMarkWeighedIn}
           className={PRIMARY_BUTTON}
         >
-          {pending ? 'Saving…' : saveLabel}
+          {form.pending ? 'Saving…' : form.saveLabel}
         </button>
-        <button type="button" onClick={() => save(status)} disabled={pending} className={GHOST_BUTTON}>
+        <button
+          type="button"
+          onClick={() => form.save(form.status, () => setManuallyExpanded(false))}
+          disabled={form.pending}
+          className={GHOST_BUTTON}
+        >
           Save progress
         </button>
         {weighedIn ? (
           <button
             type="button"
             onClick={() => setManuallyExpanded(false)}
-            disabled={pending}
+            disabled={form.pending}
             className={GHOST_BUTTON}
           >
             Collapse
           </button>
         ) : null}
-        {canMarkWeighedIn ? null : (
+        {form.canMarkWeighedIn ? null : (
           <span className="text-xs text-neutral-500">Needs bodyweight and openers to weigh in</span>
         )}
-        {error ? (
+        {form.error ? (
           <p role="alert" className="text-sm text-red-600">
-            {error}
+            {form.error}
           </p>
         ) : null}
       </div>
     </section>
+  );
+}
+
+function CellNumber({
+  label,
+  value,
+  onChange,
+  step,
+  invalid = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  step: string;
+  invalid?: boolean;
+}) {
+  return (
+    <input
+      type="number"
+      step={step}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label={label}
+      aria-invalid={invalid || undefined}
+      className={invalid ? CELL_INPUT_REQUIRED : CELL_INPUT}
+    />
+  );
+}
+
+function WeighInRow({
+  competitionId,
+  entry,
+  shownLifts,
+  showWeightClass,
+  weightClasses,
+}: {
+  competitionId: string;
+  entry: WeighInEntry;
+  shownLifts: Lifts;
+  showWeightClass: boolean;
+  weightClasses: WeightClassOption[];
+}) {
+  const form = useWeighInForm({ competitionId, entry, shownLifts, showWeightClass, weightClasses });
+  // The frozen lifter column needs an opaque background or scrolled cells show through behind it.
+  const rowBg = form.weighedIn ? 'bg-green-50' : 'bg-white';
+
+  return (
+    <tr className={rowBg}>
+      <td className={`${TABLE_TD} sticky left-0 z-10 ${rowBg}`}>
+        <div className="whitespace-nowrap font-medium text-neutral-900">{entry.lifterName}</div>
+        <div className="whitespace-nowrap text-xs text-neutral-500">
+          {entry.flightName ?? 'No flight'}
+          {entry.lotNumber === null ? '' : ` · Lot ${entry.lotNumber}`}
+        </div>
+      </td>
+
+      {showWeightClass ? (
+        <td className={TABLE_TD}>
+          <select
+            value={form.weightClassId}
+            onChange={(event) => form.changeWeightClass(event.target.value)}
+            disabled={form.pending}
+            aria-label="Weight class"
+            className={CELL_SELECT}
+          >
+            <option value="">—</option>
+            {form.classOptions.map((weightClass) => (
+              <option key={weightClass.id} value={weightClass.id}>
+                {weightClass.name}
+              </option>
+            ))}
+          </select>
+          {form.classWarning ? (
+            <p className="mt-1 max-w-[12rem] text-xs font-medium text-amber-700">⚠ {form.classWarning}</p>
+          ) : null}
+        </td>
+      ) : null}
+
+      <td className={TABLE_TD}>
+        <CellNumber
+          label="Bodyweight (kg)"
+          value={form.bodyweight}
+          onChange={form.setBodyweight}
+          step="0.1"
+          invalid={form.bodyweightValue === null}
+        />
+      </td>
+
+      {shownLifts.squat ? (
+        <td className={TABLE_TD}>
+          <CellNumber
+            label="Opening squat (kg)"
+            value={form.openerSquat}
+            onChange={form.setOpenerSquat}
+            step="0.5"
+            invalid={parseOptionalNumber(form.openerSquat) === null}
+          />
+        </td>
+      ) : null}
+      {shownLifts.bench ? (
+        <td className={TABLE_TD}>
+          <CellNumber
+            label="Opening bench (kg)"
+            value={form.openerBench}
+            onChange={form.setOpenerBench}
+            step="0.5"
+            invalid={parseOptionalNumber(form.openerBench) === null}
+          />
+        </td>
+      ) : null}
+      {shownLifts.deadlift ? (
+        <td className={TABLE_TD}>
+          <CellNumber
+            label="Opening deadlift (kg)"
+            value={form.openerDeadlift}
+            onChange={form.setOpenerDeadlift}
+            step="0.5"
+            invalid={parseOptionalNumber(form.openerDeadlift) === null}
+          />
+        </td>
+      ) : null}
+
+      {shownLifts.squat ? (
+        <td className={TABLE_TD}>
+          <CellNumber label="Squat rack height" value={form.rackSquat} onChange={form.setRackSquat} step="1" />
+        </td>
+      ) : null}
+      {shownLifts.squat ? (
+        <td className={TABLE_TD}>
+          <OptionalSelectField
+            label="Squat rack setting"
+            value={form.squatSetting}
+            onChange={form.setSquatSetting}
+            options={SQUAT_RACK_SETTINGS}
+            labels={SQUAT_RACK_SETTING_LABELS}
+            wrapperClassName="block"
+            labelClassName="sr-only"
+            selectClassName={CELL_SELECT}
+          />
+        </td>
+      ) : null}
+      {shownLifts.bench ? (
+        <td className={TABLE_TD}>
+          <CellNumber label="Bench height" value={form.rackBench} onChange={form.setRackBench} step="1" />
+        </td>
+      ) : null}
+      {shownLifts.bench ? (
+        <td className={TABLE_TD}>
+          <CellNumber label="Bench safety height" value={form.benchSafety} onChange={form.setBenchSafety} step="1" />
+        </td>
+      ) : null}
+      {shownLifts.bench ? (
+        <td className={TABLE_TD}>
+          <OptionalSelectField
+            label="Bench spotting"
+            value={form.benchSpotting}
+            onChange={form.setBenchSpotting}
+            options={BENCH_SPOTTINGS}
+            labels={BENCH_SPOTTING_LABELS}
+            wrapperClassName="block"
+            labelClassName="sr-only"
+            selectClassName={CELL_SELECT}
+          />
+        </td>
+      ) : null}
+
+      <td className={TABLE_TD}>
+        <select
+          value={form.status}
+          onChange={(event) => {
+            // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
+            form.setStatus(event.target.value as EntryStatus);
+          }}
+          aria-label="Status"
+          className={CELL_SELECT}
+        >
+          {ENTRY_STATUSES.map((value) => (
+            <option key={value} value={value}>
+              {ENTRY_STATUS_LABELS[value]}
+            </option>
+          ))}
+        </select>
+      </td>
+
+      <td className={TABLE_TD}>
+        <div className="flex flex-col gap-1">
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => form.save('weighed_in')}
+              disabled={form.pending || !form.canMarkWeighedIn}
+              title={form.canMarkWeighedIn ? undefined : 'Needs bodyweight and openers to weigh in'}
+              className={CELL_PRIMARY}
+            >
+              {form.pending ? '…' : (form.weighedIn ? 'Save' : 'Weigh in')}
+            </button>
+            <button
+              type="button"
+              onClick={() => form.save(form.status)}
+              disabled={form.pending}
+              title="Save progress without marking weighed in"
+              className={CELL_GHOST}
+            >
+              Progress
+            </button>
+          </div>
+          {form.error ? (
+            <p role="alert" className="text-xs text-red-600">
+              {form.error}
+            </p>
+          ) : null}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function WeighInTable({
+  label,
+  competitionId,
+  entries,
+  shownLifts,
+  showWeightClass,
+  weightClasses,
+}: {
+  label: string;
+  competitionId: string;
+  entries: WeighInEntry[];
+  shownLifts: Lifts;
+  showWeightClass: boolean;
+  weightClasses: WeightClassOption[];
+}) {
+  return (
+    <div>
+      <div className={TABLE_LABEL}>{label}</div>
+      <table className="w-full min-w-max border-separate border-spacing-0 text-sm">
+        <thead>
+          <tr>
+            <th scope="col" className={`${TABLE_TH} left-0`}>
+              Lifter
+            </th>
+            {showWeightClass ? (
+              <th scope="col" className={TABLE_TH}>
+                Class
+              </th>
+            ) : null}
+            <th scope="col" className={TABLE_TH}>
+              BW (kg)
+            </th>
+            {shownLifts.squat ? (
+              <th scope="col" className={TABLE_TH}>
+                Squat open
+              </th>
+            ) : null}
+            {shownLifts.bench ? (
+              <th scope="col" className={TABLE_TH}>
+                Bench open
+              </th>
+            ) : null}
+            {shownLifts.deadlift ? (
+              <th scope="col" className={TABLE_TH}>
+                DL open
+              </th>
+            ) : null}
+            {shownLifts.squat ? (
+              <th scope="col" className={TABLE_TH}>
+                Squat rack
+              </th>
+            ) : null}
+            {shownLifts.squat ? (
+              <th scope="col" className={TABLE_TH}>
+                Rack set
+              </th>
+            ) : null}
+            {shownLifts.bench ? (
+              <th scope="col" className={TABLE_TH}>
+                Bench ht
+              </th>
+            ) : null}
+            {shownLifts.bench ? (
+              <th scope="col" className={TABLE_TH}>
+                Safety ht
+              </th>
+            ) : null}
+            {shownLifts.bench ? (
+              <th scope="col" className={TABLE_TH}>
+                Spotting
+              </th>
+            ) : null}
+            <th scope="col" className={TABLE_TH}>
+              Status
+            </th>
+            <th scope="col" className={TABLE_TH}>
+              <span className="sr-only">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry) => (
+            <WeighInRow
+              key={entry.id}
+              competitionId={competitionId}
+              entry={entry}
+              shownLifts={shownLifts}
+              showWeightClass={showWeightClass}
+              weightClasses={weightClasses}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -478,6 +876,24 @@ export function WeighInManager({
 }) {
   const [selectedSessionId, setSelectedSessionId] = useState(sessions[0]?.id ?? null);
   const [query, setQuery] = useState('');
+  const [storedView, setStoredView] = usePersistentString(VIEW_STORAGE_KEY, 'cards');
+  const [storedLayout, setStoredLayout] = usePersistentString(LAYOUT_STORAGE_KEY, 'normal');
+  const view: ViewMode = storedView === 'table' ? 'table' : 'cards';
+  const fullScreen = storedLayout === 'full';
+
+  // Esc leaves the full-screen view (matching the run scoresheet).
+  useEffect(() => {
+    if (!fullScreen) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setStoredLayout('normal');
+      }
+    };
+    globalThis.addEventListener('keydown', onKeyDown);
+    return () => globalThis.removeEventListener('keydown', onKeyDown);
+  }, [fullScreen, setStoredLayout]);
 
   const sessionEntries = useMemo(
     () => entries.filter((entry) => entry.sessionId === selectedSessionId),
@@ -510,84 +926,138 @@ export function WeighInManager({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
-        {sessions.map((session) => {
-          const active = session.id === selectedSessionId;
+    <div className={fullScreen ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex rounded-md border border-neutral-300 p-0.5" role="group" aria-label="Layout view">
+            {(['cards', 'table'] as const).map((mode) => {
+              const active = view === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setStoredView(mode)}
+                  aria-pressed={active}
+                  className={`${TAB_BASE} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
+                >
+                  {mode === 'cards' ? 'Cards' : 'Table'}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => setStoredLayout(fullScreen ? 'normal' : 'full')}
+            className={GHOST_BUTTON}
+          >
+            {fullScreen ? 'Collapse (Esc)' : 'Fill screen'}
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {sessions.map((session) => {
+            const active = session.id === selectedSessionId;
+            return (
+              <button
+                key={session.id}
+                type="button"
+                onClick={() => setSelectedSessionId(session.id)}
+                className={`${TAB_BASE} ${
+                  active
+                    ? 'bg-neutral-900 text-white'
+                    : 'border border-neutral-300 text-neutral-700 hover:bg-neutral-100'
+                }`}
+              >
+                {session.name}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-neutral-600">
+            {sessionEntries.length === 0
+              ? 'No lifters assigned to this session yet.'
+              : `${weighedInCount} of ${sessionEntries.length} weighed in`}
+          </p>
+          {sessionEntries.length > 0 ? (
+            <input
+              type="search"
+              aria-label="Find a lifter by name"
+              placeholder="Find a lifter…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              className={`${INPUT_CLASS} w-56`}
+            />
+          ) : null}
+        </div>
+
+        {sessionEntries.length > 0 && visibleEntries.length === 0 ? (
+          <p className="text-sm text-neutral-500">No lifters match “{query.trim()}”.</p>
+        ) : null}
+
+        {groups.map((group) => {
+          // Lifters still to weigh in stay at the top in calling order; the weighed-in ones sink to
+          // the bottom (sort is stable, so calling order holds within each part).
+          const ordered = group.entries.toSorted(
+            (a, b) => Number(a.status === 'weighed_in') - Number(b.status === 'weighed_in'),
+          );
+          // Within a group every lifter contests the same lifts: the whole comp's lifts for an
+          // individual comp, or just the group's role for a team comp.
+          const groupLifts: Lifts =
+            isTeamCompetition && group.lift
+              ? {
+                  squat: group.lift === 'squat',
+                  bench: group.lift === 'bench',
+                  deadlift: group.lift === 'deadlift',
+                }
+              : lifts;
+          const label = groupLabel(group, isTeamCompetition);
+
+          if (view === 'table') {
+            return (
+              <WeighInTable
+                key={`${group.lift ?? 'all'}-${group.sex}`}
+                label={label}
+                competitionId={competitionId}
+                entries={ordered}
+                shownLifts={groupLifts}
+                showWeightClass={!isTeamCompetition}
+                weightClasses={weightClasses}
+              />
+            );
+          }
+
           return (
-            <button
-              key={session.id}
-              type="button"
-              onClick={() => setSelectedSessionId(session.id)}
-              className={`${TAB_BASE} ${
-                active ? 'bg-neutral-900 text-white' : 'border border-neutral-300 text-neutral-700 hover:bg-neutral-100'
-              }`}
-            >
-              {session.name}
-            </button>
+            <div key={`${group.lift ?? 'all'}-${group.sex}`}>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{label}</h2>
+              <div className="mt-3 space-y-4">
+                {ordered.map((entry) => (
+                  <WeighInCard
+                    key={entry.id}
+                    competitionId={competitionId}
+                    entry={entry}
+                    shownLifts={groupLifts}
+                    showWeightClass={!isTeamCompetition}
+                    weightClasses={weightClasses}
+                  />
+                ))}
+              </div>
+            </div>
           );
         })}
-      </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-neutral-600">
-          {sessionEntries.length === 0
-            ? 'No lifters assigned to this session yet.'
-            : `${weighedInCount} of ${sessionEntries.length} weighed in`}
-        </p>
-        {sessionEntries.length > 0 ? (
-          <input
-            type="search"
-            aria-label="Find a lifter by name"
-            placeholder="Find a lifter…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className={`${INPUT_CLASS} w-56`}
-          />
+        {unflightedCount > 0 ? (
+          <p className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
+            {unflightedCount} registered {unflightedCount === 1 ? 'lifter is' : 'lifters are'} not assigned to a flight
+            yet, so they don&apos;t appear here. Assign them on the{' '}
+            <Link href={`/${compSlug}/flights`} className="font-medium text-neutral-900 underline">
+              sessions &amp; flights
+            </Link>{' '}
+            screen.
+          </p>
         ) : null}
       </div>
-
-      {sessionEntries.length > 0 && visibleEntries.length === 0 ? (
-        <p className="text-sm text-neutral-500">No lifters match “{query.trim()}”.</p>
-      ) : null}
-
-      {groups.map((group) => {
-        // Lifters still to weigh in stay at the top in calling order; the weighed-in ones sink to
-        // the bottom (sort is stable, so calling order holds within each part).
-        const ordered = group.entries.toSorted(
-          (a, b) => Number(a.status === 'weighed_in') - Number(b.status === 'weighed_in'),
-        );
-        return (
-          <div key={`${group.lift ?? 'all'}-${group.sex}`}>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-              {groupLabel(group, isTeamCompetition)}
-            </h2>
-            <div className="mt-3 space-y-4">
-              {ordered.map((entry) => (
-                <WeighInCard
-                  key={entry.id}
-                  competitionId={competitionId}
-                  entry={entry}
-                  lifts={lifts}
-                  isTeamComp={isTeamCompetition}
-                  weightClasses={weightClasses}
-                />
-              ))}
-            </div>
-          </div>
-        );
-      })}
-
-      {unflightedCount > 0 ? (
-        <p className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
-          {unflightedCount} registered {unflightedCount === 1 ? 'lifter is' : 'lifters are'} not assigned to a flight
-          yet, so they don&apos;t appear here. Assign them on the{' '}
-          <Link href={`/${compSlug}/flights`} className="font-medium text-neutral-900 underline">
-            sessions &amp; flights
-          </Link>{' '}
-          screen.
-        </p>
-      ) : null}
     </div>
   );
 }
