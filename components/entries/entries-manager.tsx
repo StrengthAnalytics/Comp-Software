@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createEntryAction, deleteEntryAction, updateEntryAction } from '@/actions/entries';
 import {
@@ -783,6 +783,16 @@ export function EntriesManager({
   entries: EntryWithLifter[];
 }) {
   const registeredLifterIds = new Set(entries.map((entry) => entry.lifter.id));
+  const [query, setQuery] = useState('');
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleEntries = useMemo(
+    () =>
+      normalizedQuery === ''
+        ? entries
+        : entries.filter((entry) => fullName(entry.lifter).toLowerCase().includes(normalizedQuery)),
+    [entries, normalizedQuery],
+  );
 
   return (
     <div className="space-y-6">
@@ -791,16 +801,28 @@ export function EntriesManager({
       <BulkImport competitionId={competitionId} lifts={lifts} />
 
       <div>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-tight">
             Registered lifters{entries.length > 0 ? ` (${entries.length})` : ''}
           </h2>
-          <CopyEntriesButton
-            entries={entries}
-            divisions={divisions}
-            weightClasses={weightClasses}
-            lifts={lifts}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {entries.length > 0 ? (
+              <input
+                type="search"
+                aria-label="Find a lifter by name"
+                placeholder="Find a lifter…"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className={`${INPUT_CLASS} w-56`}
+              />
+            ) : null}
+            <CopyEntriesButton
+              entries={entries}
+              divisions={divisions}
+              weightClasses={weightClasses}
+              lifts={lifts}
+            />
+          </div>
         </div>
         {entries.length === 0 ? (
           <p className="mt-4 rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
@@ -808,16 +830,20 @@ export function EntriesManager({
           </p>
         ) : (
           <div className="mt-4 space-y-4">
-            {entries.map((entry) => (
-              <EntryCard
-                key={entry.id}
-                competitionId={competitionId}
-                entry={entry}
-                lifts={lifts}
-                divisions={divisions}
-                weightClasses={weightClasses}
-              />
-            ))}
+            {visibleEntries.length === 0 ? (
+              <p className="text-sm text-neutral-500">No lifters match “{query.trim()}”.</p>
+            ) : (
+              visibleEntries.map((entry) => (
+                <EntryCard
+                  key={entry.id}
+                  competitionId={competitionId}
+                  entry={entry}
+                  lifts={lifts}
+                  divisions={divisions}
+                  weightClasses={weightClasses}
+                />
+              ))
+            )}
           </div>
         )}
       </div>
