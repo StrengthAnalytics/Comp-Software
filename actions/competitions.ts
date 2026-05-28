@@ -441,3 +441,30 @@ export async function duplicateCompetitionAction(input: { competitionId: string 
     redirect(`/comps/${newCompId}/edit`);
   });
 }
+
+// Permanently deletes a competition and everything that hangs off it — divisions, weight classes,
+// platforms, teams, sessions, flights, entries, attempts and referee decisions all cascade away.
+// Lifters are a shared table and are kept. Allowed at any status; the robust type-to-confirm in the UI
+// (type the comp name) is the safeguard against accidents. adminGuard()-gated and Sentry-wrapped. On
+// success the operator is returned to the comps list, since the edit page they came from is now gone.
+export async function deleteCompetitionAction(input: { competitionId: string }): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('deleteCompetition', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = z.object({ competitionId: z.uuid() }).safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not delete the competition. Please try again.');
+    }
+
+    const supabase = await createClient();
+    const { error } = await supabase.from('competitions').delete().eq('id', parsed.data.competitionId);
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not delete the competition. Please try again.');
+    }
+
+    revalidatePath('/comps');
+    redirect('/comps');
+  });
+}
