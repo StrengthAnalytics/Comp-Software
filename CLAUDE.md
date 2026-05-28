@@ -95,7 +95,7 @@ This app is real-time first. Non-negotiable.
 
 - Every screen displaying live competition state (scorekeeper, overlays, public live view) subscribes to Postgres changes via Supabase real-time. Never poll.
 - Subscriptions are scoped per competition (filter on `competition_id`) to keep payloads small.
-- Subscription setup lives in `/lib/realtime` as typed hooks (`useAttemptsSubscription`, `useFlightSubscription`, etc.), not inline in components.
+- Subscription setup lives in `/lib/realtime` as typed hooks (`useAttemptsSubscription`, `useEntriesSubscription`, `useFlightsSubscription`, etc.), not inline in components.
 - Tables with logical replication enabled: `attempts`, `referee_decisions`, `entries`, `flights`, `sessions`.
 - Real-time subscriptions inherit RLS. If the user can't read the row, they won't get the update.
 
