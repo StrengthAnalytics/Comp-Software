@@ -1,6 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -82,8 +91,6 @@ const CELL_INPUT_REQUIRED = `${CELL_INPUT_BASE} border-red-400 bg-red-50 focus:b
 const CELL_SELECT = 'w-full rounded border border-neutral-300 px-2 py-1 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const CELL_PRIMARY =
   'rounded bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
-const CELL_GHOST =
-  'rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
 // Two-row sticky header: the group-label bar pins at the top, the column headers pin just below it.
 // TABLE_TH's `top-9` must equal the label bar's `h-9` so the headers tuck directly under the label
 // rather than overlapping it. z-order: label (30) over column headers (20) over the frozen lifter
@@ -101,6 +108,42 @@ const PRINT_BLANK = 'border border-neutral-400 px-2 py-3';
 
 const VIEW_STORAGE_KEY = 'comp-software:weigh-in:view';
 const LAYOUT_STORAGE_KEY = 'comp-software:weigh-in:layout';
+
+// Debounce between the last keystroke and an autosave fire. Long enough not to save every digit of a
+// weight mid-typing, short enough that walking away from a field persists it almost immediately.
+const AUTOSAVE_DEBOUNCE_MS = 800;
+
+// Per-row save state, reported up to the page-level indicator (clean rows report null) and shown
+// inline. 'offline' = a held edit we couldn't attempt; 'failed' = an attempt that errored on the wire.
+type RowSaveState = 'clean' | 'saving' | 'offline' | 'failed' | 'error';
+type ReportedSaveState = Exclude<RowSaveState, 'clean'>;
+
+type WeighInSaveContextValue = {
+  online: boolean;
+  report: (id: string, state: ReportedSaveState | null) => void;
+};
+
+// Carries connectivity and the row→page save reporting channel to every row without prop-drilling.
+// Default is the inert no-op used when a row renders outside a provider (it never does in practice).
+const WeighInSaveContext = createContext<WeighInSaveContextValue>({ online: true, report: () => {} });
+
+// Tracks browser connectivity so the page can show an online/offline indicator and hold autosaves
+// while offline. navigator.onLine flips on the online/offline events; optimistic true on first paint
+// so server and client markup agree.
+function useOnline(): boolean {
+  const [online, setOnline] = useState(true);
+  useEffect(() => {
+    const update = () => setOnline(globalThis.navigator.onLine);
+    update();
+    globalThis.addEventListener('online', update);
+    globalThis.addEventListener('offline', update);
+    return () => {
+      globalThis.removeEventListener('online', update);
+      globalThis.removeEventListener('offline', update);
+    };
+  }, []);
+  return online;
+}
 
 function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {
@@ -183,6 +226,7 @@ function useWeighInForm({
   weightClasses: WeightClassOption[];
 }) {
   const router = useRouter();
+  const { online, report } = useContext(WeighInSaveContext);
   const [weightClassId, setWeightClassId] = useState(entry.weightClassId ?? '');
   const [bodyweight, setBodyweight] = useState(numberToInput(entry.bodyweightKg));
   const [openerSquat, setOpenerSquat] = useState(numberToInput(entry.openerSquatKg));
@@ -195,57 +239,171 @@ function useWeighInForm({
   const [benchSpotting, setBenchSpotting] = useState<BenchSpotting | ''>(entry.benchSpotting ?? '');
   const [status, setStatus] = useState<EntryStatus>(entry.status);
   const [error, setError] = useState<string | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [savedTick, setSavedTick] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  function save(nextStatus: EntryStatus, onSaved?: () => void) {
+  // Serialised snapshot of the saveable fields (only the lifts this entry contests). A change here is
+  // unsaved input; comparing against the last persisted snapshot gives the dirty flag that drives both
+  // the autosave trigger and the inline "saving/saved" status.
+  const serialized = JSON.stringify({
+    bodyweight: bodyweight.trim(),
+    openerSquat: shownLifts.squat ? openerSquat.trim() : '',
+    openerBench: shownLifts.bench ? openerBench.trim() : '',
+    openerDeadlift: shownLifts.deadlift ? openerDeadlift.trim() : '',
+    rackSquat: shownLifts.squat ? rackSquat.trim() : '',
+    squatSetting: shownLifts.squat ? squatSetting : '',
+    rackBench: shownLifts.bench ? rackBench.trim() : '',
+    benchSafety: shownLifts.bench ? benchSafety.trim() : '',
+    benchSpotting: shownLifts.bench ? benchSpotting : '',
+  });
+  // Last value successfully persisted; seeded from the server values so a freshly loaded row is clean.
+  const [savedSnapshot, setSavedSnapshot] = useState(serialized);
+  const dirty = serialized !== savedSnapshot;
+
+  // Don't re-fire the exact payload that just failed on the wire in a tight loop; a new edit or a
+  // connectivity change clears the guard so the held data still gets a retry.
+  const failedSnapshotRef = useRef<string | null>(null);
+  useEffect(() => {
+    failedSnapshotRef.current = null;
+  }, [online]);
+  // A fresh edit clears the transient saved/failed flags (and unblocks a retry of the new value).
+  useEffect(() => {
+    setSavedTick(false);
+    setSaveFailed(false);
+  }, [serialized]);
+
+  // Persists the current field values (creating the payload from the lifts this entry contests).
+  // refresh re-pulls server props for the side-effects only an explicit action needs — re-ordering
+  // (weighed-in lifters sink) and the weighed-in count — which an autosave of unchanged status skips.
+  function runSave(nextStatus: EntryStatus, options: { refresh: boolean; onSaved?: () => void }) {
+    const snapshotAtSave = serialized;
+    const previousStatus = status;
     setStatus(nextStatus);
     setError(null);
+    setSaveFailed(false);
     startTransition(async () => {
-      const result = await weighInAction({
-        id: entry.id,
-        competitionId,
-        bodyweightKg: parseOptionalNumber(bodyweight),
-        openerSquatKg: shownLifts.squat ? parseOptionalNumber(openerSquat) : null,
-        openerBenchKg: shownLifts.bench ? parseOptionalNumber(openerBench) : null,
-        openerDeadliftKg: shownLifts.deadlift ? parseOptionalNumber(openerDeadlift) : null,
-        rackHeightSquat: shownLifts.squat ? parseOptionalNumber(rackSquat) : null,
-        squatRackSetting: shownLifts.squat && squatSetting !== '' ? squatSetting : null,
-        rackHeightBench: shownLifts.bench ? parseOptionalNumber(rackBench) : null,
-        benchSafetyHeight: shownLifts.bench ? parseOptionalNumber(benchSafety) : null,
-        benchSpotting: shownLifts.bench && benchSpotting !== '' ? benchSpotting : null,
-        status: nextStatus,
-      });
-      if (result.status === 'error') {
-        setStatus(entry.status);
-        setError(readError(result));
-        return;
+      try {
+        const result = await weighInAction({
+          id: entry.id,
+          competitionId,
+          bodyweightKg: parseOptionalNumber(bodyweight),
+          openerSquatKg: shownLifts.squat ? parseOptionalNumber(openerSquat) : null,
+          openerBenchKg: shownLifts.bench ? parseOptionalNumber(openerBench) : null,
+          openerDeadliftKg: shownLifts.deadlift ? parseOptionalNumber(openerDeadlift) : null,
+          rackHeightSquat: shownLifts.squat ? parseOptionalNumber(rackSquat) : null,
+          squatRackSetting: shownLifts.squat && squatSetting !== '' ? squatSetting : null,
+          rackHeightBench: shownLifts.bench ? parseOptionalNumber(rackBench) : null,
+          benchSafetyHeight: shownLifts.bench ? parseOptionalNumber(benchSafety) : null,
+          benchSpotting: shownLifts.bench && benchSpotting !== '' ? benchSpotting : null,
+          status: nextStatus,
+        });
+        if (result.status === 'error') {
+          setStatus(previousStatus);
+          setError(readError(result));
+          return;
+        }
+        setSavedSnapshot(snapshotAtSave);
+        setSavedTick(true);
+        if (options.refresh) {
+          router.refresh();
+        }
+        options.onSaved?.();
+      } catch {
+        // Network/transport failure (e.g. venue wifi dropped): keep the input as unsaved and flag it
+        // so a reconnect or further edit retries, rather than losing the data silently.
+        setStatus(previousStatus);
+        failedSnapshotRef.current = snapshotAtSave;
+        setSaveFailed(true);
       }
-      onSaved?.();
-      router.refresh();
     });
+  }
+
+  // Latest-closure autosave, held in a ref so the debounce effect can fire it without re-subscribing
+  // on every keystroke (mirrors the realtime hooks' callback-ref pattern).
+  const autosaveRef = useRef<() => void>(() => {});
+  autosaveRef.current = () => runSave(status, { refresh: false });
+
+  // Debounced autosave: once input settles and we're online and idle, persist it. Skips while a save
+  // is in flight (re-runs when it clears) and while offline (re-runs and flushes when online returns).
+  useEffect(() => {
+    if (!online || pending) {
+      return;
+    }
+    if (serialized === savedSnapshot || serialized === failedSnapshotRef.current) {
+      return;
+    }
+    const timer = setTimeout(() => autosaveRef.current(), AUTOSAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [online, pending, serialized, savedSnapshot]);
+
+  // Immediate save bypassing the debounce — used onBlur so leaving a field (e.g. to click the search
+  // box, which would unmount this row) persists it without waiting out the debounce window.
+  function flushSave() {
+    if (!online || pending) {
+      return;
+    }
+    if (serialized === savedSnapshot || serialized === failedSnapshotRef.current) {
+      return;
+    }
+    runSave(status, { refresh: false });
+  }
+
+  function changeStatus(next: EntryStatus) {
+    runSave(next, { refresh: true });
+  }
+
+  function confirmWeighIn(onSaved?: () => void) {
+    runSave('weighed_in', { refresh: true, onSaved });
   }
 
   function changeWeightClass(next: string) {
     const previous = weightClassId;
     setWeightClassId(next);
     setError(null);
+    setSaveFailed(false);
     startTransition(async () => {
-      const result = await assignEntryWeightClassAction({
-        entryId: entry.id,
-        competitionId,
-        weightClassId: next === '' ? null : next,
-      });
-      if (result.status === 'error') {
+      try {
+        const result = await assignEntryWeightClassAction({
+          entryId: entry.id,
+          competitionId,
+          weightClassId: next === '' ? null : next,
+        });
+        if (result.status === 'error') {
+          setWeightClassId(previous);
+          setError(readError(result));
+          return;
+        }
+        router.refresh();
+      } catch {
         setWeightClassId(previous);
-        setError(readError(result));
-        return;
+        setSaveFailed(true);
       }
-      router.refresh();
     });
   }
 
+  // Folded into one state for the inline indicator and the page-level rollup.
+  let saveState: RowSaveState;
+  if (pending) {
+    saveState = 'saving';
+  } else if (error) {
+    saveState = 'error';
+  } else if (saveFailed) {
+    saveState = 'failed';
+  } else if (dirty) {
+    saveState = online ? 'saving' : 'offline';
+  } else {
+    saveState = 'clean';
+  }
+
+  useEffect(() => {
+    report(entry.id, saveState === 'clean' ? null : saveState);
+  }, [report, entry.id, saveState]);
+  // Drop this row from the page rollup when it unmounts (session switch, search filter) so a stale
+  // status can't linger in the indicator.
+  useEffect(() => () => report(entry.id, null), [report, entry.id]);
+
   const weighedIn = entry.status === 'weighed_in';
-  const saveLabel = weighedIn ? 'Save weigh-in' : 'Save & mark weighed in';
   // A lifter only competes in classes for their own gender.
   const classOptions = weightClasses.filter((weightClass) => weightClass.gender === entry.sex);
   const assignedClass = weightClasses.find((weightClass) => weightClass.id === weightClassId) ?? null;
@@ -294,13 +452,15 @@ function useWeighInForm({
     benchSpotting,
     setBenchSpotting,
     status,
-    setStatus,
     error,
     pending,
-    save,
+    saveState,
+    savedTick,
+    flushSave,
+    changeStatus,
+    confirmWeighIn,
     changeWeightClass,
     weighedIn,
-    saveLabel,
     classOptions,
     assignedClass,
     bodyweightValue,
@@ -309,10 +469,29 @@ function useWeighInForm({
   };
 }
 
+// Inline per-row save feedback for autosave. The validation error ('error') is rendered separately as
+// a role="alert" message, so nothing is shown for it here.
+function SaveStatus({ state, savedTick }: { state: RowSaveState; savedTick: boolean }) {
+  if (state === 'saving') {
+    return <span className="text-xs text-neutral-500">Saving…</span>;
+  }
+  if (state === 'failed') {
+    return <span className="text-xs font-medium text-red-600">Couldn’t save — will retry</span>;
+  }
+  if (state === 'offline') {
+    return <span className="text-xs font-medium text-amber-700">Offline — change held</span>;
+  }
+  if (savedTick) {
+    return <span className="text-xs text-green-700">Saved ✓</span>;
+  }
+  return null;
+}
+
 function NumberField({
   label,
   value,
   onChange,
+  onBlur,
   step,
   invalid = false,
   required = false,
@@ -320,6 +499,7 @@ function NumberField({
   label: string;
   value: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
   step: string;
   invalid?: boolean;
   required?: boolean;
@@ -335,6 +515,7 @@ function NumberField({
         step={step}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={onBlur}
         aria-required={required || undefined}
         aria-invalid={invalid || undefined}
         className={invalid ? INPUT_REQUIRED_CLASS : INPUT_CLASS}
@@ -436,6 +617,7 @@ function WeighInCard({
           label="Bodyweight (kg)"
           value={form.bodyweight}
           onChange={form.setBodyweight}
+          onBlur={form.flushSave}
           step="0.1"
           required
           invalid={form.bodyweightValue === null}
@@ -446,6 +628,7 @@ function WeighInCard({
             label="Opening squat (kg)"
             value={form.openerSquat}
             onChange={form.setOpenerSquat}
+            onBlur={form.flushSave}
             step="0.5"
             required
             invalid={parseOptionalNumber(form.openerSquat) === null}
@@ -456,6 +639,7 @@ function WeighInCard({
             label="Opening bench (kg)"
             value={form.openerBench}
             onChange={form.setOpenerBench}
+            onBlur={form.flushSave}
             step="0.5"
             required
             invalid={parseOptionalNumber(form.openerBench) === null}
@@ -466,6 +650,7 @@ function WeighInCard({
             label="Opening deadlift (kg)"
             value={form.openerDeadlift}
             onChange={form.setOpenerDeadlift}
+            onBlur={form.flushSave}
             step="0.5"
             required
             invalid={parseOptionalNumber(form.openerDeadlift) === null}
@@ -473,7 +658,13 @@ function WeighInCard({
         ) : null}
 
         {shownLifts.squat ? (
-          <NumberField label="Squat rack height" value={form.rackSquat} onChange={form.setRackSquat} step="1" />
+          <NumberField
+            label="Squat rack height"
+            value={form.rackSquat}
+            onChange={form.setRackSquat}
+            onBlur={form.flushSave}
+            step="1"
+          />
         ) : null}
         {shownLifts.squat ? (
           <OptionalSelectField
@@ -487,10 +678,22 @@ function WeighInCard({
           />
         ) : null}
         {shownLifts.bench ? (
-          <NumberField label="Bench height" value={form.rackBench} onChange={form.setRackBench} step="1" />
+          <NumberField
+            label="Bench height"
+            value={form.rackBench}
+            onChange={form.setRackBench}
+            onBlur={form.flushSave}
+            step="1"
+          />
         ) : null}
         {shownLifts.bench ? (
-          <NumberField label="Bench safety height" value={form.benchSafety} onChange={form.setBenchSafety} step="1" />
+          <NumberField
+            label="Bench safety height"
+            value={form.benchSafety}
+            onChange={form.setBenchSafety}
+            onBlur={form.flushSave}
+            step="1"
+          />
         ) : null}
         {shownLifts.bench ? (
           <OptionalSelectField
@@ -510,8 +713,9 @@ function WeighInCard({
             value={form.status}
             onChange={(event) => {
               // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
-              form.setStatus(event.target.value as EntryStatus);
+              form.changeStatus(event.target.value as EntryStatus);
             }}
+            disabled={form.pending}
             className={INPUT_CLASS}
           >
             {ENTRY_STATUSES.map((value) => (
@@ -526,19 +730,11 @@ function WeighInCard({
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => form.save('weighed_in', () => setManuallyExpanded(false))}
+          onClick={() => form.confirmWeighIn(() => setManuallyExpanded(false))}
           disabled={form.pending || !form.canMarkWeighedIn}
           className={PRIMARY_BUTTON}
         >
-          {form.pending ? 'Saving…' : form.saveLabel}
-        </button>
-        <button
-          type="button"
-          onClick={() => form.save(form.status, () => setManuallyExpanded(false))}
-          disabled={form.pending}
-          className={GHOST_BUTTON}
-        >
-          Save progress
+          {weighedIn ? 'Weighed in ✓' : 'Mark weighed in'}
         </button>
         {weighedIn ? (
           <button
@@ -553,6 +749,7 @@ function WeighInCard({
         {form.canMarkWeighedIn ? null : (
           <span className="text-xs text-neutral-500">Needs bodyweight and openers to weigh in</span>
         )}
+        <SaveStatus state={form.saveState} savedTick={form.savedTick} />
         {form.error ? (
           <p role="alert" className="text-sm text-red-600">
             {form.error}
@@ -567,12 +764,14 @@ function CellNumber({
   label,
   value,
   onChange,
+  onBlur,
   step,
   invalid = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
   step: string;
   invalid?: boolean;
 }) {
@@ -582,6 +781,7 @@ function CellNumber({
       step={step}
       value={value}
       onChange={(event) => onChange(event.target.value)}
+      onBlur={onBlur}
       aria-label={label}
       aria-invalid={invalid || undefined}
       className={invalid ? CELL_INPUT_REQUIRED : CELL_INPUT}
@@ -643,6 +843,7 @@ function WeighInRow({
           label="Bodyweight (kg)"
           value={form.bodyweight}
           onChange={form.setBodyweight}
+          onBlur={form.flushSave}
           step="0.1"
           invalid={form.bodyweightValue === null}
         />
@@ -654,6 +855,7 @@ function WeighInRow({
             label="Opening squat (kg)"
             value={form.openerSquat}
             onChange={form.setOpenerSquat}
+            onBlur={form.flushSave}
             step="0.5"
             invalid={parseOptionalNumber(form.openerSquat) === null}
           />
@@ -665,6 +867,7 @@ function WeighInRow({
             label="Opening bench (kg)"
             value={form.openerBench}
             onChange={form.setOpenerBench}
+            onBlur={form.flushSave}
             step="0.5"
             invalid={parseOptionalNumber(form.openerBench) === null}
           />
@@ -676,6 +879,7 @@ function WeighInRow({
             label="Opening deadlift (kg)"
             value={form.openerDeadlift}
             onChange={form.setOpenerDeadlift}
+            onBlur={form.flushSave}
             step="0.5"
             invalid={parseOptionalNumber(form.openerDeadlift) === null}
           />
@@ -684,7 +888,13 @@ function WeighInRow({
 
       {shownLifts.squat ? (
         <td className={TABLE_TD}>
-          <CellNumber label="Squat rack height" value={form.rackSquat} onChange={form.setRackSquat} step="1" />
+          <CellNumber
+            label="Squat rack height"
+            value={form.rackSquat}
+            onChange={form.setRackSquat}
+            onBlur={form.flushSave}
+            step="1"
+          />
         </td>
       ) : null}
       {shownLifts.squat ? (
@@ -703,12 +913,24 @@ function WeighInRow({
       ) : null}
       {shownLifts.bench ? (
         <td className={TABLE_TD}>
-          <CellNumber label="Bench height" value={form.rackBench} onChange={form.setRackBench} step="1" />
+          <CellNumber
+            label="Bench height"
+            value={form.rackBench}
+            onChange={form.setRackBench}
+            onBlur={form.flushSave}
+            step="1"
+          />
         </td>
       ) : null}
       {shownLifts.bench ? (
         <td className={TABLE_TD}>
-          <CellNumber label="Bench safety height" value={form.benchSafety} onChange={form.setBenchSafety} step="1" />
+          <CellNumber
+            label="Bench safety height"
+            value={form.benchSafety}
+            onChange={form.setBenchSafety}
+            onBlur={form.flushSave}
+            step="1"
+          />
         </td>
       ) : null}
       {shownLifts.bench ? (
@@ -731,8 +953,9 @@ function WeighInRow({
           value={form.status}
           onChange={(event) => {
             // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
-            form.setStatus(event.target.value as EntryStatus);
+            form.changeStatus(event.target.value as EntryStatus);
           }}
+          disabled={form.pending}
           aria-label="Status"
           className={CELL_SELECT}
         >
@@ -746,26 +969,16 @@ function WeighInRow({
 
       <td className={TABLE_TD}>
         <div className="flex flex-col gap-1">
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => form.save('weighed_in')}
-              disabled={form.pending || !form.canMarkWeighedIn}
-              title={form.canMarkWeighedIn ? undefined : 'Needs bodyweight and openers to weigh in'}
-              className={CELL_PRIMARY}
-            >
-              {form.pending ? '…' : (form.weighedIn ? 'Save' : 'Weigh in')}
-            </button>
-            <button
-              type="button"
-              onClick={() => form.save(form.status)}
-              disabled={form.pending}
-              title="Save progress without marking weighed in"
-              className={CELL_GHOST}
-            >
-              Progress
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => form.confirmWeighIn()}
+            disabled={form.pending || !form.canMarkWeighedIn}
+            title={form.canMarkWeighedIn ? undefined : 'Needs bodyweight and openers to weigh in'}
+            className={CELL_PRIMARY}
+          >
+            {form.weighedIn ? '✓ In' : 'Weigh in'}
+          </button>
+          <SaveStatus state={form.saveState} savedTick={form.savedTick} />
           {form.error ? (
             <p role="alert" className="text-xs text-red-600">
               {form.error}
@@ -1032,6 +1245,27 @@ export function WeighInManager({
   const view: ViewMode = storedView === 'table' ? 'table' : 'cards';
   const fullScreen = storedLayout === 'full';
 
+  const online = useOnline();
+  // Each row reports its non-clean save state here; the page-level indicator rolls them up so the
+  // operator always knows whether autosaves are landing.
+  const [rowStates, setRowStates] = useState<Map<string, ReportedSaveState>>(() => new Map());
+  const report = useCallback((id: string, state: ReportedSaveState | null) => {
+    setRowStates((current) => {
+      const existing = current.get(id) ?? null;
+      if (existing === state) {
+        return current;
+      }
+      const next = new Map(current);
+      if (state === null) {
+        next.delete(id);
+      } else {
+        next.set(id, state);
+      }
+      return next;
+    });
+  }, []);
+  const saveContext = useMemo<WeighInSaveContextValue>(() => ({ online, report }), [online, report]);
+
   // Esc leaves the full-screen view (matching the run scoresheet).
   useEffect(() => {
     if (!fullScreen) {
@@ -1082,8 +1316,38 @@ export function WeighInManager({
     );
   }
 
+  const states = new Set(rowStates.values());
+  const anySaving = states.has('saving');
+  const anyProblem = states.has('failed') || states.has('error');
+  const anyOffline = states.has('offline');
+  let indicator: { text: string; dot: string; box: string; pulse: boolean };
+  if (!online) {
+    indicator = {
+      text: anyOffline ? 'Offline — changes held, will save when reconnected' : 'Offline — changes won’t save',
+      dot: 'bg-red-500',
+      box: 'border-red-300 bg-red-50 text-red-800',
+      pulse: true,
+    };
+  } else if (anyProblem) {
+    indicator = {
+      text: 'Some changes didn’t save — they’ll retry when you edit or reconnect',
+      dot: 'bg-red-500',
+      box: 'border-red-300 bg-red-50 text-red-800',
+      pulse: false,
+    };
+  } else if (anySaving) {
+    indicator = { text: 'Saving…', dot: 'bg-blue-500', box: 'border-blue-300 bg-blue-50 text-blue-800', pulse: true };
+  } else {
+    indicator = {
+      text: 'Online — all changes saved',
+      dot: 'bg-green-500',
+      box: 'border-green-300 bg-green-50 text-green-800',
+      pulse: false,
+    };
+  }
+
   return (
-    <>
+    <WeighInSaveContext.Provider value={saveContext}>
     <div className={fullScreen ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1102,6 +1366,14 @@ export function WeighInManager({
                 </button>
               );
             })}
+          </div>
+          <div
+            role="status"
+            aria-live="polite"
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${indicator.box}`}
+          >
+            <span className={`h-2 w-2 rounded-full ${indicator.dot} ${indicator.pulse ? 'animate-pulse' : ''}`} />
+            {indicator.text}
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => globalThis.print()} className={GHOST_BUTTON}>
@@ -1141,7 +1413,7 @@ export function WeighInManager({
           <p className="text-sm text-neutral-600">
             {sessionEntries.length === 0
               ? 'No lifters assigned to this session yet.'
-              : `${weighedInCount} of ${sessionEntries.length} weighed in`}
+              : `${weighedInCount} of ${sessionEntries.length} weighed in · changes save automatically`}
           </p>
           {sessionEntries.length > 0 ? (
             <input
@@ -1222,6 +1494,6 @@ export function WeighInManager({
         groups={printGroups}
         weightClasses={weightClasses}
       />
-    </>
+    </WeighInSaveContext.Provider>
   );
 }
