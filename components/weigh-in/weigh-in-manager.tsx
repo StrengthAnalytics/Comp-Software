@@ -38,6 +38,7 @@ import {
 } from '@/lib/weigh-in/weight-class';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
+import type { WeighInInput } from '@/types/entry';
 import type { TeamLift } from '@/types/team';
 
 type EntryStatus = Database['public']['Enums']['entry_status'];
@@ -123,6 +124,9 @@ const DETAIL_STORAGE_KEY = 'comp-software:weigh-in:detail';
 // Debounce between the last keystroke and an autosave fire. Long enough not to save every digit of a
 // weight mid-typing, short enough that walking away from a field persists it almost immediately.
 const AUTOSAVE_DEBOUNCE_MS = 800;
+// After a transient (thrown) save failure, wait this long before one automatic retry — slow enough not
+// to hammer a struggling server, fast enough to self-heal a brief blip without an operator edit.
+const SAVE_RETRY_MS = 4000;
 
 // Per-row save state, reported up to the page-level indicator (clean rows report null) and shown
 // inline. 'offline' = a held edit we couldn't attempt; 'failed' = an attempt that errored on the wire.
@@ -165,17 +169,18 @@ function readError(result: ActionResult<unknown>): string {
 }
 
 // Compact opener readout for the collapsed (weighed-in) row, covering only the lifts this entry
-// contests.
-function openerSummary(entry: WeighInEntry, shownLifts: Lifts): string {
+// contests. Takes live values so the collapsed summary reflects the latest (autosaved) edit rather
+// than the stale server prop.
+function openerSummary(shownLifts: Lifts, squat: number | null, bench: number | null, deadlift: number | null): string {
   const parts: string[] = [];
   if (shownLifts.squat) {
-    parts.push(`S ${entry.openerSquatKg ?? '—'}`);
+    parts.push(`S ${squat ?? '—'}`);
   }
   if (shownLifts.bench) {
-    parts.push(`B ${entry.openerBenchKg ?? '—'}`);
+    parts.push(`B ${bench ?? '—'}`);
   }
   if (shownLifts.deadlift) {
-    parts.push(`DL ${entry.openerDeadliftKg ?? '—'}`);
+    parts.push(`DL ${deadlift ?? '—'}`);
   }
   return parts.join(' / ');
 }
@@ -254,6 +259,15 @@ function useWeighInForm({
   const [savedTick, setSavedTick] = useState(false);
   const [pending, startTransition] = useTransition();
 
+  // Gate for marking a lifter weighed-in: bodyweight plus every contested opener present. Declared up
+  // here because the save helpers below consult it (a status change to weighed_in must respect it).
+  const bodyweightValue = parseOptionalNumber(bodyweight);
+  const openerMissing =
+    (shownLifts.squat && parseOptionalNumber(openerSquat) === null) ||
+    (shownLifts.bench && parseOptionalNumber(openerBench) === null) ||
+    (shownLifts.deadlift && parseOptionalNumber(openerDeadlift) === null);
+  const canMarkWeighedIn = bodyweightValue !== null && !openerMissing;
+
   // Serialised snapshot of the saveable fields (only the lifts this entry contests). A change here is
   // unsaved input; comparing against the last persisted snapshot gives the dirty flag that drives both
   // the autosave trigger and the inline "saving/saved" status.
@@ -284,34 +298,60 @@ function useWeighInForm({
     setSaveFailed(false);
   }, [serialized]);
 
-  // Persists the current field values (creating the payload from the lifts this entry contests).
-  // refresh re-pulls server props for the side-effects only an explicit action needs — re-ordering
-  // (weighed-in lifters sink) and the weighed-in count — which an autosave of unchanged status skips.
+  // Builds the weigh-in payload from the current field values, sending only the lifts this entry
+  // contests (the Simple/Full display toggle never changes what is saved).
+  function buildPayload(nextStatus: EntryStatus): WeighInInput {
+    return {
+      id: entry.id,
+      competitionId,
+      bodyweightKg: bodyweightValue,
+      openerSquatKg: shownLifts.squat ? parseOptionalNumber(openerSquat) : null,
+      openerBenchKg: shownLifts.bench ? parseOptionalNumber(openerBench) : null,
+      openerDeadliftKg: shownLifts.deadlift ? parseOptionalNumber(openerDeadlift) : null,
+      rackHeightSquat: shownLifts.squat ? parseOptionalNumber(rackSquat) : null,
+      squatRackSetting: shownLifts.squat && squatSetting !== '' ? squatSetting : null,
+      rackHeightBench: shownLifts.bench ? parseOptionalNumber(rackBench) : null,
+      benchSafetyHeight: shownLifts.bench ? parseOptionalNumber(benchSafety) : null,
+      benchSpotting: shownLifts.bench && benchSpotting !== '' ? benchSpotting : null,
+      status: nextStatus,
+    };
+  }
+
+  // Snapshot of the payload a save is currently sending, so the unmount flush doesn't re-send data the
+  // in-flight save already covers. A transient (thrown) failure schedules one delayed retry via
+  // retryTick so a brief blip self-heals; the timer is torn down on unmount.
+  const inFlightSnapshotRef = useRef<string | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
+  useEffect(
+    () => () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  // Persists the current field values. refresh re-pulls server props for the side-effects only an
+  // explicit action needs — re-ordering (weighed-in lifters sink) and the weighed-in count — which an
+  // autosave of unchanged status skips.
   function runSave(nextStatus: EntryStatus, options: { refresh: boolean; onSaved?: () => void }) {
     const snapshotAtSave = serialized;
     const previousStatus = status;
     setStatus(nextStatus);
     setError(null);
     setSaveFailed(false);
+    inFlightSnapshotRef.current = snapshotAtSave;
     startTransition(async () => {
       try {
-        const result = await weighInAction({
-          id: entry.id,
-          competitionId,
-          bodyweightKg: parseOptionalNumber(bodyweight),
-          openerSquatKg: shownLifts.squat ? parseOptionalNumber(openerSquat) : null,
-          openerBenchKg: shownLifts.bench ? parseOptionalNumber(openerBench) : null,
-          openerDeadliftKg: shownLifts.deadlift ? parseOptionalNumber(openerDeadlift) : null,
-          rackHeightSquat: shownLifts.squat ? parseOptionalNumber(rackSquat) : null,
-          squatRackSetting: shownLifts.squat && squatSetting !== '' ? squatSetting : null,
-          rackHeightBench: shownLifts.bench ? parseOptionalNumber(rackBench) : null,
-          benchSafetyHeight: shownLifts.bench ? parseOptionalNumber(benchSafety) : null,
-          benchSpotting: shownLifts.bench && benchSpotting !== '' ? benchSpotting : null,
-          status: nextStatus,
-        });
+        const result = await weighInAction(buildPayload(nextStatus));
         if (result.status === 'error') {
+          // Deterministic rejection (same payload would fail again): revert the optimistic status,
+          // surface the message, and block this exact payload from auto-retrying so the debounce can't
+          // loop on it. A fresh edit (new serialized) or a reconnect clears the block.
           setStatus(previousStatus);
           setError(readError(result));
+          failedSnapshotRef.current = snapshotAtSave;
           return;
         }
         setSavedSnapshot(snapshotAtSave);
@@ -321,11 +361,19 @@ function useWeighInForm({
         }
         options.onSaved?.();
       } catch {
-        // Network/transport failure (e.g. venue wifi dropped): keep the input as unsaved and flag it
-        // so a reconnect or further edit retries, rather than losing the data silently.
+        // Network/transport failure (e.g. venue wifi dropped): keep the input as unsaved, block the
+        // immediate re-fire, and schedule one delayed retry so a passing blip self-heals without
+        // hammering. A reconnect or a further edit also retries.
         setStatus(previousStatus);
         failedSnapshotRef.current = snapshotAtSave;
         setSaveFailed(true);
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+        }
+        retryTimerRef.current = setTimeout(() => {
+          failedSnapshotRef.current = null;
+          setRetryTick((tick) => tick + 1);
+        }, SAVE_RETRY_MS);
       }
     });
   }
@@ -336,7 +384,8 @@ function useWeighInForm({
   autosaveRef.current = () => runSave(status, { refresh: false });
 
   // Debounced autosave: once input settles and we're online and idle, persist it. Skips while a save
-  // is in flight (re-runs when it clears) and while offline (re-runs and flushes when online returns).
+  // is in flight (re-runs when it clears), while offline (flushes when online returns), and while the
+  // last identical payload is blocked (retryTick nudges it after the transient-failure backoff).
   useEffect(() => {
     if (!online || pending) {
       return;
@@ -346,7 +395,7 @@ function useWeighInForm({
     }
     const timer = setTimeout(() => autosaveRef.current(), AUTOSAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [online, pending, serialized, savedSnapshot]);
+  }, [online, pending, serialized, savedSnapshot, retryTick]);
 
   // Immediate save bypassing the debounce — used onBlur so leaving a field (e.g. to click the search
   // box, which would unmount this row) persists it without waiting out the debounce window.
@@ -360,15 +409,46 @@ function useWeighInForm({
     runSave(status, { refresh: false });
   }
 
+  // Fire-and-forget save when the row unmounts (session switch / search filter) carrying a dirty edit
+  // that a pending save hadn't captured yet — otherwise the debounce timer is torn down and the edit is
+  // lost. Best-effort: the row is gone, so there is no state to update or roll back. A ref holds the
+  // latest closure so the unmount-only effect always sees current values, and we skip when the
+  // in-flight save already covers this exact payload.
+  const unmountFlushRef = useRef<() => void>(() => {});
+  unmountFlushRef.current = () => {
+    if (!online || serialized === savedSnapshot || serialized === inFlightSnapshotRef.current) {
+      return;
+    }
+    void weighInAction(buildPayload(status));
+  };
+  useEffect(() => () => unmountFlushRef.current(), []);
+
   function changeStatus(next: EntryStatus) {
+    // The status dropdown can set 'weighed_in' directly, so it must honour the same bodyweight+openers
+    // gate as the confirm button (the server only backstops a missing bodyweight, not openers).
+    if (next === 'weighed_in' && !canMarkWeighedIn) {
+      setError('Record bodyweight and openers before marking the lifter weighed in.');
+      return;
+    }
+    // Status changes are immediate server writes (not held like field autosaves), so don't attempt one
+    // offline — the controls are also disabled offline, and field edits keep saving on reconnect.
+    if (!online) {
+      return;
+    }
     runSave(next, { refresh: true });
   }
 
   function confirmWeighIn(onSaved?: () => void) {
+    if (!canMarkWeighedIn || !online) {
+      return;
+    }
     runSave('weighed_in', { refresh: true, onSaved });
   }
 
   function changeWeightClass(next: string) {
+    if (!online) {
+      return;
+    }
     const previous = weightClassId;
     setWeightClassId(next);
     setError(null);
@@ -418,7 +498,6 @@ function useWeighInForm({
   // A lifter only competes in classes for their own gender.
   const classOptions = weightClasses.filter((weightClass) => weightClass.gender === entry.sex);
   const assignedClass = weightClasses.find((weightClass) => weightClass.id === weightClassId) ?? null;
-  const bodyweightValue = parseOptionalNumber(bodyweight);
   // Flag a bodyweight that does not sit in the assigned class (or no class set), and point at the
   // class it does fit. Only meaningful once a bodyweight is recorded.
   const suggestedClass = bodyweightValue === null ? null : findWeightClassForBodyweight(bodyweightValue, classOptions);
@@ -434,13 +513,6 @@ function useWeighInForm({
       classWarning = `No weight class set${suggestedClass ? ` — ${bodyweightValue} kg fits ${suggestedClass.name}` : ''}.`;
     }
   }
-
-  // A lifter is weighed in on bodyweight and openers alone; rack details can follow at the platform.
-  const openerMissing =
-    (shownLifts.squat && parseOptionalNumber(openerSquat) === null) ||
-    (shownLifts.bench && parseOptionalNumber(openerBench) === null) ||
-    (shownLifts.deadlift && parseOptionalNumber(openerDeadlift) === null);
-  const canMarkWeighedIn = bodyweightValue !== null && !openerMissing;
 
   return {
     weightClassId,
@@ -465,6 +537,7 @@ function useWeighInForm({
     status,
     error,
     pending,
+    online,
     saveState,
     savedTick,
     flushSave,
@@ -558,7 +631,14 @@ function WeighInCard({
   const expanded = !weighedIn || manuallyExpanded;
 
   if (!expanded) {
-    const summary = openerSummary(entry, shownLifts);
+    // Read from live form state, not the entry prop: a field-only autosave doesn't router.refresh(),
+    // so the prop is stale until an explicit save — the collapsed summary must show the saved values.
+    const summary = openerSummary(
+      shownLifts,
+      parseOptionalNumber(form.openerSquat),
+      parseOptionalNumber(form.openerBench),
+      parseOptionalNumber(form.openerDeadlift),
+    );
     return (
       <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-green-300 bg-green-50 px-5 py-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -568,7 +648,7 @@ function WeighInCard({
             {entry.lotNumber === null ? '' : ` · Lot ${entry.lotNumber}`}
           </span>
           <span className="text-xs text-neutral-700">
-            BW {entry.bodyweightKg ?? '—'}
+            BW {form.bodyweightValue ?? '—'}
             {showWeightClass && form.assignedClass ? ` · ${form.assignedClass.name}` : ''}
             {summary ? ` · ${summary}` : ''}
           </span>
@@ -613,7 +693,7 @@ function WeighInCard({
             <select
               value={form.weightClassId}
               onChange={(event) => form.changeWeightClass(event.target.value)}
-              disabled={form.pending}
+              disabled={form.pending || !form.online}
               className={INPUT_CLASS}
             >
               <option value="">—</option>
@@ -728,7 +808,7 @@ function WeighInCard({
               // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
               form.changeStatus(event.target.value as EntryStatus);
             }}
-            disabled={form.pending}
+            disabled={form.pending || !form.online}
             className={INPUT_CLASS}
           >
             {ENTRY_STATUSES.map((value) => (
@@ -744,7 +824,7 @@ function WeighInCard({
         <button
           type="button"
           onClick={() => form.confirmWeighIn(() => setManuallyExpanded(false))}
-          disabled={form.pending || !form.canMarkWeighedIn}
+          disabled={form.pending || !form.canMarkWeighedIn || !form.online}
           className={PRIMARY_BUTTON}
         >
           {weighedIn ? 'Weighed in ✓' : 'Mark weighed in'}
@@ -836,7 +916,7 @@ function WeighInRow({
           <select
             value={form.weightClassId}
             onChange={(event) => form.changeWeightClass(event.target.value)}
-            disabled={form.pending}
+            disabled={form.pending || !form.online}
             aria-label="Weight class"
             className={CELL_SELECT}
           >
@@ -970,7 +1050,7 @@ function WeighInRow({
             // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
             form.changeStatus(event.target.value as EntryStatus);
           }}
-          disabled={form.pending}
+          disabled={form.pending || !form.online}
           aria-label="Status"
           className={CELL_SELECT}
         >
@@ -987,7 +1067,7 @@ function WeighInRow({
           <button
             type="button"
             onClick={() => form.confirmWeighIn()}
-            disabled={form.pending || !form.canMarkWeighedIn}
+            disabled={form.pending || !form.canMarkWeighedIn || !form.online}
             title={form.canMarkWeighedIn ? undefined : 'Needs bodyweight and openers to weigh in'}
             className={CELL_PRIMARY}
           >

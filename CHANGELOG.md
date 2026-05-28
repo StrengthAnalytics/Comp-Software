@@ -15,6 +15,13 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 ## [Unreleased]
 
 ### Fixed
+- Code-review fixes on the weigh-in autosave/offline work (`components/weigh-in/weigh-in-manager.tsx`):
+  - Autosave no longer loops on a server-rejected value: a deterministic validation error (e.g. typing `0`, an out-of-range weight, or clearing the bodyweight of an already-weighed-in lifter) now blocks that exact payload from auto-retrying (it was re-fired every 800ms, hammering the server), and waits for the operator to edit the value or reconnect.
+  - Transient (thrown) save failures now schedule one delayed automatic retry (4s) so a brief blip self-heals, instead of only retrying on a further edit or reconnect.
+  - An edit made during an in-flight save on a row that then unmounts (search filter / session switch) is no longer dropped — the row fire-and-forget flushes the latest dirty payload on unmount (skipping data the in-flight save already covers).
+  - The status dropdown can no longer mark a lifter `weighed_in` without openers: it now honours the same bodyweight+openers gate as the confirm button (the server only backstops a missing bodyweight).
+  - Status, weight-class and "Mark weighed in" controls are disabled (and their actions guarded) while offline, so they're held/blocked like field autosaves instead of attempting, failing, and reverting with a scary error.
+  - The collapsed weighed-in card now shows the live (autosaved) bodyweight and openers instead of the stale server prop after a field-only save.
 - Pre-merge review fixes: the "Duplicate" button's failure message on the comps list now carries `role="alert"` so it's announced to assistive tech (matching the rack and delete error messages); ARCHITECTURE.md §7 now records that whole-competition deletion — not just bulk-entrant deletion — is blocked once a comp is `completed`, while duplicating (a read-only copy of the source) stays allowed at any status.
 - Code-review fixes on the duplicate/delete-competition and run-screen rack work:
   - `duplicateCompetitionAction` now captures the rollback-`delete` error to Sentry when a mid-copy failure's cleanup itself fails, instead of swallowing it — so a failed duplicate can't leave an orphan partial comp in the list with no trace.
