@@ -63,6 +63,11 @@ export const BAR_AND_COLLARS_KG = 25;
 // crew make any legal 0.5 kg-granular attempt. Used by the plate-math breakdown only.
 export const IPF_PLATE_WEIGHTS_KG = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5, 0.25] as const;
 
+// The denominations in IPF_PLATE_WEIGHTS_KG as a union — the single source the loading display's
+// colour/height maps are typed against, so a plate added or removed here is a compile error until the
+// maps are updated (rather than silently rendering with a fallback size/colour).
+export type IpfPlateWeight = (typeof IPF_PLATE_WEIGHTS_KG)[number];
+
 // Kilograms-to-pounds factor, for the secondary lbs figure shown beside a kg weight on the crew
 // display. Powerlifting weighs and loads in kg; lbs is informational only.
 export const KG_TO_LBS = 2.204_622_621_8;

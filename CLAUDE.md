@@ -45,10 +45,12 @@ This project is developed online-only against the hosted Supabase dev project an
       /weigh-in                 ← day-of weigh-in by session (bodyweight, openers, rack settings)
       /rack-heights             ← squat/bench rack settings by session (warm-up room, mobile-friendly)
       /run                      ← scorekeeper interface
-      /loading                  ← platform loading-crew display (per-platform via ?platform=, full-screen)
       /refs                     ← ref panel (v2)
       /flights                  ← sessions & flight management
       /teams                    ← team management (team competitions only)
+  /(display)                    ← auth-gated full-screen venue displays, no chrome (sidebar/header)
+    /[comp-slug]
+      /loading                  ← platform loading-crew display (per-platform via ?platform=)
   /(overlay)                    ← OBS browser sources, transparent bg, fixed dimensions
     /[comp-slug]
       /scoreboard               ← current scoreboard overlay
@@ -81,7 +83,7 @@ proxy.ts                        ← replaces middleware.ts in Next.js 16
 
 - TypeScript strict mode. No `any`. No type assertions without an inline comment explaining why.
 - Named exports only. Exceptions: `page.tsx` and `layout.tsx` default exports.
-- Client components are the default for `/(admin)/run`, `/(admin)/[comp-slug]/loading`, `/(overlay)`, and the live public scoreboard. Server components elsewhere.
+- Client components are the default for `/(admin)/run`, `/(display)/[comp-slug]/loading`, `/(overlay)`, and the live public scoreboard. Server components elsewhere.
 - All mutations via server actions. Never call Supabase from the client for writes.
 - Client-side Supabase is read-only and primarily for real-time subscriptions.
 - Environment variables: `NEXT_PUBLIC_` prefix only for values safe to expose to the browser. Service role key is server-only and never logged.

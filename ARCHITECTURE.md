@@ -6,9 +6,10 @@ This document captures the system design. Read it alongside `CLAUDE.md` before s
 
 ## 1. System overview
 
-Three user-facing surfaces share one backend.
+Four front-end surfaces share one backend.
 
 - **Admin** (`/(admin)`): staff interfaces with full chrome. Auth required. Admins set up comps, run flights, and manage declarations. Gated server-side via `requireAdmin()` and at the database via RLS.
+- **Display** (`/(display)`): full-screen venue display screens (e.g. the loading-crew display), admin-gated like Admin via the same `requireAdminPage()` gate, but with no chrome — the display owns the whole viewport, so no nav/header sits behind its full-screen overlay. Read-only, real-time.
 - **Overlay** (`/(overlay)`): OBS browser sources. Transparent background, fixed pixel dimensions (typically 1920×1080 or sub-regions). No chrome, no navigation. Run on the admin's machine using the admin session — no separate overlay auth. Each overlay subscribes to real-time and renders one piece of data.
 - **Public** (`/(public)`): comp landing pages, live scoreboard for venue TVs and social shares, final results. Read-only.
 
@@ -78,7 +79,7 @@ Which screens subscribe to which tables.
 | Screen | Subscribes to | Filter |
 |--------|---------------|--------|
 | `/(admin)/[comp]/run` | attempts, entries, flights | `competition_id` |
-| `/(admin)/[comp]/loading` | attempts, entries, flights | `competition_id` (display scoped to one platform via `?platform`) |
+| `/(display)/[comp]/loading` | attempts, entries, flights | `competition_id` (display scoped to one platform via `?platform`) |
 | `/(admin)/[comp]/rack-heights` | entries, flights | `competition_id` |
 | `/(admin)/[comp]/flights` | flights, entries | `competition_id` |
 | `/(overlay)/[comp]/scoreboard` | attempts, entries | `competition_id` + current session |

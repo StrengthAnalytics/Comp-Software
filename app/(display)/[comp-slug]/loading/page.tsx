@@ -41,7 +41,7 @@ export default async function LoadingPage({
 
   if (candidates.length === 0) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4 p-8">
         <h1 className="text-2xl font-semibold tracking-tight">Loading crew display</h1>
         <p className="text-sm text-neutral-600">
           No sessions are assigned to a platform yet. Set up sessions &amp; flights to use the crew display.
@@ -52,7 +52,7 @@ export default async function LoadingPage({
 
   if (!selected) {
     return (
-      <div className="space-y-4">
+      <div className="mx-auto max-w-2xl space-y-4 p-8">
         <h1 className="text-2xl font-semibold tracking-tight">Loading crew display</h1>
         <p className="text-sm text-neutral-600">Choose the platform this screen is for:</p>
         <ul className="space-y-2">

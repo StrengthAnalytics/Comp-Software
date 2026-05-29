@@ -2,7 +2,13 @@
 
 import { useMemo } from 'react';
 import type { Database } from '@/types/database.types';
-import { BENCH_SPOTTING_LABELS, KG_TO_LBS, LIFT_LABELS, SQUAT_RACK_SETTING_LABELS } from '@/lib/constants';
+import {
+  BENCH_SPOTTING_LABELS,
+  KG_TO_LBS,
+  LIFT_LABELS,
+  SQUAT_RACK_SETTING_LABELS,
+  type IpfPlateWeight,
+} from '@/lib/constants';
 import { formatPlatesPerSide, platesPerSide, type PlateBreakdown } from '@/lib/plates/plate-math';
 import {
   compareRunningOrder,
@@ -30,10 +36,10 @@ type LoadingDisplayProps = {
   attempts: BoardAttempt[];
 };
 
-// IPF plate colours and relative heights for the visual breakdown — tallest/biggest first. Keyed by
-// denomination (kg); object keys coerce 2.5 etc. to their string form, which is what a numeric lookup
-// resolves to, so PLATE_STYLE[2.5] hits the right entry.
-const PLATE_STYLE: Record<number, string> = {
+// IPF plate colours for the visual breakdown, keyed by denomination (kg). Typed against the canonical
+// plate list, so adding/removing a plate in IPF_PLATE_WEIGHTS_KG is a compile error here until this
+// map is updated — no silent fallback colour.
+const PLATE_STYLE: Record<IpfPlateWeight, string> = {
   25: 'bg-red-600 text-white',
   20: 'bg-blue-600 text-white',
   15: 'bg-yellow-400 text-neutral-900',
@@ -106,7 +112,9 @@ const TIER: Record<
   },
 };
 
-const PLATE_HEIGHT: Record<SizeTier, Record<number, string>> = {
+// Per-tier plate heights, keyed by denomination. Same canonical-list typing as PLATE_STYLE: every IPF
+// plate must have a height in every tier, enforced at compile time.
+const PLATE_HEIGHT: Record<SizeTier, Record<IpfPlateWeight, string>> = {
   compact: { 25: 'h-16', 20: 'h-14', 15: 'h-12', 10: 'h-11', 5: 'h-10', 2.5: 'h-9', 1.25: 'h-8', 0.5: 'h-7', 0.25: 'h-6' },
   normal: { 25: 'h-44', 20: 'h-40', 15: 'h-36', 10: 'h-32', 5: 'h-28', 2.5: 'h-24', 1.25: 'h-20', 0.5: 'h-16', 0.25: 'h-14' },
   large: { 25: 'h-56', 20: 'h-52', 15: 'h-48', 10: 'h-44', 5: 'h-40', 2.5: 'h-36', 1.25: 'h-32', 0.5: 'h-28', 0.25: 'h-24' },
@@ -487,16 +495,19 @@ function PlateStack({ breakdown, size }: { breakdown: PlateBreakdown; size: Size
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-end gap-2">
-        {bars.map((bar) => (
-          <div
-            key={`${bar.weightKg}-${bar.index}`}
-            className={`flex items-end justify-center rounded-md pb-2 font-bold ${tier.plateWidth} ${tier.plateText} ${
-              heights[bar.weightKg] ?? 'h-12'
-            } ${PLATE_STYLE[bar.weightKg] ?? 'bg-neutral-700 text-white'}`}
-          >
-            {bar.weightKg}
-          </div>
-        ))}
+        {bars.map((bar) => {
+          // platesPerSide only ever emits denominations from IPF_PLATE_WEIGHTS_KG, so the weight is
+          // always a key of the (compile-time-complete) height/colour maps — the cast is safe.
+          const weight = bar.weightKg as IpfPlateWeight;
+          return (
+            <div
+              key={`${bar.weightKg}-${bar.index}`}
+              className={`flex items-end justify-center rounded-md pb-2 font-bold ${tier.plateWidth} ${tier.plateText} ${heights[weight]} ${PLATE_STYLE[weight]}`}
+            >
+              {bar.weightKg}
+            </div>
+          );
+        })}
       </div>
       <p className={`text-white ${tier.perSide}`}>
         <span className="font-semibold">{formatPlatesPerSide(breakdown.plates)}</span> per side

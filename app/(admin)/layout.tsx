@@ -1,9 +1,7 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { createClient } from '@/lib/supabase/server';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
-import { isAdmin } from '@/lib/auth/admin';
+import { requireAdminPage } from '@/lib/auth/require-admin-page';
 import { ConfigNotice } from '@/components/config-notice';
 import { signOutAction } from '@/actions/auth';
 
@@ -12,14 +10,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     return <ConfigNotice />;
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user || !isAdmin(user.email)) {
-    redirect('/auth');
-  }
+  const user = await requireAdminPage();
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900">
