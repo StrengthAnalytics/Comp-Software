@@ -24,6 +24,7 @@ import {
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
+import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
 import type {
   BoardAttempt,
   BoardEntry,
@@ -277,7 +278,7 @@ export function ScoresheetBoard({
   entries: initialEntries,
   attempts: initialAttempts,
 }: ScoresheetBoardProps) {
-  const { attempts, setAttempts, entries, setEntries, flights } = useBoardState({
+  const { attempts, setAttempts, entries, setEntries, flights, connection } = useBoardState({
     competitionId,
     initialAttempts,
     initialEntries,
@@ -285,6 +286,7 @@ export function ScoresheetBoard({
     weightClasses,
     divisions,
   });
+  const connectionIndicator = computeConnectionIndicator(connection);
   const [error, setError] = useState<string | null>(null);
   // Default to the full-window view: the admin chrome caps content at max-w-6xl minus the comp-nav
   // sidebar (~840px), which crushes the wide scoresheet. Full screen reclaims the whole window; Esc or
@@ -441,6 +443,14 @@ export function ScoresheetBoard({
       <div className="mb-3 flex items-center justify-between gap-3">
         {expanded ? <h2 className="text-lg font-semibold text-neutral-900">Scoresheet</h2> : <span />}
         <div className="flex items-center gap-2">
+          <div
+            role="status"
+            aria-live="polite"
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${connectionIndicator.box}`}
+          >
+            <span className={`h-2 w-2 rounded-full ${connectionIndicator.dot} ${connectionIndicator.pulse ? 'animate-pulse' : ''}`} />
+            {connectionIndicator.text}
+          </div>
           <BoardOptions
             toggles={[
               {
