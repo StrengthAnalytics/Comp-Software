@@ -55,7 +55,7 @@ erDiagram
 - **lifters**: the persistent person. First name, surname, gender, DOB, IPF member ID, club, country.
 - **entries**: a lifter registering for one comp. Weight class, division, flight, lot number, bodyweight at weigh-in, opener attempts, and structured rack settings (integer squat rack height + position, integer bench and safety heights + spotting choice — `squat_rack_setting` / `bench_spotting` enums), status. In team competitions, team_id and team_lift link the entry to a team and its one assigned discipline.
 - **teams**: (team competitions only) a named team within a comp. Its members are entries tagged with team_id and team_lift — one per discipline (squat/bench/deadlift). The team score is the sum of the three members' IPF GL points.
-- **attempts**: up to 9 per entry (3 squats, 3 benches, 3 deadlifts). Weight in kg, declared timestamp, result (pending/good_lift/no_lift/not_taken/withdrawn).
+- **attempts**: up to 9 per entry (3 squats, 3 benches, 3 deadlifts). Weight in kg, declared timestamp, decided timestamp (`decided_at`, set when a good/no lift is recorded — anchors the run screen's 60-second next-attempt countdown across devices), result (pending/good_lift/no_lift/not_taken/withdrawn).
 - **referee_decisions**: exactly 3 per attempt (left/head/right positions). Decision (white/red) plus reasons array for no-lifts.
 - **profiles**: extends `auth.users` with display_name.
 

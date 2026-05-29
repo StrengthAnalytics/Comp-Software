@@ -179,9 +179,17 @@ export async function setAttemptResultAction(input: SetAttemptResultInput): Prom
       return fail('Declare a weight before recording a good or no lift.');
     }
 
+    // Stamp the decision time on a good/no lift so the run screen can anchor the 60-second
+    // next-attempt countdown on it (the same instant on every device); clear it when the call is
+    // reopened or set to a non-decision so the countdown cancels.
+    const decidedAt =
+      parsed.data.result === 'good_lift' || parsed.data.result === 'no_lift'
+        ? new Date().toISOString()
+        : null;
+
     const { error } = await supabase
       .from('attempts')
-      .update({ result: parsed.data.result })
+      .update({ result: parsed.data.result, decided_at: decidedAt })
       .eq('id', parsed.data.attemptId);
     if (error) {
       Sentry.captureException(error);

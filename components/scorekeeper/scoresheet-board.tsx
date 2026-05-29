@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Database } from '@/types/database.types';
 import {
@@ -15,6 +15,7 @@ import {
   type SquatRackSetting,
 } from '@/lib/constants';
 import { bestGoodLift } from '@/lib/attempts/best-lift';
+import { nextAttemptCountdown, type NextAttemptCountdown } from '@/lib/attempts/auto-progression';
 import {
   orderSessionRoster,
   selectPlatformPositions,
@@ -62,6 +63,8 @@ export type BoardAttempt = {
   attemptNumber: number;
   weightKg: number | null;
   result: AttemptResult;
+  // When the result was set to a good/no lift, anchoring the next attempt's 60-second countdown.
+  decidedAt: string | null;
 };
 
 type ScoresheetBoardProps = {
@@ -175,6 +178,7 @@ function mapAttempt(row: AttemptRow): BoardAttempt {
     attemptNumber: row.attempt_number,
     weightKg: row.weight_kg,
     result: row.result,
+    decidedAt: row.decided_at,
   };
 }
 
@@ -498,6 +502,7 @@ export function ScoresheetBoard({
         attemptNumber,
         weightKg,
         result: previous?.result ?? 'pending',
+        decidedAt: previous?.decidedAt ?? null,
       });
       return next;
     });
@@ -563,6 +568,10 @@ export function ScoresheetBoard({
 
   function setResult(attempt: BoardAttempt, result: AttemptResult) {
     const key = attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber);
+    // Mirror the server's decided_at stamp optimistically so the next attempt's countdown starts on
+    // click rather than waiting for the realtime round-trip; the subscription reconciles the exact
+    // server time (a sub-second shift). Clearing it on a non-decision cancels the countdown.
+    const decidedAt = result === 'good_lift' || result === 'no_lift' ? new Date().toISOString() : null;
     setError(null);
     setAttempts((current) => {
       const existing = current.get(key);
@@ -570,7 +579,7 @@ export function ScoresheetBoard({
         return current;
       }
       const next = new Map(current);
-      next.set(key, { ...existing, result });
+      next.set(key, { ...existing, result, decidedAt });
       return next;
     });
     startTransition(async () => {
@@ -582,7 +591,7 @@ export function ScoresheetBoard({
             return current;
           }
           const next = new Map(current);
-          next.set(key, { ...existing, result: attempt.result });
+          next.set(key, { ...existing, result: attempt.result, decidedAt: attempt.decidedAt });
           return next;
         });
         setError(readError(outcome));
@@ -824,14 +833,23 @@ function FragmentCells({
         const attempt = attempts.get(attemptKey(entry.id, lift, attemptNumber));
         const isCurrent =
           current?.entryId === entry.id && current.lift === lift && current.attemptNumber === attemptNumber;
+        // The previous attempt of this lift drives the next attempt's countdown: once it is decided
+        // and this cell is still undeclared, this cell counts down 60s and turns amber.
+        const previous =
+          attemptNumber > 1 ? attempts.get(attemptKey(entry.id, lift, attemptNumber - 1)) : undefined;
+        const countdown = active ? nextAttemptCountdown(previous, attempt) : null;
         return (
-          <td key={`${entry.id}-${lift}-${attemptNumber}`} className={`text-center ${CELL_ATTEMPT} ${active ? cellTint(attempt, isCurrent) : ''}`}>
+          <td
+            key={`${entry.id}-${lift}-${attemptNumber}`}
+            className={`text-center ${CELL_ATTEMPT} ${active ? (countdown ? 'bg-amber-200' : cellTint(attempt, isCurrent)) : ''}`}
+          >
             {active ? (
               <AttemptCell
                 entry={entry}
                 lift={lift}
                 attemptNumber={attemptNumber}
                 attempt={attempt}
+                countdown={countdown}
                 onSetWeight={onSetWeight}
                 onSetResult={onSetResult}
               />
@@ -866,12 +884,15 @@ function PositionCard({ label, row, highlight }: { label: string; row: RunRow | 
 
 // One attempt square: the weight is click-to-edit (any value, any time — the scorer is the
 // authority; the server applies the progression guard). Once a weight exists, ✓ / ✗ toggle the
-// result, and clicking the active one again reopens the attempt to pending for a correction.
+// result, and clicking the active one again reopens the attempt to pending for a correction. While
+// undeclared and the previous attempt is freshly decided, the cell shows the 60-second next-attempt
+// countdown (amber, click to enter the weight); at zero it auto-commits the IPF default.
 function AttemptCell({
   entry,
   lift,
   attemptNumber,
   attempt,
+  countdown,
   onSetWeight,
   onSetResult,
 }: {
@@ -879,13 +900,53 @@ function AttemptCell({
   lift: LiftType;
   attemptNumber: number;
   attempt: BoardAttempt | undefined;
+  countdown: NextAttemptCountdown | null;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [remaining, setRemaining] = useState<number | null>(null);
 
   const declaredAttempt = attempt && attempt.weightKg !== null ? attempt : null;
+
+  // Fire the auto-commit through a ref so the ticking effect depends only on the (stable) deadline,
+  // not on the per-render entry/callback identities — it must not restart every realtime re-render.
+  const autoCommitRef = useRef<() => void>(() => {});
+  autoCommitRef.current = () => {
+    if (countdown) {
+      onSetWeight(entry, lift, attemptNumber, countdown.autoWeight);
+    }
+  };
+
+  // Tick the countdown to zero against the shared deadline (server decision time + 60s, measured
+  // with this device's clock). At zero it commits the default once; the new weight then clears the
+  // countdown on the next render, so it never re-fires.
+  const deadlineMs = countdown?.deadlineMs ?? null;
+  useEffect(() => {
+    if (deadlineMs === null) {
+      setRemaining(null);
+      return;
+    }
+    let fired = false;
+    const tick = () => {
+      const msLeft = deadlineMs - Date.now();
+      if (msLeft <= 0) {
+        setRemaining(0);
+        if (!fired) {
+          fired = true;
+          autoCommitRef.current();
+        }
+      } else {
+        setRemaining(Math.ceil(msLeft / 1000));
+      }
+    };
+    tick();
+    const id = globalThis.setInterval(tick, 250);
+    return () => globalThis.clearInterval(id);
+  }, [deadlineMs]);
+
+  const countingDown = countdown !== null && remaining !== null;
 
   const startEdit = () => {
     setDraft(declaredAttempt ? String(declaredAttempt.weightKg) : '');
@@ -921,14 +982,19 @@ function AttemptCell({
           className={CELL_INPUT}
         />
       ) : (
-        // The weight fills the whole cell so tapping anywhere in the square opens the editor.
+        // The weight fills the whole cell so tapping anywhere in the square opens the editor. While
+        // counting down it shows the seconds left; clicking still opens the weight editor.
         <button
           type="button"
           onClick={startEdit}
-          aria-label={`Set weight for ${entry.lifterName}, ${LIFT_LABELS[lift]} attempt ${attemptNumber}`}
-          className={`flex min-h-[2.75rem] w-full flex-1 items-center justify-center rounded text-base tabular-nums hover:bg-black/5 ${declaredAttempt ? 'font-semibold text-neutral-900' : 'text-neutral-400'}`}
+          aria-label={
+            countingDown
+              ? `Enter next attempt for ${entry.lifterName}, ${LIFT_LABELS[lift]} attempt ${attemptNumber}; ${remaining}s left`
+              : `Set weight for ${entry.lifterName}, ${LIFT_LABELS[lift]} attempt ${attemptNumber}`
+          }
+          className={`flex min-h-[2.75rem] w-full flex-1 items-center justify-center rounded tabular-nums hover:bg-black/5 ${countingDown ? 'text-lg font-bold text-amber-900' : `text-base ${declaredAttempt ? 'font-semibold text-neutral-900' : 'text-neutral-400'}`}`}
         >
-          {declaredAttempt ? declaredAttempt.weightKg : '–'}
+          {countingDown ? remaining : (declaredAttempt ? declaredAttempt.weightKg : '–')}
         </button>
       )}
       {declaredAttempt ? (

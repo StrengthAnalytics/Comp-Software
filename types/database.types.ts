@@ -365,6 +365,7 @@ export type Database = {
           attempt_number: number;
           weight_kg: number | null;
           declared_at: string | null;
+          decided_at: string | null;
           result: Database['public']['Enums']['attempt_result'];
           is_record_attempt: boolean;
           weight_changes: number;
@@ -379,6 +380,7 @@ export type Database = {
           attempt_number: number;
           weight_kg?: number | null;
           declared_at?: string | null;
+          decided_at?: string | null;
           result?: Database['public']['Enums']['attempt_result'];
           is_record_attempt?: boolean;
           weight_changes?: number;
@@ -393,6 +395,7 @@ export type Database = {
           attempt_number?: number;
           weight_kg?: number | null;
           declared_at?: string | null;
+          decided_at?: string | null;
           result?: Database['public']['Enums']['attempt_result'];
           is_record_attempt?: boolean;
           weight_changes?: number;
