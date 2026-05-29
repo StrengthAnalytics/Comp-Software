@@ -19,6 +19,7 @@ import { nextAttemptCountdown, type NextAttemptCountdown } from '@/lib/attempts/
 import { ipfGlPoints, type KitType, type Sex } from '@/lib/scoring/ipf-gl';
 import {
   orderSessionRoster,
+  selectLiveSession,
   selectPlatformPositions,
   type PlatformPositions,
   type RunningOrderFields,
@@ -273,23 +274,6 @@ function applyFlightChange(
   return next;
 }
 
-// A session is finished only once a LATER session on the platform has begun lifting — so the live
-// session stays put through between-rounds gaps (no pending rows for a moment) and only rolls forward
-// when the next session actually starts.
-function isSessionFinished(
-  session: BoardSession,
-  platformSessions: readonly BoardSession[],
-  attemptCountBySession: Map<string, number>,
-  pendingCountBySession: Map<string, number>,
-): boolean {
-  const hasAttempts = (attemptCountBySession.get(session.id) ?? 0) > 0;
-  const hasPending = (pendingCountBySession.get(session.id) ?? 0) > 0;
-  const laterSessionStarted = platformSessions.some(
-    (other) => other.sortOrder > session.sortOrder && (attemptCountBySession.get(other.id) ?? 0) > 0,
-  );
-  return hasAttempts && !hasPending && laterSessionStarted;
-}
-
 type RunRow = RunningOrderFields & { entryId: string; lifterName: string; flightName: string };
 
 type PlatformView = {
@@ -378,10 +362,7 @@ function buildPlatformViews({
     }
 
     // The live session is the earliest not-yet-finished one (platformSessions is non-empty).
-    const liveSession =
-      platformSessions.find(
-        (session) => !isSessionFinished(session, platformSessions, attemptCountBySession, pendingCountBySession),
-      ) ?? platformSessions.at(-1);
+    const liveSession = selectLiveSession(platformSessions, attemptCountBySession, pendingCountBySession);
     if (!liveSession) {
       continue;
     }

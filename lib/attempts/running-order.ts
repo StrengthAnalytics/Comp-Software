@@ -46,6 +46,46 @@ export function compareRunningOrder(a: RunningOrderFields, b: RunningOrderFields
   return compareValues(nullsLast(a.lotNumber), nullsLast(b.lotNumber));
 }
 
+// The minimal session shape live-session selection needs. Session/platform identity and naming are
+// the caller's concern; this only orders and counts.
+export type LiveSessionFields = { id: string; sortOrder: number };
+
+// A session is finished only once a LATER session on the same platform has begun lifting — so the
+// live session stays put through between-rounds gaps (no pending rows for a moment) and only rolls
+// forward when the next session actually starts. Pass the sessions of one platform plus per-session
+// attempt and pending counts.
+export function isSessionFinished(
+  session: LiveSessionFields,
+  platformSessions: readonly LiveSessionFields[],
+  attemptCountBySession: Map<string, number>,
+  pendingCountBySession: Map<string, number>,
+): boolean {
+  const hasAttempts = (attemptCountBySession.get(session.id) ?? 0) > 0;
+  const hasPending = (pendingCountBySession.get(session.id) ?? 0) > 0;
+  const laterSessionStarted = platformSessions.some(
+    (other) => other.sortOrder > session.sortOrder && (attemptCountBySession.get(other.id) ?? 0) > 0,
+  );
+  return hasAttempts && !hasPending && laterSessionStarted;
+}
+
+// The live session on a platform: the earliest not-yet-finished session, falling back to the last
+// session once they are all finished. Pass the platform's sessions in ascending sort order. Returns
+// null only when the list is empty. Single-sources the rule for the run screen and the loading-crew
+// display so they never disagree on which session is live.
+export function selectLiveSession<S extends LiveSessionFields>(
+  platformSessions: readonly S[],
+  attemptCountBySession: Map<string, number>,
+  pendingCountBySession: Map<string, number>,
+): S | null {
+  return (
+    platformSessions.find(
+      (session) => !isSessionFinished(session, platformSessions, attemptCountBySession, pendingCountBySession),
+    ) ??
+    platformSessions.at(-1) ??
+    null
+  );
+}
+
 export type PlatformPositions<T> = {
   onPlatform: T | null;
   onDeck: T | null;
@@ -66,6 +106,44 @@ export function selectPlatformPositions<T extends RunningOrderFields & { result:
     onDeck: queue[1] ?? null,
     inTheHole: queue[2] ?? null,
   };
+}
+
+// The previous / current / on-deck triple the loading-crew display rotates through: the bar is
+// loaded for `current`, `previous` is the attempt just decided, `onDeck` is the one after current.
+export type LoadingPositions<T> = {
+  previous: T | null;
+  current: T | null;
+  onDeck: T | null;
+};
+
+// The three attempts framing the platform for the loading crew. `current` and `onDeck` are the first
+// two pending attempts with a declared weight (the same queue selectPlatformPositions uses), and
+// `previous` is the most recently decided attempt sitting immediately before `current` in running
+// order — the lifter who just went. With no current attempt left (round/flight finished) `previous`
+// is the last decided attempt overall. Decided means a good or no lift; not-taken/withdrawn count as
+// decided too so a skipped attempt does not become the "previous" forever.
+export function selectLoadingPositions<T extends RunningOrderFields & { result: AttemptResult }>(
+  attempts: readonly T[],
+): LoadingPositions<T> {
+  const declared = attempts.filter((attempt) => attempt.weightKg !== null).toSorted(compareRunningOrder);
+  const pending = declared.filter((attempt) => attempt.result === 'pending');
+  const current = pending[0] ?? null;
+  const onDeck = pending[1] ?? null;
+
+  let previous: T | null = null;
+  if (current) {
+    // Walk the ordered declared attempts and keep the last decided one that sorts before current.
+    for (const attempt of declared) {
+      if (attempt.result !== 'pending' && compareRunningOrder(attempt, current) < 0) {
+        previous = attempt;
+      }
+    }
+  } else {
+    // Nothing left to lift: the previous lifter is the last decided attempt in the order.
+    previous = declared.findLast((attempt) => attempt.result !== 'pending') ?? null;
+  }
+
+  return { previous, current, onDeck };
 }
 
 // One attempt from a live session, enough to place its flight in the running order.

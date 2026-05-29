@@ -1,0 +1,535 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import type { Database } from '@/types/database.types';
+import {
+  BENCH_SPOTTING_LABELS,
+  KG_TO_LBS,
+  LIFT_LABELS,
+  SQUAT_RACK_SETTING_LABELS,
+  type Lifts,
+} from '@/lib/constants';
+import { formatPlatesPerSide, platesPerSide, type PlateBreakdown } from '@/lib/plates/plate-math';
+import {
+  compareRunningOrder,
+  selectLiveSession,
+  selectLoadingPositions,
+  type RunningOrderFields,
+} from '@/lib/attempts/running-order';
+import { useAttemptsSubscription } from '@/lib/realtime/use-attempts-subscription';
+import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
+import { useFlightsSubscription } from '@/lib/realtime/use-flights-subscription';
+import type {
+  BoardAttempt,
+  BoardEntry,
+  BoardFlight,
+  BoardSession,
+} from '@/components/scorekeeper/scoresheet-board';
+
+type AttemptRow = Database['public']['Tables']['attempts']['Row'];
+type EntryRow = Database['public']['Tables']['entries']['Row'];
+type FlightRow = Database['public']['Tables']['flights']['Row'];
+type LiftType = Database['public']['Enums']['lift_type'];
+type AttemptResult = Database['public']['Enums']['attempt_result'];
+
+// Synthetic platform id for sessions with no platform assigned (mirrors the page's grouping).
+const UNASSIGNED_PLATFORM_ID = 'none';
+
+type LoadingDisplayProps = {
+  competitionId: string;
+  compName: string;
+  isTeamCompetition: boolean;
+  lifts: Lifts;
+  platformId: string;
+  platformName: string;
+  sessions: BoardSession[];
+  flights: BoardFlight[];
+  entries: BoardEntry[];
+  attempts: BoardAttempt[];
+};
+
+// IPF plate colours and relative heights for the visual breakdown — tallest/biggest first. Keyed by
+// denomination (kg); object keys coerce 2.5 etc. to their string form, which is what a numeric lookup
+// resolves to, so PLATE_STYLE[2.5] hits the right entry.
+const PLATE_STYLE: Record<number, string> = {
+  25: 'bg-red-600 text-white',
+  20: 'bg-blue-600 text-white',
+  15: 'bg-yellow-400 text-neutral-900',
+  10: 'bg-green-600 text-white',
+  5: 'bg-white text-neutral-900 ring-1 ring-inset ring-neutral-400',
+  2.5: 'bg-neutral-900 text-white ring-1 ring-inset ring-neutral-500',
+  1.25: 'bg-neutral-400 text-neutral-900',
+  0.5: 'bg-neutral-500 text-white',
+  0.25: 'bg-neutral-600 text-white',
+};
+const PLATE_HEIGHT: Record<number, string> = {
+  25: 'h-44',
+  20: 'h-40',
+  15: 'h-36',
+  10: 'h-32',
+  5: 'h-28',
+  2.5: 'h-24',
+  1.25: 'h-20',
+  0.5: 'h-16',
+  0.25: 'h-14',
+};
+
+const RESULT_CHIP: Record<AttemptResult, { label: string; className: string } | null> = {
+  good_lift: { label: 'GOOD LIFT', className: 'bg-green-600 text-white' },
+  no_lift: { label: 'NO LIFT', className: 'bg-red-600 text-white' },
+  not_taken: { label: 'NOT TAKEN', className: 'bg-neutral-600 text-white' },
+  withdrawn: { label: 'WITHDRAWN', className: 'bg-neutral-600 text-white' },
+  pending: null,
+};
+
+function attemptKey(entryId: string, lift: LiftType, attemptNumber: number): string {
+  return `${entryId}:${lift}:${attemptNumber}`;
+}
+
+function mapAttempt(row: AttemptRow): BoardAttempt {
+  return {
+    id: row.id,
+    entryId: row.entry_id,
+    lift: row.lift,
+    attemptNumber: row.attempt_number,
+    weightKg: row.weight_kg,
+    result: row.result,
+    decidedAt: row.decided_at,
+  };
+}
+
+function applyAttemptChange(
+  current: Map<string, BoardAttempt>,
+  payload: RealtimePostgresChangesPayload<AttemptRow>,
+): Map<string, BoardAttempt> {
+  const next = new Map(current);
+  if (payload.eventType === 'DELETE') {
+    const old = payload.old;
+    if (old.entry_id && old.lift && old.attempt_number) {
+      next.delete(attemptKey(old.entry_id, old.lift, old.attempt_number));
+    }
+    return next;
+  }
+  const attempt = mapAttempt(payload.new);
+  next.set(attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt);
+  return next;
+}
+
+function applyEntryChange(
+  rows: BoardEntry[],
+  payload: RealtimePostgresChangesPayload<EntryRow>,
+  nameById: Map<string, string>,
+  sexById: Map<string, BoardEntry['sex']>,
+): BoardEntry[] {
+  if (payload.eventType === 'DELETE') {
+    const removedId = payload.old.id;
+    return removedId ? rows.filter((row) => row.id !== removedId) : rows;
+  }
+  const changed = payload.new;
+  const existing = rows.find((row) => row.id === changed.id);
+  // Lifter name, sex, class and division are not on the entry realtime payload (or are stable), so
+  // preserve the existing/initial values; only the live operational fields below change here.
+  const mapped: BoardEntry = {
+    id: changed.id,
+    lifterName: existing?.lifterName ?? nameById.get(changed.id) ?? '—',
+    sex: existing?.sex ?? sexById.get(changed.id) ?? 'male',
+    flightId: changed.flight_id,
+    lotNumber: changed.lot_number,
+    teamLift: changed.team_lift,
+    bodyweightKg: changed.bodyweight_kg,
+    weightClassName: existing?.weightClassName ?? null,
+    divisionName: existing?.divisionName ?? null,
+    rackHeightSquat: changed.rack_height_squat,
+    squatRackSetting: changed.squat_rack_setting,
+    rackHeightBench: changed.rack_height_bench,
+    benchSafetyHeight: changed.bench_safety_height,
+    benchSpotting: changed.bench_spotting,
+  };
+  const index = rows.findIndex((row) => row.id === mapped.id);
+  if (index === -1) {
+    return [...rows, mapped];
+  }
+  const next = [...rows];
+  next[index] = mapped;
+  return next;
+}
+
+function applyFlightChange(rows: BoardFlight[], payload: RealtimePostgresChangesPayload<FlightRow>): BoardFlight[] {
+  if (payload.eventType === 'DELETE') {
+    const removedId = payload.old.id;
+    return removedId ? rows.filter((row) => row.id !== removedId) : rows;
+  }
+  const changed = payload.new;
+  const mapped: BoardFlight = {
+    id: changed.id,
+    sessionId: changed.session_id,
+    name: changed.name,
+    sortOrder: changed.sort_order,
+  };
+  const index = rows.findIndex((row) => row.id === mapped.id);
+  if (index === -1) {
+    return [...rows, mapped];
+  }
+  const next = [...rows];
+  next[index] = mapped;
+  return next;
+}
+
+// An attempt placed in the running order, carrying its entry and flight so a position can be resolved
+// back to the lifter and flight it belongs to.
+type LiveRow = RunningOrderFields & { entryId: string; result: AttemptResult; flightId: string };
+
+// Everything the crew needs about one of the three framed lifters.
+type LifterCard = {
+  entryId: string;
+  lifterName: string;
+  flightName: string;
+  lift: LiftType;
+  attemptNumber: number;
+  weightKg: number | null;
+  result: AttemptResult;
+  entry: BoardEntry;
+  breakdown: PlateBreakdown | null;
+};
+
+type DerivedView = {
+  sessionName: string | null;
+  header: { flightName: string; lift: LiftType; round: number; position: number; total: number } | null;
+  previous: LifterCard | null;
+  current: LifterCard | null;
+  onDeck: LifterCard | null;
+};
+
+export function LoadingDisplay({
+  competitionId,
+  compName,
+  isTeamCompetition,
+  lifts,
+  platformId,
+  platformName,
+  sessions,
+  flights: initialFlights,
+  entries: initialEntries,
+  attempts: initialAttempts,
+}: LoadingDisplayProps) {
+  const [attempts, setAttempts] = useState<Map<string, BoardAttempt>>(
+    () =>
+      new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
+  );
+  const [entries, setEntries] = useState<BoardEntry[]>(initialEntries);
+  const [flights, setFlights] = useState<BoardFlight[]>(initialFlights);
+
+  const nameById = useMemo(() => new Map(initialEntries.map((entry) => [entry.id, entry.lifterName])), [initialEntries]);
+  const sexById = useMemo(() => new Map(initialEntries.map((entry) => [entry.id, entry.sex])), [initialEntries]);
+
+  useAttemptsSubscription(competitionId, (payload) => setAttempts((current) => applyAttemptChange(current, payload)));
+  useEntriesSubscription(competitionId, (payload) =>
+    setEntries((current) => applyEntryChange(current, payload, nameById, sexById)),
+  );
+  useFlightsSubscription(competitionId, (payload) => setFlights((current) => applyFlightChange(current, payload)));
+
+  // Re-seed from the server when fresh props arrive (manual refresh after a realtime gap).
+  useEffect(() => {
+    setAttempts(
+      new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
+    );
+  }, [initialAttempts]);
+  useEffect(() => setEntries(initialEntries), [initialEntries]);
+  useEffect(() => setFlights(initialFlights), [initialFlights]);
+
+  const view = useMemo<DerivedView>(
+    () => buildView({ platformId, isTeamCompetition, lifts, sessions, flights, entries, attempts }),
+    [platformId, isTeamCompetition, lifts, sessions, flights, entries, attempts],
+  );
+
+  const headerMain = view.header
+    ? `Flight ${view.header.flightName} — ${LIFT_LABELS[view.header.lift]}, Round ${view.header.round}`
+    : 'No lifter on the platform';
+  const headerProgress = view.header ? `${view.header.position} of ${view.header.total} lifters` : '';
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-neutral-950 text-white">
+      <header className="flex items-center justify-between gap-4 border-b-2 border-neutral-700 px-6 py-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium uppercase tracking-wide text-neutral-400">
+            {platformName} · {compName}
+          </p>
+          <h1 className="truncate text-2xl font-bold tracking-tight">{headerMain}</h1>
+        </div>
+        <div className="shrink-0 text-right">
+          {view.sessionName ? (
+            <p className="text-sm font-medium uppercase tracking-wide text-neutral-400">{view.sessionName}</p>
+          ) : null}
+          {headerProgress ? <p className="text-xl font-semibold tabular-nums">{headerProgress}</p> : null}
+        </div>
+      </header>
+
+      <div className="grid min-h-0 flex-1 grid-rows-3 divide-y divide-neutral-800">
+        <LifterRow role="Previous" card={view.previous} />
+        <LifterRow role="Now loading" card={view.current} highlight />
+        <LifterRow role="On deck" card={view.onDeck} />
+      </div>
+    </div>
+  );
+}
+
+// Pure-ish derivation of the three framed lifters and the header state for the selected platform.
+function buildView({
+  platformId,
+  isTeamCompetition,
+  lifts,
+  sessions,
+  flights,
+  entries,
+  attempts,
+}: {
+  platformId: string;
+  isTeamCompetition: boolean;
+  lifts: Lifts;
+  sessions: BoardSession[];
+  flights: BoardFlight[];
+  entries: BoardEntry[];
+  attempts: Map<string, BoardAttempt>;
+}): DerivedView {
+  const platformSessions = sessions
+    .filter((session) => (session.platformId ?? UNASSIGNED_PLATFORM_ID) === platformId)
+    .toSorted((a, b) => a.sortOrder - b.sortOrder);
+  const platformSessionIds = new Set(platformSessions.map((session) => session.id));
+
+  const flightById = new Map(flights.map((flight) => [flight.id, flight]));
+  const sessionById = new Map(sessions.map((session) => [session.id, session]));
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
+  const rowsBySession = new Map<string, LiveRow[]>();
+  const attemptCountBySession = new Map<string, number>();
+  const pendingCountBySession = new Map<string, number>();
+  for (const attempt of attempts.values()) {
+    const entry = entryById.get(attempt.entryId);
+    const flight = entry?.flightId ? flightById.get(entry.flightId) : undefined;
+    const session = flight ? sessionById.get(flight.sessionId) : undefined;
+    if (!entry || !flight || !session || !platformSessionIds.has(session.id)) {
+      continue;
+    }
+    const list = rowsBySession.get(session.id) ?? [];
+    list.push({
+      entryId: attempt.entryId,
+      lift: attempt.lift,
+      attemptNumber: attempt.attemptNumber,
+      weightKg: attempt.weightKg,
+      lotNumber: entry.lotNumber,
+      flightSortOrder: flight.sortOrder,
+      flightId: flight.id,
+      result: attempt.result,
+    });
+    rowsBySession.set(session.id, list);
+    attemptCountBySession.set(session.id, (attemptCountBySession.get(session.id) ?? 0) + 1);
+    if (attempt.result === 'pending' && attempt.weightKg !== null) {
+      pendingCountBySession.set(session.id, (pendingCountBySession.get(session.id) ?? 0) + 1);
+    }
+  }
+
+  const liveSession = selectLiveSession(platformSessions, attemptCountBySession, pendingCountBySession);
+  const liveRows = liveSession ? (rowsBySession.get(liveSession.id) ?? []) : [];
+  const positions = selectLoadingPositions(liveRows);
+
+  const toCard = (row: LiveRow | null): LifterCard | null => {
+    if (!row) {
+      return null;
+    }
+    const entry = entryById.get(row.entryId);
+    if (!entry) {
+      return null;
+    }
+    const flight = flightById.get(row.flightId);
+    return {
+      entryId: row.entryId,
+      lifterName: entry.lifterName,
+      flightName: flight?.name ?? '—',
+      lift: row.lift,
+      attemptNumber: row.attemptNumber,
+      weightKg: row.weightKg,
+      result: row.result,
+      entry,
+      breakdown: row.weightKg === null ? null : platesPerSide(row.weightKg),
+    };
+  };
+
+  // Header from the lifter the bar is being loaded for. Position = the current lifter's rank within
+  // this flight/lift/round by running order (lightest first); total = lifters in that flight who
+  // contest the lift.
+  let header: DerivedView['header'] = null;
+  const current = positions.current;
+  if (current) {
+    const group = liveRows
+      .filter(
+        (row) =>
+          row.flightId === current.flightId &&
+          row.lift === current.lift &&
+          row.attemptNumber === current.attemptNumber &&
+          row.weightKg !== null,
+      )
+      .toSorted(compareRunningOrder);
+    const position = group.findIndex((row) => row.entryId === current.entryId) + 1;
+    const total = entries.filter(
+      (entry) =>
+        entry.flightId === current.flightId &&
+        (isTeamCompetition ? entry.teamLift === current.lift : lifts[current.lift]),
+    ).length;
+    const flight = flightById.get(current.flightId);
+    header = {
+      flightName: flight?.name ?? '—',
+      lift: current.lift,
+      round: current.attemptNumber,
+      position,
+      total,
+    };
+  }
+
+  return {
+    sessionName: liveSession?.name ?? null,
+    header,
+    previous: toCard(positions.previous),
+    current: toCard(positions.current),
+    onDeck: toCard(positions.onDeck),
+  };
+}
+
+function LifterRow({ role, card, highlight }: { role: string; card: LifterCard | null; highlight?: boolean }) {
+  return (
+    <section
+      className={`grid min-h-0 grid-cols-[1fr_auto] items-stretch gap-6 px-6 py-4 ${
+        highlight ? 'bg-neutral-900' : ''
+      }`}
+    >
+      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
+        <LifterIdentity role={role} card={card} highlight={highlight} />
+        {card ? <RackSettings card={card} /> : null}
+      </div>
+      <div className="flex items-center justify-end">
+        {card?.breakdown ? <PlateStack breakdown={card.breakdown} /> : null}
+      </div>
+    </section>
+  );
+}
+
+function LifterIdentity({ role, card, highlight }: { role: string; card: LifterCard | null; highlight?: boolean }) {
+  const chip = card ? RESULT_CHIP[card.result] : null;
+  return (
+    <div className="flex min-w-0 flex-col justify-center">
+      <p className={`text-sm font-semibold uppercase tracking-widest ${highlight ? 'text-amber-400' : 'text-neutral-500'}`}>
+        {role}
+      </p>
+      {card ? (
+        <>
+          <p className={`truncate font-bold leading-tight ${highlight ? 'text-5xl' : 'text-4xl'}`}>{card.lifterName}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-3 text-neutral-300">
+            <span className="text-xl font-medium">
+              Flight {card.flightName} · {LIFT_LABELS[card.lift]} {card.attemptNumber}
+            </span>
+            {chip ? (
+              <span className={`rounded px-2 py-0.5 text-sm font-bold ${chip.className}`}>{chip.label}</span>
+            ) : null}
+          </div>
+          <Weight weightKg={card.weightKg} highlight={highlight} />
+        </>
+      ) : (
+        <p className="mt-1 text-3xl font-semibold text-neutral-600">—</p>
+      )}
+    </div>
+  );
+}
+
+function Weight({ weightKg, highlight }: { weightKg: number | null; highlight?: boolean }) {
+  if (weightKg === null) {
+    return <p className="mt-2 text-2xl font-semibold text-neutral-500">No weight declared</p>;
+  }
+  const lbs = (weightKg * KG_TO_LBS).toFixed(1);
+  return (
+    <p className="mt-2 tabular-nums">
+      <span className={`font-extrabold ${highlight ? 'text-6xl' : 'text-5xl'}`}>{weightKg}</span>
+      <span className="ml-2 text-2xl font-semibold text-neutral-400">kg</span>
+      <span className="ml-3 text-xl text-neutral-500">({lbs} lb)</span>
+    </p>
+  );
+}
+
+const RACK_LABEL = 'text-xs font-semibold uppercase tracking-wide text-neutral-500';
+const RACK_VALUE = 'text-2xl font-bold tabular-nums';
+
+function RackSettings({ card }: { card: LifterCard }) {
+  const { entry, lift } = card;
+  if (lift === 'deadlift') {
+    return (
+      <div className="flex flex-col justify-center rounded-lg border border-neutral-800 px-4 py-3">
+        <p className={RACK_LABEL}>Rack settings</p>
+        <p className="text-xl font-semibold text-neutral-400">No racks — deadlift</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col justify-center gap-2 rounded-lg border border-neutral-800 px-4 py-3">
+      <p className={RACK_LABEL}>Rack settings</p>
+      {lift === 'squat' ? (
+        <div className="flex gap-8">
+          <div>
+            <p className={RACK_LABEL}>Height</p>
+            <p className={RACK_VALUE}>{entry.rackHeightSquat ?? '—'}</p>
+          </div>
+          <div>
+            <p className={RACK_LABEL}>Setting</p>
+            <p className={RACK_VALUE}>
+              {entry.squatRackSetting ? SQUAT_RACK_SETTING_LABELS[entry.squatRackSetting] : '—'}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-6">
+          <div>
+            <p className={RACK_LABEL}>Rack</p>
+            <p className={RACK_VALUE}>{entry.rackHeightBench ?? '—'}</p>
+          </div>
+          <div>
+            <p className={RACK_LABEL}>Safety</p>
+            <p className={RACK_VALUE}>{entry.benchSafetyHeight ?? '—'}</p>
+          </div>
+          <div>
+            <p className={RACK_LABEL}>Spotting</p>
+            <p className={RACK_VALUE}>{entry.benchSpotting ? BENCH_SPOTTING_LABELS[entry.benchSpotting] : '—'}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlateStack({ breakdown }: { breakdown: PlateBreakdown }) {
+  if (!breakdown.loadable) {
+    return <p className="text-xl font-semibold text-red-400">Cannot load {breakdown.totalKg} kg with available plates</p>;
+  }
+  if (breakdown.perSideKg === 0) {
+    return <p className="text-2xl font-semibold text-neutral-400">Bar only</p>;
+  }
+  const bars = breakdown.plates.flatMap((plate) =>
+    Array.from({ length: plate.count }, (_, index) => ({ weightKg: plate.weightKg, index })),
+  );
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-end gap-1.5">
+        {bars.map((bar) => (
+          <div
+            key={`${bar.weightKg}-${bar.index}`}
+            className={`flex w-12 items-end justify-center rounded-sm pb-2 text-lg font-bold ${
+              PLATE_HEIGHT[bar.weightKg] ?? 'h-12'
+            } ${PLATE_STYLE[bar.weightKg] ?? 'bg-neutral-700 text-white'}`}
+          >
+            {bar.weightKg}
+          </div>
+        ))}
+      </div>
+      <p className="text-base text-neutral-400">
+        <span className="font-semibold text-neutral-200">{formatPlatesPerSide(breakdown.plates)}</span> per side
+      </p>
+    </div>
+  );
+}
