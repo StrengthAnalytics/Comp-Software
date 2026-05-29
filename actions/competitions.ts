@@ -301,7 +301,7 @@ async function copyCompetitionChildren(
   const entries = await supabase
     .from('entries')
     .select(
-      'id, lifter_id, weight_class_id, division_id, flight_id, team_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, status',
+      'id, lifter_id, weight_class_id, division_id, flight_id, team_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, racks_set, status',
     )
     .eq('competition_id', sourceId);
   if (entries.error) return duplicateFailed(entries.error);
@@ -328,6 +328,7 @@ async function copyCompetitionChildren(
       rack_height_bench: row.rack_height_bench,
       bench_safety_height: row.bench_safety_height,
       bench_spotting: row.bench_spotting,
+      racks_set: row.racks_set,
       status: row.status,
     };
   });

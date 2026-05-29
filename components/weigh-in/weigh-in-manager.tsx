@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  createContext,
   memo,
   useCallback,
   useContext,
@@ -16,13 +15,43 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { assignEntryWeightClassAction, weighInAction } from '@/actions/entries';
+import { usePersistentString } from '@/lib/use-persistent-string';
+import { CellNumber, NumberField, SegmentedToggle } from '@/components/station/controls';
+import {
+  CELL_PRIMARY,
+  CELL_SELECT,
+  FIELD_CLASS,
+  GHOST_BUTTON,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  PRIMARY_BUTTON,
+  PRINT_BLANK,
+  PRINT_TD,
+  PRINT_TH,
+  TAB_BASE,
+  TABLE_LABEL,
+  TABLE_TD,
+  TABLE_TH,
+  TABLE_TH_CENTER,
+} from '@/components/station/styles';
+import {
+  AUTOSAVE_DEBOUNCE_MS,
+  SAVE_RETRY_MS,
+  SAVED_TICK_MS,
+  SaveContext,
+  SaveStatus,
+  computeSaveIndicator,
+  readError,
+  useOnline,
+  type ReportedSaveState,
+  type RowSaveState,
+  type SaveContextValue,
+} from '@/components/station/save-state';
 import {
   BENCH_SPOTTING_LABELS,
   BENCH_SPOTTINGS,
   ENTRY_STATUS_LABELS,
   ENTRY_STATUSES,
-  GENDER_LABELS,
-  LIFT_LABELS,
   SQUAT_RACK_SETTING_LABELS,
   SQUAT_RACK_SETTINGS,
   type BenchSpotting,
@@ -32,13 +61,17 @@ import {
 } from '@/lib/constants';
 import { OptionalSelectField } from '@/components/optional-select-field';
 import { numberToInput, parseOptionalNumber } from '@/lib/number-input';
-import { buildWeighInGroups, type WeighInGroup } from '@/lib/weigh-in/order';
+import {
+  buildWeighInGroups,
+  liftsForWeighInGroup,
+  weighInGroupLabel,
+  type WeighInGroup,
+} from '@/lib/weigh-in/order';
 import {
   findWeightClassForBodyweight,
   isBodyweightInClass,
   type WeightClassBounds,
 } from '@/lib/weigh-in/weight-class';
-import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
 import type { WeighInInput } from '@/types/entry';
 import type { TeamLift } from '@/types/team';
@@ -77,103 +110,9 @@ type ViewMode = 'cards' | 'table';
 // retained and reappear when switched back to full.
 type DetailMode = 'simple' | 'full';
 
-const INPUT_BASE = 'rounded-md border px-3 py-2 text-sm text-neutral-900 focus:outline-none';
-const INPUT_CLASS = `${INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
-// Empty fields that must be filled before a lifter can be marked weighed-in (bodyweight, openers).
-const INPUT_REQUIRED_CLASS = `${INPUT_BASE} border-red-400 bg-red-50 focus:border-red-500`;
-const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
-// Weigh-in fields hold short values (weights, hole numbers, a short setting), so each box is a fixed
-// compact width and the row wraps — roughly half the width of the old full-stretch grid cells.
-const FIELD_CLASS = 'flex w-32 flex-col gap-1';
-const PRIMARY_BUTTON =
-  'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
-const GHOST_BUTTON =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const TAB_BASE = 'rounded-md px-3 py-2 text-sm font-medium';
-
-// Compact controls for the dense table view (the column header carries the label, so cells are bare).
-// Values are centred in their box and the box is centred in the cell, so the numbers line up down a
-// column.
-const CELL_INPUT_BASE = 'mx-auto block w-24 rounded border px-2 py-1 text-center text-sm text-neutral-900 focus:outline-none';
-const CELL_INPUT = `${CELL_INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
-const CELL_INPUT_REQUIRED = `${CELL_INPUT_BASE} border-red-400 bg-red-50 focus:border-red-500`;
-const CELL_SELECT = 'w-full rounded border border-neutral-300 px-2 py-1 text-center text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
-const CELL_PRIMARY =
-  'rounded bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
-// Two-row sticky header: the group-label bar pins at the top, the column headers pin just below it.
-// TABLE_TH's `top-9` must equal the label bar's `h-9` so the headers tuck directly under the label
-// rather than overlapping it. z-order: label (30) over column headers (20) over the frozen lifter
-// column (10), so each layer covers the scrolling cells beneath it.
-const TABLE_LABEL =
-  'sticky top-0 z-30 flex h-9 items-center bg-neutral-100 px-2 text-xs font-semibold uppercase tracking-wide text-neutral-500';
-const TABLE_TH_BASE =
-  'sticky top-9 z-20 border-b border-neutral-300 bg-neutral-100 px-2 py-2 text-xs font-medium text-neutral-600 whitespace-nowrap';
-// The lifter column stays left-aligned over the names; the data columns centre to sit over their
-// centred values.
-const TABLE_TH = `${TABLE_TH_BASE} text-left`;
-const TABLE_TH_CENTER = `${TABLE_TH_BASE} text-center`;
-const TABLE_TD = 'border-b border-neutral-200 px-2 py-1.5 align-top';
-
-// Printable backup sheet: plain ruled cells; the blank cells get extra height to write into by hand.
-const PRINT_TH = 'border border-neutral-500 px-2 py-1 text-center text-[11px] font-semibold uppercase';
-const PRINT_TD = 'border border-neutral-400 px-2 py-1 text-center';
-const PRINT_BLANK = 'border border-neutral-400 px-2 py-3';
-
 const VIEW_STORAGE_KEY = 'comp-software:weigh-in:view';
 const LAYOUT_STORAGE_KEY = 'comp-software:weigh-in:layout';
 const DETAIL_STORAGE_KEY = 'comp-software:weigh-in:detail';
-
-// Debounce between the last keystroke and an autosave fire. Long enough not to save every digit of a
-// weight mid-typing, short enough that walking away from a field persists it almost immediately.
-const AUTOSAVE_DEBOUNCE_MS = 800;
-// After a transient (thrown) save failure, wait this long before one automatic retry — slow enough not
-// to hammer a struggling server, fast enough to self-heal a brief blip without an operator edit.
-const SAVE_RETRY_MS = 4000;
-// How long the inline "Saved ✓" confirmation lingers before fading, so it reads as a momentary
-// acknowledgement rather than a permanent badge.
-const SAVED_TICK_MS = 2500;
-
-// Per-row save state, reported up to the page-level indicator (clean rows report null) and shown
-// inline. 'offline' = a held edit we couldn't attempt; 'failed' = an attempt that errored on the wire.
-type RowSaveState = 'clean' | 'saving' | 'offline' | 'failed' | 'error';
-type ReportedSaveState = Exclude<RowSaveState, 'clean'>;
-
-type WeighInSaveContextValue = {
-  online: boolean;
-  report: (id: string, state: ReportedSaveState | null) => void;
-};
-
-// Carries connectivity and the row→page save reporting channel to every row without prop-drilling.
-// Default is the inert no-op used when a row renders outside a provider (it never does in practice).
-const WeighInSaveContext = createContext<WeighInSaveContextValue>({ online: true, report: () => {} });
-
-// Tracks browser connectivity so the page can show an online/offline indicator and hold autosaves
-// while offline. navigator.onLine flips on the online/offline events; optimistic true on first paint
-// so server and client markup agree (navigator is undefined during SSR). If the page is opened while
-// already offline the indicator shows green for one render until the mount effect corrects it — purely
-// cosmetic, since the mount effect runs long before the 800ms autosave debounce could fire a save.
-function useOnline(): boolean {
-  const [online, setOnline] = useState(true);
-  useEffect(() => {
-    const update = () => setOnline(globalThis.navigator.onLine);
-    update();
-    globalThis.addEventListener('online', update);
-    globalThis.addEventListener('offline', update);
-    return () => {
-      globalThis.removeEventListener('online', update);
-      globalThis.removeEventListener('offline', update);
-    };
-  }, []);
-  return online;
-}
-
-function readError(result: ActionResult<unknown>): string {
-  if (result.status !== 'error') {
-    return '';
-  }
-  const firstField = result.fieldErrors ? Object.values(result.fieldErrors)[0] : undefined;
-  return firstField?.[0] ?? result.message;
-}
 
 // Compact opener readout for the collapsed (weighed-in) row, covering only the lifts this entry
 // contests. Takes live values so the collapsed summary reflects the latest (autosaved) edit rather
@@ -192,47 +131,6 @@ function openerSummary(shownLifts: Lifts, squat: number | null, bench: number | 
   return parts.join(' / ');
 }
 
-function groupLabel(group: WeighInGroup<WeighInEntry>, isTeamComp: boolean): string {
-  const sex = GENDER_LABELS[group.sex];
-  if (group.lift) {
-    return `${LIFT_LABELS[group.lift]} · ${sex}`;
-  }
-  return isTeamComp ? `No team role · ${sex}` : sex;
-}
-
-// Within a group every lifter contests the same lifts: the whole comp's lifts for an individual comp,
-// or just the group's role for a team comp.
-function liftsForGroup(group: WeighInGroup<WeighInEntry>, lifts: Lifts, isTeamComp: boolean): Lifts {
-  if (isTeamComp && group.lift) {
-    return {
-      squat: group.lift === 'squat',
-      bench: group.lift === 'bench',
-      deadlift: group.lift === 'deadlift',
-    };
-  }
-  return lifts;
-}
-
-// Remembers a string preference in localStorage. The first paint uses the fallback (so server and
-// client markup match), then an effect snaps to the saved value on mount.
-function usePersistentString(key: string, fallback: string): readonly [string, (next: string) => void] {
-  const [value, setValue] = useState(fallback);
-  useEffect(() => {
-    const stored = globalThis.localStorage.getItem(key);
-    if (stored !== null) {
-      setValue(stored);
-    }
-  }, [key]);
-  const update = useCallback(
-    (next: string) => {
-      setValue(next);
-      globalThis.localStorage.setItem(key, next);
-    },
-    [key],
-  );
-  return [value, update];
-}
-
 // All the per-lifter weigh-in editing state, save logic and derived flags, shared verbatim by the
 // card and table-row layouts so both behave identically.
 function useWeighInForm({
@@ -249,7 +147,7 @@ function useWeighInForm({
   weightClasses: WeightClassOption[];
 }) {
   const router = useRouter();
-  const { online, report } = useContext(WeighInSaveContext);
+  const { online, report } = useContext(SaveContext);
   const [weightClassId, setWeightClassId] = useState(entry.weightClassId ?? '');
   const [bodyweight, setBodyweight] = useState(numberToInput(entry.bodyweightKg));
   const [openerSquat, setOpenerSquat] = useState(numberToInput(entry.openerSquatKg));
@@ -572,130 +470,6 @@ function useWeighInForm({
   };
 }
 
-// A pill of mutually-exclusive options (the Cards/Table and Simple/Full toolbars). One implementation
-// so the markup, active styling and `role=group`/`aria-pressed` wiring stay consistent.
-function SegmentedToggle<T extends string>({
-  ariaLabel,
-  options,
-  value,
-  onChange,
-}: {
-  ariaLabel: string;
-  options: readonly { value: T; label: string; title?: string }[];
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="inline-flex rounded-md border border-neutral-300 p-0.5" role="group" aria-label={ariaLabel}>
-      {options.map((option) => {
-        const active = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={active}
-            title={option.title}
-            className={`${TAB_BASE} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// Shared number `<input>` for both the card field (labelled wrapper) and the dense table cell (bare,
-// aria-labelled), so the type/step/blur/aria-invalid handling lives in one place.
-function NumberInput({
-  value,
-  onChange,
-  onBlur,
-  step,
-  invalid = false,
-  className,
-  ariaLabel,
-  ariaRequired = false,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onBlur?: () => void;
-  step: string;
-  invalid?: boolean;
-  className: string;
-  ariaLabel?: string;
-  ariaRequired?: boolean;
-}) {
-  return (
-    <input
-      type="number"
-      step={step}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      onBlur={onBlur}
-      aria-label={ariaLabel}
-      aria-required={ariaRequired || undefined}
-      aria-invalid={invalid || undefined}
-      className={className}
-    />
-  );
-}
-
-// Inline per-row save feedback for autosave. The validation error ('error') is rendered separately as
-// a role="alert" message, so nothing is shown for it here.
-function SaveStatus({ state, savedTick }: { state: RowSaveState; savedTick: boolean }) {
-  if (state === 'saving') {
-    return <span className="text-xs text-neutral-500">Saving…</span>;
-  }
-  if (state === 'failed') {
-    return <span className="text-xs font-medium text-red-600">Couldn’t save — will retry</span>;
-  }
-  if (state === 'offline') {
-    return <span className="text-xs font-medium text-amber-700">Offline — change held</span>;
-  }
-  if (savedTick) {
-    return <span className="text-xs text-green-700">Saved ✓</span>;
-  }
-  return null;
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-  onBlur,
-  step,
-  invalid = false,
-  required = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onBlur?: () => void;
-  step: string;
-  invalid?: boolean;
-  required?: boolean;
-}) {
-  return (
-    <label className={FIELD_CLASS}>
-      <span className={LABEL_CLASS}>
-        {label}
-        {required ? <span className="text-red-500"> *</span> : null}
-      </span>
-      <NumberInput
-        value={value}
-        onChange={onChange}
-        onBlur={onBlur}
-        step={step}
-        invalid={invalid}
-        ariaRequired={required}
-        className={`${invalid ? INPUT_REQUIRED_CLASS : INPUT_CLASS} text-center`}
-      />
-    </label>
-  );
-}
-
 // Memoised so a sibling row reporting its save state up to the page indicator (which re-renders the
 // manager) doesn't re-render every card; props are kept referentially stable via renderGroups.
 const WeighInCard = memo(function WeighInCard({
@@ -942,34 +716,6 @@ const WeighInCard = memo(function WeighInCard({
     </section>
   );
 });
-
-function CellNumber({
-  label,
-  value,
-  onChange,
-  onBlur,
-  step,
-  invalid = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onBlur?: () => void;
-  step: string;
-  invalid?: boolean;
-}) {
-  return (
-    <NumberInput
-      value={value}
-      onChange={onChange}
-      onBlur={onBlur}
-      step={step}
-      invalid={invalid}
-      ariaLabel={label}
-      className={invalid ? CELL_INPUT_REQUIRED : CELL_INPUT}
-    />
-  );
-}
 
 // Rack/bench columns shared by the screen table's header and row cells, so the two can't fall out of
 // sync (a header without its cell, or vice versa). `lift` gates which contested lifts show the column;
@@ -1413,8 +1159,8 @@ const WeighInPrintSheet = memo(function WeighInPrintSheet({
 
   return createPortal(
     <div
-      className={`weigh-in-print-sheet hidden text-neutral-900 print:block ${
-        showRacks ? 'weigh-in-print-landscape' : 'weigh-in-print-portrait'
+      className={`print-backup-sheet hidden text-neutral-900 print:block ${
+        showRacks ? 'print-landscape' : 'print-portrait'
       }`}
     >
       <div className="mb-4 flex items-end justify-between gap-6 border-b border-neutral-500 pb-2">
@@ -1433,9 +1179,9 @@ const WeighInPrintSheet = memo(function WeighInPrintSheet({
         groups.map((group) => (
           <WeighInPrintTable
             key={`${group.lift ?? 'all'}-${group.sex}`}
-            label={groupLabel(group, isTeamComp)}
+            label={weighInGroupLabel(group, isTeamComp)}
             entries={group.entries}
-            shownLifts={liftsForGroup(group, lifts, isTeamComp)}
+            shownLifts={liftsForWeighInGroup(group, lifts, isTeamComp)}
             showWeightClass={!isTeamComp}
             showRacks={showRacks}
             classNameById={classNameById}
@@ -1497,7 +1243,7 @@ export function WeighInManager({
       return next;
     });
   }, []);
-  const saveContext = useMemo<WeighInSaveContextValue>(() => ({ online, report }), [online, report]);
+  const saveContext = useMemo<SaveContextValue>(() => ({ online, report }), [online, report]);
 
   // Esc leaves the full-screen view (matching the run scoresheet).
   useEffect(() => {
@@ -1536,13 +1282,13 @@ export function WeighInManager({
     () =>
       groups.map((group) => ({
         key: `${group.lift ?? 'all'}-${group.sex}`,
-        label: groupLabel(group, isTeamCompetition),
+        label: weighInGroupLabel(group, isTeamCompetition),
         // Lifters still to weigh in stay at the top in calling order; the weighed-in ones sink to the
         // bottom (sort is stable, so calling order holds within each part).
         ordered: group.entries.toSorted(
           (a, b) => Number(a.status === 'weighed_in') - Number(b.status === 'weighed_in'),
         ),
-        groupLifts: liftsForGroup(group, lifts, isTeamCompetition),
+        groupLifts: liftsForWeighInGroup(group, lifts, isTeamCompetition),
       })),
     [groups, lifts, isTeamCompetition],
   );
@@ -1566,38 +1312,10 @@ export function WeighInManager({
     );
   }
 
-  const states = new Set(rowStates.values());
-  const anySaving = states.has('saving');
-  const anyProblem = states.has('failed') || states.has('error');
-  const anyOffline = states.has('offline');
-  let indicator: { text: string; dot: string; box: string; pulse: boolean };
-  if (!online) {
-    indicator = {
-      text: anyOffline ? 'Offline — changes held, will save when reconnected' : 'Offline — changes won’t save',
-      dot: 'bg-red-500',
-      box: 'border-red-300 bg-red-50 text-red-800',
-      pulse: true,
-    };
-  } else if (anyProblem) {
-    indicator = {
-      text: 'Some changes didn’t save — they’ll retry when you edit or reconnect',
-      dot: 'bg-red-500',
-      box: 'border-red-300 bg-red-50 text-red-800',
-      pulse: false,
-    };
-  } else if (anySaving) {
-    indicator = { text: 'Saving…', dot: 'bg-blue-500', box: 'border-blue-300 bg-blue-50 text-blue-800', pulse: true };
-  } else {
-    indicator = {
-      text: 'Online — all changes saved',
-      dot: 'bg-green-500',
-      box: 'border-green-300 bg-green-50 text-green-800',
-      pulse: false,
-    };
-  }
+  const indicator = computeSaveIndicator(online, new Set(rowStates.values()));
 
   return (
-    <WeighInSaveContext.Provider value={saveContext}>
+    <SaveContext.Provider value={saveContext}>
     <div className={fullScreen ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1743,6 +1461,6 @@ export function WeighInManager({
         weightClasses={weightClasses}
         showRacks={showRacks}
       />
-    </WeighInSaveContext.Provider>
+    </SaveContext.Provider>
   );
 }

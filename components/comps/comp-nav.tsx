@@ -23,6 +23,7 @@ export function CompNav({ slug, compId, compName, isTeamCompetition }: CompNavPr
     { label: 'Sessions & flights', href: `/${slug}/flights` },
     { label: 'Lifters', href: `/${slug}/entries` },
     { label: 'Weigh-in', href: `/${slug}/weigh-in` },
+    { label: 'Rack heights', href: `/${slug}/rack-heights` },
     // The run screen runs full-window during a meet, so open it in its own tab from the nav.
     { label: 'Run', href: `/${slug}/run`, newTab: true },
     ...(isTeamCompetition

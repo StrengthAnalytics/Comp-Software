@@ -301,6 +301,7 @@ export type Database = {
           rack_height_bench: number | null;
           bench_safety_height: number | null;
           bench_spotting: Database['public']['Enums']['bench_spotting'] | null;
+          racks_set: boolean;
           status: Database['public']['Enums']['entry_status'];
           created_at: string;
           updated_at: string;
@@ -324,6 +325,7 @@ export type Database = {
           rack_height_bench?: number | null;
           bench_safety_height?: number | null;
           bench_spotting?: Database['public']['Enums']['bench_spotting'] | null;
+          racks_set?: boolean;
           status?: Database['public']['Enums']['entry_status'];
           created_at?: string;
           updated_at?: string;
@@ -347,6 +349,7 @@ export type Database = {
           rack_height_bench?: number | null;
           bench_safety_height?: number | null;
           bench_spotting?: Database['public']['Enums']['bench_spotting'] | null;
+          racks_set?: boolean;
           status?: Database['public']['Enums']['entry_status'];
           created_at?: string;
           updated_at?: string;
