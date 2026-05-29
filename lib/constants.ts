@@ -53,6 +53,25 @@ export const NEXT_ATTEMPT_TIMER_SECONDS = 60;
 // the 60-second clock expires without a declared weight (a no lift repeats the same weight instead).
 export const MIN_ATTEMPT_INCREMENT_KG = 2.5;
 
+// Bar plus collars weight (kg): the fixed load on the bar before any plates. House standard is a
+// 20 kg bar with 2.5 kg collars each side (= 25 kg), used for every lifter regardless of sex. The
+// loading-crew plate breakdown loads (total − this) ÷ 2 of plates on each side.
+export const BAR_AND_COLLARS_KG = 25;
+
+// IPF calibrated competition plates (kg), largest first, that the loading crew has on hand. Each
+// denomination can be loaded any number of times per side; the change plates down to 0.25 kg let the
+// crew make any legal 0.5 kg-granular attempt. Used by the plate-math breakdown only.
+export const IPF_PLATE_WEIGHTS_KG = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5, 0.25] as const;
+
+// The denominations in IPF_PLATE_WEIGHTS_KG as a union — the single source the loading display's
+// colour/height maps are typed against, so a plate added or removed here is a compile error until the
+// maps are updated (rather than silently rendering with a fallback size/colour).
+export type IpfPlateWeight = (typeof IPF_PLATE_WEIGHTS_KG)[number];
+
+// Kilograms-to-pounds factor, for the secondary lbs figure shown beside a kg weight on the crew
+// display. Powerlifting weighs and loads in kg; lbs is informational only.
+export const KG_TO_LBS = 2.204_622_621_8;
+
 // Squat rack position and bench spotting choices, captured at weigh-in (or later at the platform).
 // The tuples mirror the matching Postgres enums; labels render in the all-caps house style.
 export const SQUAT_RACK_SETTINGS = ['in', 'out', 'left_in', 'right_in'] as const;

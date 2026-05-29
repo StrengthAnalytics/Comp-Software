@@ -3,6 +3,8 @@ import type { Database } from '@/types/database.types';
 import {
   compareRunningOrder,
   orderSessionRoster,
+  selectLiveSession,
+  selectLoadingPositions,
   selectPlatformPositions,
   type RosterEntryFields,
   type RunningOrderFields,
@@ -114,6 +116,121 @@ describe('selectPlatformPositions', () => {
 
   it('returns nulls when the queue is empty', () => {
     expect(selectPlatformPositions([])).toEqual({ onPlatform: null, onDeck: null, inTheHole: null });
+  });
+});
+
+describe('selectLoadingPositions', () => {
+  it('loads for the first pending attempt, with the next pending on deck', () => {
+    const rows = [
+      { ...base, id: 'a', weightKg: 100, result: 'pending' as const },
+      { ...base, id: 'b', weightKg: 110, result: 'pending' as const },
+      { ...base, id: 'c', weightKg: 120, result: 'pending' as const },
+    ];
+    const { current, onDeck } = selectLoadingPositions(rows);
+    expect([current?.id, onDeck?.id]).toEqual(['a', 'b']);
+  });
+
+  it('reports the just-decided lifter immediately before current as previous', () => {
+    const rows = [
+      { ...base, id: 'done', weightKg: 90, result: 'good_lift' as const },
+      { ...base, id: 'now', weightKg: 100, result: 'pending' as const },
+      { ...base, id: 'next', weightKg: 110, result: 'pending' as const },
+    ];
+    const { previous, current, onDeck } = selectLoadingPositions(rows);
+    expect([previous?.id, current?.id, onDeck?.id]).toEqual(['done', 'now', 'next']);
+  });
+
+  it('takes the nearest decided attempt before current as previous (not the earliest)', () => {
+    const rows = [
+      { ...base, id: 'first', weightKg: 80, result: 'good_lift' as const },
+      { ...base, id: 'second', weightKg: 90, result: 'no_lift' as const },
+      { ...base, id: 'now', weightKg: 100, result: 'pending' as const },
+    ];
+    expect(selectLoadingPositions(rows).previous?.id).toBe('second');
+  });
+
+  it('treats a failed lift as a valid previous lifter', () => {
+    const rows = [
+      { ...base, id: 'missed', weightKg: 90, result: 'no_lift' as const },
+      { ...base, id: 'now', weightKg: 100, result: 'pending' as const },
+    ];
+    expect(selectLoadingPositions(rows).previous?.id).toBe('missed');
+  });
+
+  it('has no previous at the very start of a round', () => {
+    const rows = [{ ...base, id: 'first', weightKg: 100, result: 'pending' as const }];
+    const { previous, current } = selectLoadingPositions(rows);
+    expect(previous).toBeNull();
+    expect(current?.id).toBe('first');
+  });
+
+  it('keeps the last decided lifter as previous once nothing is left to lift', () => {
+    const rows = [
+      { ...base, id: 'a', weightKg: 90, result: 'good_lift' as const },
+      { ...base, id: 'b', weightKg: 100, result: 'good_lift' as const },
+    ];
+    const { previous, current, onDeck } = selectLoadingPositions(rows);
+    expect(previous?.id).toBe('b');
+    expect(current).toBeNull();
+    expect(onDeck).toBeNull();
+  });
+
+  it('ignores pending attempts without a declared weight', () => {
+    const rows = [
+      { ...base, id: 'undeclared', weightKg: null, result: 'pending' as const },
+      { ...base, id: 'declared', weightKg: 100, result: 'pending' as const },
+    ];
+    expect(selectLoadingPositions(rows).current?.id).toBe('declared');
+  });
+
+  it('returns nulls for an empty session', () => {
+    expect(selectLoadingPositions([])).toEqual({ previous: null, current: null, onDeck: null });
+  });
+});
+
+describe('selectLiveSession', () => {
+  const sessions = [
+    { id: 's1', sortOrder: 0 },
+    { id: 's2', sortOrder: 1 },
+    { id: 's3', sortOrder: 2 },
+  ];
+
+  it('returns the earliest session that is not finished', () => {
+    // s1 has attempts but is still pending → it is live, not s2.
+    const attemptCounts = new Map([['s1', 5]]);
+    const pendingCounts = new Map([['s1', 2]]);
+    expect(selectLiveSession(sessions, attemptCounts, pendingCounts)?.id).toBe('s1');
+  });
+
+  it('rolls forward only once a later session has started lifting', () => {
+    // s1 has no pending left AND s2 has begun → s1 is finished, s2 is live.
+    const attemptCounts = new Map([
+      ['s1', 8],
+      ['s2', 1],
+    ]);
+    const pendingCounts = new Map([['s2', 1]]);
+    expect(selectLiveSession(sessions, attemptCounts, pendingCounts)?.id).toBe('s2');
+  });
+
+  it('holds the current session through a between-rounds gap (no later session yet)', () => {
+    // s1 momentarily has no pending rows but nothing later has started → s1 stays live.
+    const attemptCounts = new Map([['s1', 8]]);
+    const pendingCounts = new Map<string, number>();
+    expect(selectLiveSession(sessions, attemptCounts, pendingCounts)?.id).toBe('s1');
+  });
+
+  it('falls back to the last session when every session is finished', () => {
+    const attemptCounts = new Map([
+      ['s1', 8],
+      ['s2', 8],
+      ['s3', 8],
+    ]);
+    const pendingCounts = new Map<string, number>();
+    expect(selectLiveSession(sessions, attemptCounts, pendingCounts)?.id).toBe('s3');
+  });
+
+  it('returns null for no sessions', () => {
+    expect(selectLiveSession([], new Map(), new Map())).toBeNull();
   });
 });
 

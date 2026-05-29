@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Database } from '@/types/database.types';
 import {
   ATTEMPTS_PER_LIFT,
@@ -16,16 +15,23 @@ import {
 } from '@/lib/constants';
 import { bestGoodLift } from '@/lib/attempts/best-lift';
 import { nextAttemptCountdown, type NextAttemptCountdown } from '@/lib/attempts/auto-progression';
-import { ipfGlPoints, type KitType, type Sex } from '@/lib/scoring/ipf-gl';
+import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
 import {
   orderSessionRoster,
+  selectLiveSession,
   selectPlatformPositions,
   type PlatformPositions,
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
-import { useAttemptsSubscription } from '@/lib/realtime/use-attempts-subscription';
-import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
-import { useFlightsSubscription } from '@/lib/realtime/use-flights-subscription';
+import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
+import type {
+  BoardAttempt,
+  BoardEntry,
+  BoardFlight,
+  BoardPlatform,
+  BoardSession,
+  NamedOption,
+} from '@/lib/scorekeeper/board-types';
 import { setAttemptResultAction, setAttemptWeightAction } from '@/actions/attempts';
 import { updateEntryRackSettingsAction } from '@/actions/entries';
 import { OptionalSelectField } from '@/components/optional-select-field';
@@ -33,42 +39,8 @@ import { parseOptionalNumber } from '@/lib/number-input';
 import { usePersistentString } from '@/lib/use-persistent-string';
 import type { ActionResult } from '@/types/action-result';
 
-type AttemptRow = Database['public']['Tables']['attempts']['Row'];
-type EntryRow = Database['public']['Tables']['entries']['Row'];
-type FlightRow = Database['public']['Tables']['flights']['Row'];
 type LiftType = Database['public']['Enums']['lift_type'];
 type AttemptResult = Database['public']['Enums']['attempt_result'];
-
-export type NamedOption = { id: string; name: string };
-export type BoardPlatform = { id: string; name: string };
-export type BoardSession = { id: string; name: string; sortOrder: number; platformId: string | null };
-export type BoardFlight = { id: string; sessionId: string; name: string; sortOrder: number };
-export type BoardEntry = {
-  id: string;
-  lifterName: string;
-  sex: Sex;
-  flightId: string | null;
-  lotNumber: number | null;
-  teamLift: LiftType | null;
-  bodyweightKg: number | null;
-  weightClassName: string | null;
-  divisionName: string | null;
-  rackHeightSquat: number | null;
-  squatRackSetting: SquatRackSetting | null;
-  rackHeightBench: number | null;
-  benchSafetyHeight: number | null;
-  benchSpotting: BenchSpotting | null;
-};
-export type BoardAttempt = {
-  id: string;
-  entryId: string;
-  lift: LiftType;
-  attemptNumber: number;
-  weightKg: number | null;
-  result: AttemptResult;
-  // When the result was set to a good/no lift, anchoring the next attempt's 60-second countdown.
-  decidedAt: string | null;
-};
 
 type ScoresheetBoardProps = {
   competitionId: string;
@@ -112,10 +84,6 @@ function readError(result: ActionResult<unknown>): string {
 
 // Prefix for an optimistic attempt id that has not yet been persisted (no real uuid yet).
 const TEMP_ID_PREFIX = 'temp:';
-
-function attemptKey(entryId: string, lift: LiftType, attemptNumber: number): string {
-  return `${entryId}:${lift}:${attemptNumber}`;
-}
 
 // Only squat and bench have rack settings; deadlift has none. A type guard so the rack cell narrows
 // the lift to the two rack disciplines.
@@ -175,119 +143,6 @@ function cellTint(attempt: BoardAttempt | undefined, isCurrent: boolean): string
     }
   }
   return isCurrent ? 'bg-amber-100' : '';
-}
-
-function mapAttempt(row: AttemptRow): BoardAttempt {
-  return {
-    id: row.id,
-    entryId: row.entry_id,
-    lift: row.lift,
-    attemptNumber: row.attempt_number,
-    weightKg: row.weight_kg,
-    result: row.result,
-    decidedAt: row.decided_at,
-  };
-}
-
-// Attempts are keyed by their natural key (entry + lift + attempt number) so an optimistic insert and
-// the realtime insert that follows it collapse onto the same cell instead of duplicating.
-function applyAttemptChange(
-  current: Map<string, BoardAttempt>,
-  payload: RealtimePostgresChangesPayload<AttemptRow>,
-): Map<string, BoardAttempt> {
-  const next = new Map(current);
-  if (payload.eventType === 'DELETE') {
-    const old = payload.old;
-    if (old.entry_id && old.lift && old.attempt_number) {
-      next.delete(attemptKey(old.entry_id, old.lift, old.attempt_number));
-    }
-    return next;
-  }
-  const attempt = mapAttempt(payload.new);
-  next.set(attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt);
-  return next;
-}
-
-function applyEntryChange(
-  rows: BoardEntry[],
-  payload: RealtimePostgresChangesPayload<EntryRow>,
-  nameById: Map<string, string>,
-  sexById: Map<string, Sex>,
-  classNameById: Map<string, string>,
-  divisionNameById: Map<string, string>,
-): BoardEntry[] {
-  if (payload.eventType === 'DELETE') {
-    const removedId = payload.old.id;
-    return removedId ? rows.filter((row) => row.id !== removedId) : rows;
-  }
-  const changed = payload.new;
-  const existing = rows.find((row) => row.id === changed.id);
-  // Sex comes from the lifter, not the entry row, so it can't be read off the realtime payload —
-  // preserve the existing value (or the initial-load map), defaulting to male like asSex.
-  const mapped: BoardEntry = {
-    id: changed.id,
-    lifterName: existing?.lifterName ?? nameById.get(changed.id) ?? '—',
-    sex: existing?.sex ?? sexById.get(changed.id) ?? 'male',
-    flightId: changed.flight_id,
-    lotNumber: changed.lot_number,
-    teamLift: changed.team_lift,
-    bodyweightKg: changed.bodyweight_kg,
-    weightClassName: changed.weight_class_id ? (classNameById.get(changed.weight_class_id) ?? null) : null,
-    divisionName: changed.division_id ? (divisionNameById.get(changed.division_id) ?? null) : null,
-    rackHeightSquat: changed.rack_height_squat,
-    squatRackSetting: changed.squat_rack_setting,
-    rackHeightBench: changed.rack_height_bench,
-    benchSafetyHeight: changed.bench_safety_height,
-    benchSpotting: changed.bench_spotting,
-  };
-  const index = rows.findIndex((row) => row.id === mapped.id);
-  if (index === -1) {
-    return [...rows, mapped];
-  }
-  const next = [...rows];
-  next[index] = mapped;
-  return next;
-}
-
-function applyFlightChange(
-  rows: BoardFlight[],
-  payload: RealtimePostgresChangesPayload<FlightRow>,
-): BoardFlight[] {
-  if (payload.eventType === 'DELETE') {
-    const removedId = payload.old.id;
-    return removedId ? rows.filter((row) => row.id !== removedId) : rows;
-  }
-  const changed = payload.new;
-  const mapped: BoardFlight = {
-    id: changed.id,
-    sessionId: changed.session_id,
-    name: changed.name,
-    sortOrder: changed.sort_order,
-  };
-  const index = rows.findIndex((row) => row.id === mapped.id);
-  if (index === -1) {
-    return [...rows, mapped];
-  }
-  const next = [...rows];
-  next[index] = mapped;
-  return next;
-}
-
-// A session is finished only once a LATER session on the platform has begun lifting — so the live
-// session stays put through between-rounds gaps (no pending rows for a moment) and only rolls forward
-// when the next session actually starts.
-function isSessionFinished(
-  session: BoardSession,
-  platformSessions: readonly BoardSession[],
-  attemptCountBySession: Map<string, number>,
-  pendingCountBySession: Map<string, number>,
-): boolean {
-  const hasAttempts = (attemptCountBySession.get(session.id) ?? 0) > 0;
-  const hasPending = (pendingCountBySession.get(session.id) ?? 0) > 0;
-  const laterSessionStarted = platformSessions.some(
-    (other) => other.sortOrder > session.sortOrder && (attemptCountBySession.get(other.id) ?? 0) > 0,
-  );
-  return hasAttempts && !hasPending && laterSessionStarted;
 }
 
 type RunRow = RunningOrderFields & { entryId: string; lifterName: string; flightName: string };
@@ -378,10 +233,7 @@ function buildPlatformViews({
     }
 
     // The live session is the earliest not-yet-finished one (platformSessions is non-empty).
-    const liveSession =
-      platformSessions.find(
-        (session) => !isSessionFinished(session, platformSessions, attemptCountBySession, pendingCountBySession),
-      ) ?? platformSessions.at(-1);
+    const liveSession = selectLiveSession(platformSessions, attemptCountBySession, pendingCountBySession);
     if (!liveSession) {
       continue;
     }
@@ -425,11 +277,14 @@ export function ScoresheetBoard({
   entries: initialEntries,
   attempts: initialAttempts,
 }: ScoresheetBoardProps) {
-  const [attempts, setAttempts] = useState<Map<string, BoardAttempt>>(
-    () => new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
-  );
-  const [entries, setEntries] = useState<BoardEntry[]>(initialEntries);
-  const [flights, setFlights] = useState<BoardFlight[]>(initialFlights);
+  const { attempts, setAttempts, entries, setEntries, flights } = useBoardState({
+    competitionId,
+    initialAttempts,
+    initialEntries,
+    initialFlights,
+    weightClasses,
+    divisions,
+  });
   const [error, setError] = useState<string | null>(null);
   // Default to the full-window view: the admin chrome caps content at max-w-6xl minus the comp-nav
   // sidebar (~840px), which crushes the wide scoresheet. Full screen reclaims the whole window; Esc or
@@ -442,48 +297,6 @@ export function ScoresheetBoard({
   const [glPref, setGlPref] = usePersistentString('scoresheet:gl', 'off');
   const showGl = glPref === 'on';
   const [, startTransition] = useTransition();
-
-  const nameById = useMemo(
-    () => new Map(initialEntries.map((entry) => [entry.id, entry.lifterName])),
-    [initialEntries],
-  );
-  const sexById = useMemo(
-    () => new Map(initialEntries.map((entry) => [entry.id, entry.sex])),
-    [initialEntries],
-  );
-  const classNameById = useMemo(
-    () => new Map(weightClasses.map((option) => [option.id, option.name])),
-    [weightClasses],
-  );
-  const divisionNameById = useMemo(
-    () => new Map(divisions.map((option) => [option.id, option.name])),
-    [divisions],
-  );
-
-  useAttemptsSubscription(competitionId, (payload) => {
-    setAttempts((current) => applyAttemptChange(current, payload));
-  });
-  useEntriesSubscription(competitionId, (payload) => {
-    setEntries((current) => applyEntryChange(current, payload, nameById, sexById, classNameById, divisionNameById));
-  });
-  useFlightsSubscription(competitionId, (payload) => {
-    setFlights((current) => applyFlightChange(current, payload));
-  });
-
-  // Re-seed from the server when fresh props arrive (e.g. a manual refresh after a realtime gap),
-  // so reloading the page recovers correct state rather than keeping a stale local copy. Props only
-  // change on a server re-render, never on a realtime-driven client re-render.
-  useEffect(() => {
-    setAttempts(
-      new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
-    );
-  }, [initialAttempts]);
-  useEffect(() => {
-    setEntries(initialEntries);
-  }, [initialEntries]);
-  useEffect(() => {
-    setFlights(initialFlights);
-  }, [initialFlights]);
 
   // Esc leaves the expanded view.
   useEffect(() => {
