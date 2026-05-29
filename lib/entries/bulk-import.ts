@@ -1,4 +1,5 @@
 import type { Lifts } from '@/lib/constants';
+import { roundToOneDecimal } from '@/lib/number-input';
 
 // Bulk registration via copy-paste: the operator copies these headers into a Google Sheet, fills a
 // row per lifter, then pastes the cells back. Google Sheets copies as tab-separated text, so this
@@ -121,7 +122,7 @@ function parsePositiveNumber(raw: string): { value: number | null; ok: boolean }
   if (Number.isNaN(parsed) || parsed <= 0) {
     return { value: null, ok: false };
   }
-  return { value: Math.round(parsed * 10) / 10, ok: true };
+  return { value: roundToOneDecimal(parsed), ok: true };
 }
 
 function parsePositiveInt(raw: string): { value: number | null; ok: boolean } {

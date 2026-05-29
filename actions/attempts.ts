@@ -163,7 +163,7 @@ export async function setAttemptResultAction(input: SetAttemptResultInput): Prom
 
     const { data: attempt, error: attemptError } = await supabase
       .from('attempts')
-      .select('competition_id, weight_kg')
+      .select('competition_id, weight_kg, result, decided_at')
       .eq('id', parsed.data.attemptId)
       .maybeSingle();
     if (attemptError) {
@@ -179,9 +179,24 @@ export async function setAttemptResultAction(input: SetAttemptResultInput): Prom
       return fail('Declare a weight before recording a good or no lift.');
     }
 
+    // Stamp the decision time on a good/no lift so the run screen can anchor the 60-second
+    // next-attempt countdown on it (the same instant on every device); clear it when the call is
+    // reopened or set to a non-decision so the countdown cancels. Re-recording the *same* decision
+    // (e.g. a duplicate press echoed from another device) keeps the original timestamp, so the
+    // countdown is not silently restarted; an actual change of decision re-stamps it.
+    const isDecision = parsed.data.result === 'good_lift' || parsed.data.result === 'no_lift';
+    let decidedAt: string | null;
+    if (!isDecision) {
+      decidedAt = null;
+    } else if (attempt.result === parsed.data.result && attempt.decided_at !== null) {
+      decidedAt = attempt.decided_at;
+    } else {
+      decidedAt = new Date().toISOString();
+    }
+
     const { error } = await supabase
       .from('attempts')
-      .update({ result: parsed.data.result })
+      .update({ result: parsed.data.result, decided_at: decidedAt })
       .eq('id', parsed.data.attemptId);
     if (error) {
       Sentry.captureException(error);

@@ -45,6 +45,14 @@ export const LIFT_LABELS: Record<LiftType, string> = {
 // number they are on; within a round the platform runs in rising-bar order (weight ascending).
 export const ATTEMPTS_PER_LIFT = 3;
 
+// A lifter has 60 seconds to declare their next attempt once the previous one is decided (IPF). The
+// run screen counts this down inside the next attempt's cell from the recorded decision time.
+export const NEXT_ATTEMPT_TIMER_SECONDS = 60;
+
+// The smallest legal weight increase. Used as the automatic next-attempt jump after a good lift when
+// the 60-second clock expires without a declared weight (a no lift repeats the same weight instead).
+export const MIN_ATTEMPT_INCREMENT_KG = 2.5;
+
 // Squat rack position and bench spotting choices, captured at weigh-in (or later at the platform).
 // The tuples mirror the matching Postgres enums; labels render in the all-caps house style.
 export const SQUAT_RACK_SETTINGS = ['in', 'out', 'left_in', 'right_in'] as const;

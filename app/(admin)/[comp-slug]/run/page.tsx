@@ -53,7 +53,7 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
       .eq('competition_id', comp.id),
     supabase
       .from('attempts')
-      .select('id, entry_id, lift, attempt_number, weight_kg, result')
+      .select('id, entry_id, lift, attempt_number, weight_kg, result, decided_at')
       .eq('competition_id', comp.id),
   ]);
 
@@ -111,6 +111,7 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
     attemptNumber: row.attempt_number,
     weightKg: row.weight_kg,
     result: row.result,
+    decidedAt: row.decided_at,
   }));
 
   return (

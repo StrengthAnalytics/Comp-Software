@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Database } from '@/types/database.types';
 import {
@@ -15,6 +15,7 @@ import {
   type SquatRackSetting,
 } from '@/lib/constants';
 import { bestGoodLift } from '@/lib/attempts/best-lift';
+import { nextAttemptCountdown, type NextAttemptCountdown } from '@/lib/attempts/auto-progression';
 import {
   orderSessionRoster,
   selectPlatformPositions,
@@ -28,6 +29,7 @@ import { setAttemptResultAction, setAttemptWeightAction } from '@/actions/attemp
 import { updateEntryRackSettingsAction } from '@/actions/entries';
 import { OptionalSelectField } from '@/components/optional-select-field';
 import { parseOptionalNumber } from '@/lib/number-input';
+import { usePersistentString } from '@/lib/use-persistent-string';
 import type { ActionResult } from '@/types/action-result';
 
 type AttemptRow = Database['public']['Tables']['attempts']['Row'];
@@ -62,6 +64,8 @@ export type BoardAttempt = {
   attemptNumber: number;
   weightKg: number | null;
   result: AttemptResult;
+  // When the result was set to a good/no lift, anchoring the next attempt's 60-second countdown.
+  decidedAt: string | null;
 };
 
 type ScoresheetBoardProps = {
@@ -81,6 +85,9 @@ type ScoresheetBoardProps = {
 const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => index + 1);
 
 const GHOST_BUTTON = 'rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
+// Zebra band for alternate roster rows. Single-sourced so the row and its sticky first column (which
+// needs its own opaque background) can never drift to different shades.
+const ROW_BAND = 'bg-neutral-50';
 // Gridlines use a border-separate model — right+bottom on every cell, top on the header row, left on
 // the frozen first column — so the bold lines stay attached to the sticky header and frozen column when
 // the table scrolls. (With border-collapse the collapsed borders are owned by the table and drop off
@@ -175,6 +182,7 @@ function mapAttempt(row: AttemptRow): BoardAttempt {
     attemptNumber: row.attempt_number,
     weightKg: row.weight_kg,
     result: row.result,
+    decidedAt: row.decided_at,
   };
 }
 
@@ -419,6 +427,10 @@ export function ScoresheetBoard({
   // sidebar (~840px), which crushes the wide scoresheet. Full screen reclaims the whole window; Esc or
   // Collapse drops back to the in-flow view (which now scrolls horizontally rather than compressing).
   const [expanded, setExpanded] = useState(true);
+  // Zebra-banding of the roster rows, toggled from the Options dropdown and remembered per browser.
+  // Defaults to on; 'off' disables it.
+  const [stripingPref, setStripingPref] = usePersistentString('scoresheet:striping', 'on');
+  const striped = stripingPref !== 'off';
   const [, startTransition] = useTransition();
 
   const nameById = useMemo(
@@ -498,6 +510,7 @@ export function ScoresheetBoard({
         attemptNumber,
         weightKg,
         result: previous?.result ?? 'pending',
+        decidedAt: previous?.decidedAt ?? null,
       });
       return next;
     });
@@ -563,6 +576,10 @@ export function ScoresheetBoard({
 
   function setResult(attempt: BoardAttempt, result: AttemptResult) {
     const key = attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber);
+    // Mirror the server's decided_at stamp optimistically so the next attempt's countdown starts on
+    // click rather than waiting for the realtime round-trip; the subscription reconciles the exact
+    // server time (a sub-second shift). Clearing it on a non-decision cancels the countdown.
+    const decidedAt = result === 'good_lift' || result === 'no_lift' ? new Date().toISOString() : null;
     setError(null);
     setAttempts((current) => {
       const existing = current.get(key);
@@ -570,7 +587,7 @@ export function ScoresheetBoard({
         return current;
       }
       const next = new Map(current);
-      next.set(key, { ...existing, result });
+      next.set(key, { ...existing, result, decidedAt });
       return next;
     });
     startTransition(async () => {
@@ -582,7 +599,7 @@ export function ScoresheetBoard({
             return current;
           }
           const next = new Map(current);
-          next.set(key, { ...existing, result: attempt.result });
+          next.set(key, { ...existing, result: attempt.result, decidedAt: attempt.decidedAt });
           return next;
         });
         setError(readError(outcome));
@@ -596,9 +613,15 @@ export function ScoresheetBoard({
     <div className={expanded ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
       <div className="mb-3 flex items-center justify-between gap-3">
         {expanded ? <h2 className="text-lg font-semibold text-neutral-900">Scoresheet</h2> : <span />}
-        <button type="button" onClick={() => setExpanded((value) => !value)} className={GHOST_BUTTON}>
-          {expanded ? 'Collapse (Esc)' : 'Expand to full screen'}
-        </button>
+        <div className="flex items-center gap-2">
+          <BoardOptions
+            striped={striped}
+            onToggleStriped={() => setStripingPref(striped ? 'off' : 'on')}
+          />
+          <button type="button" onClick={() => setExpanded((value) => !value)} className={GHOST_BUTTON}>
+            {expanded ? 'Collapse (Esc)' : 'Expand to full screen'}
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -616,6 +639,7 @@ export function ScoresheetBoard({
               attempts={attempts}
               columnLifts={columnLifts}
               isTeamCompetition={isTeamCompetition}
+              striped={striped}
               onSetWeight={setWeight}
               onSetResult={setResult}
               onSetRack={setRackSettings}
@@ -633,11 +657,74 @@ export function ScoresheetBoard({
   );
 }
 
+// A small dropdown beside the Collapse button holding scoresheet view options (currently just row
+// striping). The trigger toggles it; clicking anywhere outside closes it. Escape is left to the
+// board's collapse handler.
+function BoardOptions({ striped, onToggleStriped }: { striped: boolean; onToggleStriped: () => void }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      // event.target is typed EventTarget | null; a pointerdown always originates from a DOM Node,
+      // so the cast is safe and Node.contains accepts it.
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    // Escape closes the menu. Listen in the capture phase and stop propagation so it beats the
+    // board's own keydown handler (which would otherwise collapse the whole full-screen view).
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setOpen(false);
+      }
+    };
+    globalThis.addEventListener('pointerdown', onPointerDown);
+    globalThis.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      globalThis.removeEventListener('pointerdown', onPointerDown);
+      globalThis.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="true"
+        aria-expanded={open}
+        className={GHOST_BUTTON}
+      >
+        Options ▾
+      </button>
+      {open ? (
+        <div className="absolute right-0 z-50 mt-1 w-48 rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100">
+            <span>Row striping</span>
+            <input
+              type="checkbox"
+              checked={striped}
+              onChange={onToggleStriped}
+              className="h-4 w-4 accent-neutral-800"
+            />
+          </label>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PlatformPanel({
   view,
   attempts,
   columnLifts,
   isTeamCompetition,
+  striped,
   onSetWeight,
   onSetResult,
   onSetRack,
@@ -646,6 +733,7 @@ function PlatformPanel({
   attempts: Map<string, BoardAttempt>;
   columnLifts: LiftType[];
   isTeamCompetition: boolean;
+  striped: boolean;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
   onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
@@ -722,11 +810,15 @@ function PlatformPanel({
               </tr>
             </thead>
             <tbody>
-              {roster.map(({ entry, flightName }) => {
+              {roster.map(({ entry, flightName }, index) => {
                 const total = entryTotal(entry);
+                // Band alternate rows when striping is on. The transparent cells show the row tint;
+                // the sticky first column needs its own opaque background, so it carries the same
+                // band (and stays white otherwise, to mask content scrolling beneath it).
+                const banded = striped && index % 2 === 1;
                 return (
-                  <tr key={entry.id}>
-                    <td className={`sticky left-0 z-10 whitespace-nowrap border-l-[1.5px] bg-white ${CELL}`}>
+                  <tr key={entry.id} className={banded ? ROW_BAND : ''}>
+                    <td className={`sticky left-0 z-10 whitespace-nowrap border-l-[1.5px] ${banded ? ROW_BAND : 'bg-white'} ${CELL}`}>
                     <span className="font-medium text-neutral-900">{entry.lifterName}</span>
                     <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                   </td>
@@ -824,14 +916,23 @@ function FragmentCells({
         const attempt = attempts.get(attemptKey(entry.id, lift, attemptNumber));
         const isCurrent =
           current?.entryId === entry.id && current.lift === lift && current.attemptNumber === attemptNumber;
+        // The previous attempt of this lift drives the next attempt's countdown: once it is decided
+        // and this cell is still undeclared, this cell counts down 60s and turns amber.
+        const previous =
+          attemptNumber > 1 ? attempts.get(attemptKey(entry.id, lift, attemptNumber - 1)) : undefined;
+        const countdown = active ? nextAttemptCountdown(previous, attempt) : null;
         return (
-          <td key={`${entry.id}-${lift}-${attemptNumber}`} className={`text-center ${CELL_ATTEMPT} ${active ? cellTint(attempt, isCurrent) : ''}`}>
+          <td
+            key={`${entry.id}-${lift}-${attemptNumber}`}
+            className={`text-center ${CELL_ATTEMPT} ${active ? (countdown ? 'bg-amber-200' : cellTint(attempt, isCurrent)) : ''}`}
+          >
             {active ? (
               <AttemptCell
                 entry={entry}
                 lift={lift}
                 attemptNumber={attemptNumber}
                 attempt={attempt}
+                countdown={countdown}
                 onSetWeight={onSetWeight}
                 onSetResult={onSetResult}
               />
@@ -866,12 +967,15 @@ function PositionCard({ label, row, highlight }: { label: string; row: RunRow | 
 
 // One attempt square: the weight is click-to-edit (any value, any time — the scorer is the
 // authority; the server applies the progression guard). Once a weight exists, ✓ / ✗ toggle the
-// result, and clicking the active one again reopens the attempt to pending for a correction.
+// result, and clicking the active one again reopens the attempt to pending for a correction. While
+// undeclared and the previous attempt is freshly decided, the cell shows the 60-second next-attempt
+// countdown (amber, click to enter the weight); at zero it auto-commits the IPF default.
 function AttemptCell({
   entry,
   lift,
   attemptNumber,
   attempt,
+  countdown,
   onSetWeight,
   onSetResult,
 }: {
@@ -879,13 +983,49 @@ function AttemptCell({
   lift: LiftType;
   attemptNumber: number;
   attempt: BoardAttempt | undefined;
+  countdown: NextAttemptCountdown | null;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  // A 1 Hz tick that re-renders the cell while it counts down. The seconds left are derived from the
+  // deadline in render (not stored as separate state), so the amber background and the number always
+  // agree — no first-frame flash where the cell is amber but still shows the old value.
+  const [, setTick] = useState(0);
 
   const declaredAttempt = attempt && attempt.weightKg !== null ? attempt : null;
+
+  // The countdown is active only while there is one AND the operator is not editing this cell:
+  // clicking the cell to enter the next attempt opens the editor and pauses the clock, so the
+  // auto-commit can't fire underneath an in-progress edit. Seconds left clamp at zero.
+  const active = countdown !== null && !editing;
+  const remaining = active ? Math.max(0, Math.ceil((countdown.deadlineMs - Date.now()) / 1000)) : null;
+  const countingDown = remaining !== null;
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const id = globalThis.setInterval(() => setTick((value) => value + 1), 1000);
+    return () => globalThis.clearInterval(id);
+  }, [active]);
+
+  // Auto-commit the IPF default once the clock expires. It fires through the normal optimistic path:
+  // onSetWeight sets the weight, which clears the countdown and stops this from running again. If the
+  // write fails and the weight rolls back, the countdown reappears and this retries on the next tick
+  // (self-healing) — rather than latching a one-shot flag that would leave the cell stuck at 0.
+  const autoCommitRef = useRef<() => void>(() => {});
+  autoCommitRef.current = () => {
+    if (countdown) {
+      onSetWeight(entry, lift, attemptNumber, countdown.autoWeight);
+    }
+  };
+  useEffect(() => {
+    if (active && remaining === 0) {
+      autoCommitRef.current();
+    }
+  }, [active, remaining]);
 
   const startEdit = () => {
     setDraft(declaredAttempt ? String(declaredAttempt.weightKg) : '');
@@ -921,14 +1061,19 @@ function AttemptCell({
           className={CELL_INPUT}
         />
       ) : (
-        // The weight fills the whole cell so tapping anywhere in the square opens the editor.
+        // The weight fills the whole cell so tapping anywhere in the square opens the editor. While
+        // counting down it shows the seconds left; clicking still opens the weight editor.
         <button
           type="button"
           onClick={startEdit}
-          aria-label={`Set weight for ${entry.lifterName}, ${LIFT_LABELS[lift]} attempt ${attemptNumber}`}
-          className={`flex min-h-[2.75rem] w-full flex-1 items-center justify-center rounded text-base tabular-nums hover:bg-black/5 ${declaredAttempt ? 'font-semibold text-neutral-900' : 'text-neutral-400'}`}
+          aria-label={
+            countingDown
+              ? `Enter next attempt for ${entry.lifterName}, ${LIFT_LABELS[lift]} attempt ${attemptNumber}; ${remaining}s left`
+              : `Set weight for ${entry.lifterName}, ${LIFT_LABELS[lift]} attempt ${attemptNumber}`
+          }
+          className={`flex min-h-[2.75rem] w-full flex-1 items-center justify-center rounded tabular-nums hover:bg-black/5 ${countingDown ? 'text-lg font-bold text-amber-900' : `text-base ${declaredAttempt ? 'font-semibold text-neutral-900' : 'text-neutral-400'}`}`}
         >
-          {declaredAttempt ? declaredAttempt.weightKg : '–'}
+          {countingDown ? remaining : (declaredAttempt ? declaredAttempt.weightKg : '–')}
         </button>
       )}
       {declaredAttempt ? (
