@@ -670,8 +670,20 @@ function BoardOptions({ striped, onToggleStriped }: { striped: boolean; onToggle
         setOpen(false);
       }
     };
+    // Escape closes the menu. Listen in the capture phase and stop propagation so it beats the
+    // board's own keydown handler (which would otherwise collapse the whole full-screen view).
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        setOpen(false);
+      }
+    };
     globalThis.addEventListener('pointerdown', onPointerDown);
-    return () => globalThis.removeEventListener('pointerdown', onPointerDown);
+    globalThis.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      globalThis.removeEventListener('pointerdown', onPointerDown);
+      globalThis.removeEventListener('keydown', onKeyDown, true);
+    };
   }, [open]);
 
   return (
@@ -972,47 +984,43 @@ function AttemptCell({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  const [remaining, setRemaining] = useState<number | null>(null);
+  // A 1 Hz tick that re-renders the cell while it counts down. The seconds left are derived from the
+  // deadline in render (not stored as separate state), so the amber background and the number always
+  // agree — no first-frame flash where the cell is amber but still shows the old value.
+  const [, setTick] = useState(0);
 
   const declaredAttempt = attempt && attempt.weightKg !== null ? attempt : null;
 
-  // Fire the auto-commit through a ref so the ticking effect depends only on the (stable) deadline,
-  // not on the per-render entry/callback identities — it must not restart every realtime re-render.
+  // The countdown is active only while there is one AND the operator is not editing this cell:
+  // clicking the cell to enter the next attempt opens the editor and pauses the clock, so the
+  // auto-commit can't fire underneath an in-progress edit. Seconds left clamp at zero.
+  const active = countdown !== null && !editing;
+  const remaining = active ? Math.max(0, Math.ceil((countdown.deadlineMs - Date.now()) / 1000)) : null;
+  const countingDown = remaining !== null;
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const id = globalThis.setInterval(() => setTick((value) => value + 1), 1000);
+    return () => globalThis.clearInterval(id);
+  }, [active]);
+
+  // Auto-commit the IPF default once the clock expires. It fires through the normal optimistic path:
+  // onSetWeight sets the weight, which clears the countdown and stops this from running again. If the
+  // write fails and the weight rolls back, the countdown reappears and this retries on the next tick
+  // (self-healing) — rather than latching a one-shot flag that would leave the cell stuck at 0.
   const autoCommitRef = useRef<() => void>(() => {});
   autoCommitRef.current = () => {
     if (countdown) {
       onSetWeight(entry, lift, attemptNumber, countdown.autoWeight);
     }
   };
-
-  // Tick the countdown to zero against the shared deadline (server decision time + 60s, measured
-  // with this device's clock). At zero it commits the default once; the new weight then clears the
-  // countdown on the next render, so it never re-fires.
-  const deadlineMs = countdown?.deadlineMs ?? null;
   useEffect(() => {
-    if (deadlineMs === null) {
-      setRemaining(null);
-      return;
+    if (active && remaining === 0) {
+      autoCommitRef.current();
     }
-    let fired = false;
-    const tick = () => {
-      const msLeft = deadlineMs - Date.now();
-      if (msLeft <= 0) {
-        setRemaining(0);
-        if (!fired) {
-          fired = true;
-          autoCommitRef.current();
-        }
-      } else {
-        setRemaining(Math.ceil(msLeft / 1000));
-      }
-    };
-    tick();
-    const id = globalThis.setInterval(tick, 250);
-    return () => globalThis.clearInterval(id);
-  }, [deadlineMs]);
-
-  const countingDown = countdown !== null && remaining !== null;
+  }, [active, remaining]);
 
   const startEdit = () => {
     setDraft(declaredAttempt ? String(declaredAttempt.weightKg) : '');
