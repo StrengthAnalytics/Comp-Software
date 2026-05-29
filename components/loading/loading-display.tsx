@@ -192,7 +192,11 @@ export function LoadingDisplay({
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-rows-[0.5fr_1.5fr_1fr] divide-y divide-neutral-800">
+      <div
+        aria-live="polite"
+        aria-label="Platform loading order"
+        className="grid min-h-0 flex-1 grid-rows-[0.5fr_1.5fr_1fr] divide-y divide-neutral-800"
+      >
         <LifterRow role="Previous" card={view.previous} tint="" size="compact" dim />
         <LifterRow role="Now loading" card={view.current} tint="bg-green-950/75" size="large" highlight />
         <LifterRow role="On deck" card={view.onDeck} tint="" size="normal" />
