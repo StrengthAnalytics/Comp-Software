@@ -63,16 +63,57 @@ const PLATE_STYLE: Record<number, string> = {
   0.5: 'bg-neutral-500 text-white',
   0.25: 'bg-neutral-600 text-white',
 };
-const PLATE_HEIGHT: Record<number, string> = {
-  25: 'h-44',
-  20: 'h-40',
-  15: 'h-36',
-  10: 'h-32',
-  5: 'h-28',
-  2.5: 'h-24',
-  1.25: 'h-20',
-  0.5: 'h-16',
-  0.25: 'h-14',
+// The three rows are sized unevenly: the previous lifter (done) is compact, on deck is normal, and
+// the lifter being loaded for is large. Each tier scales its own type and plate sizes so content fits
+// its band rather than overflowing.
+type SizeTier = 'compact' | 'normal' | 'large';
+
+const TIER: Record<
+  SizeTier,
+  { pad: string; name: string; meta: string; weight: string; unit: string; lbs: string; rackValue: string; plateWidth: string; plateText: string; perSide: string }
+> = {
+  compact: {
+    pad: 'py-3',
+    name: 'text-3xl',
+    meta: 'text-lg',
+    weight: 'text-4xl',
+    unit: 'text-xl',
+    lbs: 'text-base',
+    rackValue: 'text-2xl',
+    plateWidth: 'w-9',
+    plateText: 'text-sm',
+    perSide: 'text-sm',
+  },
+  normal: {
+    pad: 'py-6',
+    name: 'text-5xl',
+    meta: 'text-2xl',
+    weight: 'text-7xl',
+    unit: 'text-3xl',
+    lbs: 'text-2xl',
+    rackValue: 'text-4xl',
+    plateWidth: 'w-14',
+    plateText: 'text-xl',
+    perSide: 'text-lg',
+  },
+  large: {
+    pad: 'py-6',
+    name: 'text-6xl',
+    meta: 'text-2xl',
+    weight: 'text-8xl',
+    unit: 'text-3xl',
+    lbs: 'text-2xl',
+    rackValue: 'text-4xl',
+    plateWidth: 'w-14',
+    plateText: 'text-xl',
+    perSide: 'text-lg',
+  },
+};
+
+const PLATE_HEIGHT: Record<SizeTier, Record<number, string>> = {
+  compact: { 25: 'h-24', 20: 'h-20', 15: 'h-16', 10: 'h-14', 5: 'h-12', 2.5: 'h-10', 1.25: 'h-8', 0.5: 'h-7', 0.25: 'h-6' },
+  normal: { 25: 'h-44', 20: 'h-40', 15: 'h-36', 10: 'h-32', 5: 'h-28', 2.5: 'h-24', 1.25: 'h-20', 0.5: 'h-16', 0.25: 'h-14' },
+  large: { 25: 'h-56', 20: 'h-52', 15: 'h-48', 10: 'h-44', 5: 'h-40', 2.5: 'h-36', 1.25: 'h-32', 0.5: 'h-28', 0.25: 'h-24' },
 };
 
 const RESULT_CHIP: Record<AttemptResult, { label: string; className: string } | null> = {
@@ -265,10 +306,10 @@ export function LoadingDisplay({
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-rows-3 divide-y divide-neutral-800">
-        <LifterRow role="Previous" card={view.previous} tint="" dim />
-        <LifterRow role="Now loading" card={view.current} tint="bg-green-950/75" highlight />
-        <LifterRow role="On deck" card={view.onDeck} tint="" />
+      <div className="grid min-h-0 flex-1 grid-rows-[0.5fr_1.5fr_1fr] divide-y divide-neutral-800">
+        <LifterRow role="Previous" card={view.previous} tint="" size="compact" dim />
+        <LifterRow role="Now loading" card={view.current} tint="bg-green-950/75" size="large" highlight />
+        <LifterRow role="On deck" card={view.onDeck} tint="" size="normal" />
       </div>
     </div>
   );
@@ -399,6 +440,7 @@ function LifterRow({
   role,
   card,
   tint,
+  size,
   highlight,
   dim,
 }: {
@@ -406,25 +448,27 @@ function LifterRow({
   card: LifterCard | null;
   // Background wash for the row — only the now-loading row is tinted (green); the others are clear.
   tint: string;
+  // Sizing tier: compact (previous), normal (on deck), large (now loading).
+  size: SizeTier;
   highlight?: boolean;
   // Fades the whole row, marking the previous lifter as done.
   dim?: boolean;
 }) {
   return (
     <section
-      className={`relative grid min-h-0 grid-cols-1 items-center gap-8 px-10 py-6 lg:grid-cols-2 lg:gap-16 lg:px-20 ${tint} ${
+      className={`relative grid min-h-0 grid-cols-1 items-center gap-8 overflow-hidden px-10 ${TIER[size].pad} lg:grid-cols-2 lg:gap-16 lg:px-20 ${tint} ${
         highlight ? 'z-10 rounded-xl ring-4 ring-inset ring-white' : ''
       } ${dim ? 'opacity-70' : ''}`}
     >
-      <LifterIdentity role={role} card={card} highlight={highlight} />
+      <LifterIdentity role={role} card={card} size={size} />
       {card ? (
         // The "how to load it" half: rack settings and the plate diagram grouped in one card, so the
         // space between them reads as inside a panel rather than as dead screen.
         <div className="flex h-full items-center justify-between gap-10 rounded-2xl border border-neutral-800 bg-white/[0.02] px-8 py-5">
-          <RackSettings card={card} />
+          <RackSettings card={card} size={size} />
           <div className="flex shrink-0 items-center justify-end">
             {card.breakdown ? (
-              <PlateStack breakdown={card.breakdown} />
+              <PlateStack breakdown={card.breakdown} size={size} />
             ) : (
               <p className="text-2xl font-semibold text-white">No weight declared</p>
             )}
@@ -435,23 +479,24 @@ function LifterRow({
   );
 }
 
-function LifterIdentity({ role, card, highlight }: { role: string; card: LifterCard | null; highlight?: boolean }) {
+function LifterIdentity({ role, card, size }: { role: string; card: LifterCard | null; size: SizeTier }) {
   const chip = card ? RESULT_CHIP[card.result] : null;
+  const tier = TIER[size];
   return (
     <div className="flex min-w-0 flex-col justify-center">
       <p className="text-base font-semibold uppercase tracking-widest text-white">{role}</p>
       {card ? (
         <>
-          <p className={`truncate font-bold leading-none ${highlight ? 'text-6xl' : 'text-5xl'}`}>{card.lifterName}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-white">
-            <span className="text-2xl font-medium">
+          <p className={`truncate font-bold leading-none ${tier.name}`}>{card.lifterName}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-white">
+            <span className={`font-medium ${tier.meta}`}>
               {card.flightName} · {LIFT_LABELS[card.lift]} {card.attemptNumber}
             </span>
             {chip ? (
               <span className={`rounded px-2.5 py-0.5 text-base font-bold ${chip.className}`}>{chip.label}</span>
             ) : null}
           </div>
-          <Weight weightKg={card.weightKg} highlight={highlight} />
+          <Weight weightKg={card.weightKg} size={size} />
         </>
       ) : (
         <p className="mt-2 text-3xl font-semibold text-white">—</p>
@@ -460,71 +505,81 @@ function LifterIdentity({ role, card, highlight }: { role: string; card: LifterC
   );
 }
 
-function Weight({ weightKg, highlight }: { weightKg: number | null; highlight?: boolean }) {
+function Weight({ weightKg, size }: { weightKg: number | null; size: SizeTier }) {
+  const tier = TIER[size];
   if (weightKg === null) {
-    return <p className="mt-3 text-3xl font-semibold text-white">No weight declared</p>;
+    return <p className={`mt-2 font-semibold text-white ${tier.meta}`}>No weight declared</p>;
   }
   const lbs = (weightKg * KG_TO_LBS).toFixed(1);
   return (
-    <p className="mt-3 tabular-nums text-white">
-      <span className={`font-extrabold leading-none ${highlight ? 'text-8xl' : 'text-7xl'}`}>{weightKg}</span>
-      <span className="ml-3 text-3xl font-semibold">kg</span>
-      <span className="ml-4 text-2xl">({lbs} lb)</span>
+    <p className="mt-2 tabular-nums text-white">
+      <span className={`font-extrabold leading-none ${tier.weight}`}>{weightKg}</span>
+      <span className={`ml-3 font-semibold ${tier.unit}`}>kg</span>
+      <span className={`ml-4 ${tier.lbs}`}>({lbs} lb)</span>
     </p>
   );
 }
 
 const RACK_LABEL = 'text-sm font-semibold uppercase tracking-wide text-white';
-const RACK_VALUE = 'text-4xl font-extrabold tabular-nums leading-none';
 
-// One labelled rack figure (e.g. Height / 14, Setting / IN).
-function RackField({ label, value }: { label: string; value: string | number }) {
+// One labelled rack figure (e.g. Height / 14, Setting / IN), sized to the row's tier.
+function RackField({ label, value, size }: { label: string; value: string | number; size: SizeTier }) {
   return (
     <div className="flex flex-col gap-2">
       <span className={RACK_LABEL}>{label}</span>
-      <span className={RACK_VALUE}>{value}</span>
+      <span className={`font-extrabold tabular-nums leading-none ${TIER[size].rackValue}`}>{value}</span>
     </div>
   );
 }
 
-function RackSettings({ card }: { card: LifterCard }) {
+function RackSettings({ card, size }: { card: LifterCard; size: SizeTier }) {
   const { entry, lift } = card;
   return (
     <div className="flex flex-col justify-center gap-4">
       <p className={RACK_LABEL}>Rack settings</p>
-      <RackFields entry={entry} lift={lift} />
+      <RackFields entry={entry} lift={lift} size={size} />
     </div>
   );
 }
 
-function RackFields({ entry, lift }: { entry: BoardEntry; lift: LiftType }) {
+function RackFields({ entry, lift, size }: { entry: BoardEntry; lift: LiftType; size: SizeTier }) {
   if (lift === 'deadlift') {
     return <p className="text-2xl font-semibold text-white">No racks — deadlift</p>;
   }
   if (lift === 'squat') {
     return (
       <div className="flex gap-12">
-        <RackField label="Height" value={entry.rackHeightSquat ?? '—'} />
-        <RackField label="Setting" value={entry.squatRackSetting ? SQUAT_RACK_SETTING_LABELS[entry.squatRackSetting] : '—'} />
+        <RackField label="Height" value={entry.rackHeightSquat ?? '—'} size={size} />
+        <RackField
+          label="Setting"
+          value={entry.squatRackSetting ? SQUAT_RACK_SETTING_LABELS[entry.squatRackSetting] : '—'}
+          size={size}
+        />
       </div>
     );
   }
   return (
     <div className="flex gap-10">
-      <RackField label="Rack" value={entry.rackHeightBench ?? '—'} />
-      <RackField label="Safety" value={entry.benchSafetyHeight ?? '—'} />
-      <RackField label="Spotting" value={entry.benchSpotting ? BENCH_SPOTTING_LABELS[entry.benchSpotting] : '—'} />
+      <RackField label="Rack" value={entry.rackHeightBench ?? '—'} size={size} />
+      <RackField label="Safety" value={entry.benchSafetyHeight ?? '—'} size={size} />
+      <RackField
+        label="Spotting"
+        value={entry.benchSpotting ? BENCH_SPOTTING_LABELS[entry.benchSpotting] : '—'}
+        size={size}
+      />
     </div>
   );
 }
 
-function PlateStack({ breakdown }: { breakdown: PlateBreakdown }) {
+function PlateStack({ breakdown, size }: { breakdown: PlateBreakdown; size: SizeTier }) {
   if (!breakdown.loadable) {
     return <p className="text-xl font-semibold text-red-400">Cannot load {breakdown.totalKg} kg with available plates</p>;
   }
   if (breakdown.perSideKg === 0) {
     return <p className="text-2xl font-semibold text-white">Bar only</p>;
   }
+  const tier = TIER[size];
+  const heights = PLATE_HEIGHT[size];
   const bars = breakdown.plates.flatMap((plate) =>
     Array.from({ length: plate.count }, (_, index) => ({ weightKg: plate.weightKg, index })),
   );
@@ -534,15 +589,15 @@ function PlateStack({ breakdown }: { breakdown: PlateBreakdown }) {
         {bars.map((bar) => (
           <div
             key={`${bar.weightKg}-${bar.index}`}
-            className={`flex w-14 items-end justify-center rounded-md pb-2 text-xl font-bold ${
-              PLATE_HEIGHT[bar.weightKg] ?? 'h-12'
+            className={`flex items-end justify-center rounded-md pb-2 font-bold ${tier.plateWidth} ${tier.plateText} ${
+              heights[bar.weightKg] ?? 'h-12'
             } ${PLATE_STYLE[bar.weightKg] ?? 'bg-neutral-700 text-white'}`}
           >
             {bar.weightKg}
           </div>
         ))}
       </div>
-      <p className="text-lg text-white">
+      <p className={`text-white ${tier.perSide}`}>
         <span className="font-semibold">{formatPlatesPerSide(breakdown.plates)}</span> per side
       </p>
     </div>
