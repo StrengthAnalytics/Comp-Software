@@ -70,22 +70,36 @@ type SizeTier = 'compact' | 'normal' | 'large';
 
 const TIER: Record<
   SizeTier,
-  { pad: string; name: string; meta: string; weight: string; unit: string; lbs: string; rackValue: string; plateWidth: string; plateText: string; perSide: string }
+  {
+    pad: string;
+    cardPad: string;
+    name: string;
+    meta: string;
+    weight: string;
+    unit: string;
+    lbs: string;
+    rackValue: string;
+    plateWidth: string;
+    plateText: string;
+    perSide: string;
+  }
 > = {
   compact: {
-    pad: 'py-3',
-    name: 'text-3xl',
-    meta: 'text-lg',
-    weight: 'text-4xl',
-    unit: 'text-xl',
-    lbs: 'text-base',
-    rackValue: 'text-2xl',
-    plateWidth: 'w-9',
-    plateText: 'text-sm',
-    perSide: 'text-sm',
+    pad: 'py-2',
+    cardPad: 'py-2',
+    name: 'text-2xl',
+    meta: 'text-sm',
+    weight: 'text-3xl',
+    unit: 'text-lg',
+    lbs: 'text-xs',
+    rackValue: 'text-xl',
+    plateWidth: 'w-7',
+    plateText: 'text-xs',
+    perSide: 'text-xs',
   },
   normal: {
     pad: 'py-6',
+    cardPad: 'py-5',
     name: 'text-5xl',
     meta: 'text-2xl',
     weight: 'text-7xl',
@@ -98,6 +112,7 @@ const TIER: Record<
   },
   large: {
     pad: 'py-6',
+    cardPad: 'py-5',
     name: 'text-6xl',
     meta: 'text-2xl',
     weight: 'text-8xl',
@@ -111,7 +126,7 @@ const TIER: Record<
 };
 
 const PLATE_HEIGHT: Record<SizeTier, Record<number, string>> = {
-  compact: { 25: 'h-24', 20: 'h-20', 15: 'h-16', 10: 'h-14', 5: 'h-12', 2.5: 'h-10', 1.25: 'h-8', 0.5: 'h-7', 0.25: 'h-6' },
+  compact: { 25: 'h-16', 20: 'h-14', 15: 'h-12', 10: 'h-11', 5: 'h-10', 2.5: 'h-9', 1.25: 'h-8', 0.5: 'h-7', 0.25: 'h-6' },
   normal: { 25: 'h-44', 20: 'h-40', 15: 'h-36', 10: 'h-32', 5: 'h-28', 2.5: 'h-24', 1.25: 'h-20', 0.5: 'h-16', 0.25: 'h-14' },
   large: { 25: 'h-56', 20: 'h-52', 15: 'h-48', 10: 'h-44', 5: 'h-40', 2.5: 'h-36', 1.25: 'h-32', 0.5: 'h-28', 0.25: 'h-24' },
 };
@@ -464,7 +479,9 @@ function LifterRow({
       {card ? (
         // The "how to load it" half: rack settings and the plate diagram grouped in one card, so the
         // space between them reads as inside a panel rather than as dead screen.
-        <div className="flex h-full items-center justify-between gap-10 rounded-2xl border border-neutral-800 bg-white/[0.02] px-8 py-5">
+        <div
+          className={`flex h-full items-center justify-between gap-10 rounded-2xl border border-neutral-800 bg-white/[0.02] px-8 ${TIER[size].cardPad}`}
+        >
           <RackSettings card={card} size={size} />
           <div className="flex shrink-0 items-center justify-end">
             {card.breakdown ? (
