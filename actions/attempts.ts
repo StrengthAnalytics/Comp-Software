@@ -161,17 +161,36 @@ export async function setAttemptResultAction(input: SetAttemptResultInput): Prom
     const locked = await requireWritableComp(supabase, parsed.data.competitionId);
     if (locked) return locked;
 
+    // RLS cannot check that the entry belongs to the comp the client named; verify before writing.
+    const { data: entry, error: entryError } = await supabase
+      .from('entries')
+      .select('competition_id')
+      .eq('id', parsed.data.entryId)
+      .maybeSingle();
+    if (entryError) {
+      Sentry.captureException(entryError);
+      return fail('Could not record the result. Please try again.');
+    }
+    if (!entry || entry.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that entry.');
+    }
+
+    // Find the attempt by its natural key. It may not exist yet when a result is replayed from the
+    // offline outbox before its weight write landed — flushing weight ops first avoids that, but guard
+    // anyway rather than recording a result against nothing.
     const { data: attempt, error: attemptError } = await supabase
       .from('attempts')
-      .select('competition_id, weight_kg, result, decided_at')
-      .eq('id', parsed.data.attemptId)
+      .select('id, weight_kg, result, decided_at')
+      .eq('entry_id', parsed.data.entryId)
+      .eq('lift', parsed.data.lift)
+      .eq('attempt_number', parsed.data.attemptNumber)
       .maybeSingle();
     if (attemptError) {
       Sentry.captureException(attemptError);
       return fail('Could not record the result. Please try again.');
     }
-    if (!attempt || attempt.competition_id !== parsed.data.competitionId) {
-      return fail('Could not find that attempt.');
+    if (!attempt) {
+      return fail('Declare a weight before recording a result.');
     }
 
     // A good or no lift needs a declared weight — the bar that was attempted.
@@ -197,7 +216,7 @@ export async function setAttemptResultAction(input: SetAttemptResultInput): Prom
     const { error } = await supabase
       .from('attempts')
       .update({ result: parsed.data.result, decided_at: decidedAt })
-      .eq('id', parsed.data.attemptId);
+      .eq('id', attempt.id);
     if (error) {
       Sentry.captureException(error);
       return fail('Could not record the result. Please try again.');

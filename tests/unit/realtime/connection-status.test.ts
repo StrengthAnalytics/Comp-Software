@@ -33,7 +33,7 @@ describe('deriveConnectionState', () => {
 });
 
 describe('computeConnectionIndicator', () => {
-  it('shows a green, non-pulsing pill when live', () => {
+  it('shows a green, non-pulsing pill when live with nothing queued', () => {
     const indicator = computeConnectionIndicator('live');
     expect(indicator.text).toBe('Live');
     expect(indicator.dot).toBe('bg-green-500');
@@ -47,10 +47,26 @@ describe('computeConnectionIndicator', () => {
     expect(indicator.pulse).toBe(true);
   });
 
-  it('shows a red, pulsing pill when offline', () => {
+  it('shows a red, pulsing pill when offline with nothing queued', () => {
     const indicator = computeConnectionIndicator('offline');
     expect(indicator.text).toBe('Offline — live updates paused');
     expect(indicator.dot).toBe('bg-red-500');
+    expect(indicator.pulse).toBe(true);
+  });
+
+  it('tells the operator queued edits will sync when offline', () => {
+    expect(computeConnectionIndicator('offline', 1).text).toBe('Offline — 1 change will sync when reconnected');
+    expect(computeConnectionIndicator('offline', 3).text).toBe('Offline — 3 changes will sync when reconnected');
+  });
+
+  it('notes pending edits while reconnecting', () => {
+    expect(computeConnectionIndicator('connecting', 2).text).toBe('Reconnecting — 2 changes pending');
+  });
+
+  it('shows a syncing state when live but the outbox is draining', () => {
+    const indicator = computeConnectionIndicator('live', 2);
+    expect(indicator.text).toBe('Syncing 2 changes…');
+    expect(indicator.dot).toBe('bg-amber-500');
     expect(indicator.pulse).toBe(true);
   });
 });

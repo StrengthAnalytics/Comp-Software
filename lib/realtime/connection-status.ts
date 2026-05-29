@@ -22,15 +22,22 @@ export function deriveConnectionState(
   return allSubscribed ? 'live' : 'connecting';
 }
 
+// "1 change" / "3 changes" — pluralised count of edits held in the offline outbox.
+function changeCount(pending: number): string {
+  return `${pending} change${pending === 1 ? '' : 's'}`;
+}
+
 // Tailwind classes + copy for the connection pill, mirroring the weigh-in save indicator's shape so
-// the two screens read the same. Green when live, amber (pulsing) while reconnecting, red (pulsing)
-// when offline.
+// the two screens read the same. Green when live and nothing is queued, amber (pulsing) while
+// reconnecting or syncing queued edits, red (pulsing) when offline. `pendingCount` is the number of
+// edits held in the offline outbox waiting to reach the database; it changes the copy so the operator
+// knows their work is held and will sync, not lost.
 export type ConnectionIndicator = { text: string; dot: string; box: string; pulse: boolean };
 
-export function computeConnectionIndicator(state: ConnectionState): ConnectionIndicator {
+export function computeConnectionIndicator(state: ConnectionState, pendingCount = 0): ConnectionIndicator {
   if (state === 'offline') {
     return {
-      text: 'Offline — live updates paused',
+      text: pendingCount > 0 ? `Offline — ${changeCount(pendingCount)} will sync when reconnected` : 'Offline — live updates paused',
       dot: 'bg-red-500',
       box: 'border-red-300 bg-red-50 text-red-800',
       pulse: true,
@@ -38,7 +45,15 @@ export function computeConnectionIndicator(state: ConnectionState): ConnectionIn
   }
   if (state === 'connecting') {
     return {
-      text: 'Reconnecting…',
+      text: pendingCount > 0 ? `Reconnecting — ${changeCount(pendingCount)} pending` : 'Reconnecting…',
+      dot: 'bg-amber-500',
+      box: 'border-amber-300 bg-amber-50 text-amber-800',
+      pulse: true,
+    };
+  }
+  if (pendingCount > 0) {
+    return {
+      text: `Syncing ${changeCount(pendingCount)}…`,
       dot: 'bg-amber-500',
       box: 'border-amber-300 bg-amber-50 text-amber-800',
       pulse: true,
