@@ -252,23 +252,23 @@ export function LoadingDisplay({
     <div className="fixed inset-0 z-50 flex flex-col bg-neutral-950 text-white">
       <header className="flex items-center justify-between gap-4 border-b-2 border-neutral-700 px-6 py-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium uppercase tracking-wide text-neutral-400">
+          <p className="truncate text-sm font-medium uppercase tracking-wide text-white">
             {platformName} · {compName}
           </p>
           <h1 className="truncate text-2xl font-bold tracking-tight">{headerMain}</h1>
         </div>
         <div className="shrink-0 text-right">
           {view.sessionName ? (
-            <p className="text-sm font-medium uppercase tracking-wide text-neutral-400">{view.sessionName}</p>
+            <p className="text-sm font-medium uppercase tracking-wide text-white">{view.sessionName}</p>
           ) : null}
           {headerProgress ? <p className="text-xl font-semibold tabular-nums">{headerProgress}</p> : null}
         </div>
       </header>
 
       <div className="grid min-h-0 flex-1 grid-rows-3 divide-y divide-neutral-800">
-        <LifterRow role="Previous" card={view.previous} tint="bg-red-950/75" />
+        <LifterRow role="Previous" card={view.previous} tint="" dim />
         <LifterRow role="Now loading" card={view.current} tint="bg-green-950/75" highlight />
-        <LifterRow role="On deck" card={view.onDeck} tint="bg-yellow-800/75" />
+        <LifterRow role="On deck" card={view.onDeck} tint="" />
       </div>
     </div>
   );
@@ -400,18 +400,21 @@ function LifterRow({
   card,
   tint,
   highlight,
+  dim,
 }: {
   role: string;
   card: LifterCard | null;
-  // Per-row background wash (red previous / green current / orange on-deck) for at-a-glance position.
+  // Background wash for the row — only the now-loading row is tinted (green); the others are clear.
   tint: string;
   highlight?: boolean;
+  // Fades the whole row, marking the previous lifter as done.
+  dim?: boolean;
 }) {
   return (
     <section
       className={`relative grid min-h-0 grid-cols-1 items-center gap-8 px-10 py-6 lg:grid-cols-2 lg:gap-16 lg:px-20 ${tint} ${
         highlight ? 'z-10 rounded-xl ring-4 ring-inset ring-white' : ''
-      }`}
+      } ${dim ? 'opacity-70' : ''}`}
     >
       <LifterIdentity role={role} card={card} highlight={highlight} />
       {card ? (
@@ -423,7 +426,7 @@ function LifterRow({
             {card.breakdown ? (
               <PlateStack breakdown={card.breakdown} />
             ) : (
-              <p className="text-2xl font-semibold text-neutral-500">No weight declared</p>
+              <p className="text-2xl font-semibold text-white">No weight declared</p>
             )}
           </div>
         </div>
@@ -436,17 +439,11 @@ function LifterIdentity({ role, card, highlight }: { role: string; card: LifterC
   const chip = card ? RESULT_CHIP[card.result] : null;
   return (
     <div className="flex min-w-0 flex-col justify-center">
-      <p
-        className={`text-base font-semibold uppercase tracking-widest ${
-          highlight ? 'text-amber-400' : 'text-neutral-500'
-        }`}
-      >
-        {role}
-      </p>
+      <p className="text-base font-semibold uppercase tracking-widest text-white">{role}</p>
       {card ? (
         <>
           <p className={`truncate font-bold leading-none ${highlight ? 'text-6xl' : 'text-5xl'}`}>{card.lifterName}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-neutral-300">
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-white">
             <span className="text-2xl font-medium">
               {card.flightName} · {LIFT_LABELS[card.lift]} {card.attemptNumber}
             </span>
@@ -457,7 +454,7 @@ function LifterIdentity({ role, card, highlight }: { role: string; card: LifterC
           <Weight weightKg={card.weightKg} highlight={highlight} />
         </>
       ) : (
-        <p className="mt-2 text-3xl font-semibold text-neutral-600">—</p>
+        <p className="mt-2 text-3xl font-semibold text-white">—</p>
       )}
     </div>
   );
@@ -465,19 +462,19 @@ function LifterIdentity({ role, card, highlight }: { role: string; card: LifterC
 
 function Weight({ weightKg, highlight }: { weightKg: number | null; highlight?: boolean }) {
   if (weightKg === null) {
-    return <p className="mt-3 text-3xl font-semibold text-neutral-500">No weight declared</p>;
+    return <p className="mt-3 text-3xl font-semibold text-white">No weight declared</p>;
   }
   const lbs = (weightKg * KG_TO_LBS).toFixed(1);
   return (
-    <p className="mt-3 tabular-nums">
+    <p className="mt-3 tabular-nums text-white">
       <span className={`font-extrabold leading-none ${highlight ? 'text-8xl' : 'text-7xl'}`}>{weightKg}</span>
-      <span className="ml-3 text-3xl font-semibold text-neutral-400">kg</span>
-      <span className="ml-4 text-2xl text-neutral-500">({lbs} lb)</span>
+      <span className="ml-3 text-3xl font-semibold">kg</span>
+      <span className="ml-4 text-2xl">({lbs} lb)</span>
     </p>
   );
 }
 
-const RACK_LABEL = 'text-sm font-semibold uppercase tracking-wide text-neutral-500';
+const RACK_LABEL = 'text-sm font-semibold uppercase tracking-wide text-white';
 const RACK_VALUE = 'text-4xl font-extrabold tabular-nums leading-none';
 
 // One labelled rack figure (e.g. Height / 14, Setting / IN).
@@ -502,7 +499,7 @@ function RackSettings({ card }: { card: LifterCard }) {
 
 function RackFields({ entry, lift }: { entry: BoardEntry; lift: LiftType }) {
   if (lift === 'deadlift') {
-    return <p className="text-2xl font-semibold text-neutral-400">No racks — deadlift</p>;
+    return <p className="text-2xl font-semibold text-white">No racks — deadlift</p>;
   }
   if (lift === 'squat') {
     return (
@@ -526,7 +523,7 @@ function PlateStack({ breakdown }: { breakdown: PlateBreakdown }) {
     return <p className="text-xl font-semibold text-red-400">Cannot load {breakdown.totalKg} kg with available plates</p>;
   }
   if (breakdown.perSideKg === 0) {
-    return <p className="text-2xl font-semibold text-neutral-400">Bar only</p>;
+    return <p className="text-2xl font-semibold text-white">Bar only</p>;
   }
   const bars = breakdown.plates.flatMap((plate) =>
     Array.from({ length: plate.count }, (_, index) => ({ weightKg: plate.weightKg, index })),
@@ -545,8 +542,8 @@ function PlateStack({ breakdown }: { breakdown: PlateBreakdown }) {
           </div>
         ))}
       </div>
-      <p className="text-lg text-neutral-400">
-        <span className="font-semibold text-neutral-200">{formatPlatesPerSide(breakdown.plates)}</span> per side
+      <p className="text-lg text-white">
+        <span className="font-semibold">{formatPlatesPerSide(breakdown.plates)}</span> per side
       </p>
     </div>
   );
