@@ -25,6 +25,7 @@ import {
 } from '@/lib/attempts/running-order';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
+import { loadOutbox, saveOutbox, type PendingOp, type RackPatch } from '@/lib/scorekeeper/outbox';
 import type {
   BoardAttempt,
   BoardEntry,
@@ -94,25 +95,6 @@ function liftHasRack(lift: LiftType): lift is 'squat' | 'bench' {
   return lift === 'squat' || lift === 'bench';
 }
 
-// A single lift's rack edit, applied optimistically to the entry and sent to updateEntryRackSettingsAction.
-type RackPatch =
-  | { lift: 'squat'; rackHeightSquat: number | null; squatRackSetting: SquatRackSetting | null }
-  | {
-      lift: 'bench';
-      rackHeightBench: number | null;
-      benchSafetyHeight: number | null;
-      benchSpotting: BenchSpotting | null;
-    };
-
-// One mutation held in the offline outbox. The optimistic local state already reflects it; this is the
-// instruction to persist it. Keyed by cell+field so a re-edit of the same thing supersedes the older
-// queued value (last-write-wins) rather than replaying both. All three are addressable by natural key
-// (no server id), so an edit made offline — including a result on an attempt created offline — survives
-// to be replayed when the connection returns.
-type PendingOp =
-  | { kind: 'weight'; entryId: string; lift: LiftType; attemptNumber: number; weightKg: number }
-  | { kind: 'result'; entryId: string; lift: LiftType; attemptNumber: number; result: AttemptResult }
-  | { kind: 'rack'; entryId: string; patch: RackPatch };
 
 function rackText(entry: BoardEntry, lift: LiftType): string {
   if (lift === 'squat') {
@@ -350,17 +332,26 @@ export function ScoresheetBoard({
     [platforms, sessions, flights, entries, attempts],
   );
 
+  // Mirror the outbox to localStorage so edits queued in this session survive a page reload — e.g. the
+  // operator reloads, or the tab is reopened, while still offline — and reach the database when the
+  // connection returns rather than being lost with the in-memory queue.
+  function persistOutbox() {
+    saveOutbox(competitionId, pendingOpsRef.current);
+  }
+
   // Queue (or supersede) one outbox op and kick a flush. The optimistic state has already been applied
-  // by the caller; this only schedules the persistence.
+  // by the caller; this only schedules and persists the write.
   function enqueue(key: string, op: PendingOp) {
     pendingOpsRef.current.set(key, op);
     setPendingCount(pendingOpsRef.current.size);
+    persistOutbox();
     flushRef.current();
   }
 
   function dropPending(key: string) {
     pendingOpsRef.current.delete(key);
     setPendingCount(pendingOpsRef.current.size);
+    persistOutbox();
   }
 
   // Sends one op to its server action and reconciles local state on success (adopting the real id for a
@@ -484,6 +475,79 @@ export function ScoresheetBoard({
     },
     [],
   );
+
+  // On mount, restore any edits a previous session queued but couldn't sync (e.g. the page was reloaded
+  // while offline). The ops are replayed into local state so the board shows the operator's un-synced
+  // work — not just the server snapshot, which doesn't have it yet — and then flushed (immediately if
+  // online, else on reconnect). Runs once; guarded so React StrictMode's double-mount can't double-apply.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) {
+      return;
+    }
+    hydratedRef.current = true;
+    const stored = loadOutbox(competitionId);
+    if (stored.size === 0) {
+      return;
+    }
+    pendingOpsRef.current = stored;
+    setPendingCount(stored.size);
+    const ops = [...stored.values()];
+    setAttempts((current) => {
+      const next = new Map(current);
+      // Weights first so a result replayed below lands on an attempt that exists in local state.
+      for (const op of ops) {
+        if (op.kind !== 'weight') {
+          continue;
+        }
+        const key = attemptKey(op.entryId, op.lift, op.attemptNumber);
+        const prev = next.get(key);
+        next.set(key, {
+          id: prev?.id ?? `${TEMP_ID_PREFIX}${key}`,
+          entryId: op.entryId,
+          lift: op.lift,
+          attemptNumber: op.attemptNumber,
+          weightKg: op.weightKg,
+          result: prev?.result ?? 'pending',
+          decidedAt: prev?.decidedAt ?? null,
+        });
+      }
+      for (const op of ops) {
+        if (op.kind !== 'result') {
+          continue;
+        }
+        const key = attemptKey(op.entryId, op.lift, op.attemptNumber);
+        const existing = next.get(key);
+        if (!existing) {
+          continue;
+        }
+        const decidedAt = op.result === 'good_lift' || op.result === 'no_lift' ? new Date().toISOString() : null;
+        next.set(key, { ...existing, result: op.result, decidedAt });
+      }
+      return next;
+    });
+    setEntries((current) =>
+      current.map((row) => {
+        let updated = row;
+        for (const op of ops) {
+          if (op.kind !== 'rack' || op.entryId !== row.id) {
+            continue;
+          }
+          updated =
+            op.patch.lift === 'squat'
+              ? { ...updated, rackHeightSquat: op.patch.rackHeightSquat, squatRackSetting: op.patch.squatRackSetting }
+              : {
+                  ...updated,
+                  rackHeightBench: op.patch.rackHeightBench,
+                  benchSafetyHeight: op.patch.benchSafetyHeight,
+                  benchSpotting: op.patch.benchSpotting,
+                };
+        }
+        return updated;
+      }),
+    );
+    flushRef.current();
+  }, [competitionId]);
 
   // Sets (or creates) an attempt's weight, optimistically. The existing result is preserved so a
   // weight correction keeps a recorded good/no lift; the server enforces the progression guard. The
