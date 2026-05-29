@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { updateRackHeightsAction } from '@/actions/entries';
 import { usePersistentString } from '@/lib/use-persistent-string';
-import { NumberInput, SegmentedToggle } from '@/components/station/controls';
+import { CellNumber, NumberField, SegmentedToggle } from '@/components/station/controls';
 import {
   SaveContext,
   SaveStatus,
@@ -14,6 +14,22 @@ import {
   type ReportedSaveState,
   type SaveContextValue,
 } from '@/components/station/save-state';
+import {
+  CELL_PRIMARY,
+  CELL_SELECT,
+  FIELD_CLASS,
+  GHOST_BUTTON,
+  INPUT_CLASS,
+  PRIMARY_BUTTON,
+  PRINT_BLANK,
+  PRINT_TD,
+  PRINT_TH,
+  TAB_BASE,
+  TABLE_LABEL,
+  TABLE_TD,
+  TABLE_TH,
+  TABLE_TH_CENTER,
+} from '@/components/station/styles';
 import { useStationSave } from '@/components/station/use-station-save';
 import {
   BENCH_SPOTTING_LABELS,
@@ -58,41 +74,6 @@ export type RackEntry = {
 export type RackSessionOption = { id: string; name: string };
 
 type ViewMode = 'cards' | 'table';
-
-const INPUT_BASE = 'rounded-md border px-3 py-2 text-sm text-neutral-900 focus:outline-none';
-const INPUT_CLASS = `${INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
-const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
-// Rack fields hold short values (a hole number, a short setting), so each box is a fixed compact width
-// and the row wraps.
-const FIELD_CLASS = 'flex w-32 flex-col gap-1';
-const PRIMARY_BUTTON =
-  'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
-const GHOST_BUTTON =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const TAB_BASE = 'rounded-md px-3 py-2 text-sm font-medium';
-
-// Compact controls for the dense table view (the column header carries the label, so cells are bare).
-const CELL_INPUT =
-  'mx-auto block w-24 rounded border border-neutral-300 px-2 py-1 text-center text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
-const CELL_SELECT =
-  'w-full rounded border border-neutral-300 px-2 py-1 text-center text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
-const CELL_PRIMARY =
-  'rounded bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
-// Two-row sticky header: the group-label bar pins at the top, the column headers pin just below it.
-// TABLE_TH's `top-9` must equal the label bar's `h-9` so the headers tuck directly under the label.
-// z-order: label (30) over column headers (20) over the frozen lifter column (10).
-const TABLE_LABEL =
-  'sticky top-0 z-30 flex h-9 items-center bg-neutral-100 px-2 text-xs font-semibold uppercase tracking-wide text-neutral-500';
-const TABLE_TH_BASE =
-  'sticky top-9 z-20 border-b border-neutral-300 bg-neutral-100 px-2 py-2 text-xs font-medium text-neutral-600 whitespace-nowrap';
-const TABLE_TH = `${TABLE_TH_BASE} text-left`;
-const TABLE_TH_CENTER = `${TABLE_TH_BASE} text-center`;
-const TABLE_TD = 'border-b border-neutral-200 px-2 py-1.5 align-top';
-
-// Printable backup sheet: plain ruled cells; the blank cells get extra height to write into by hand.
-const PRINT_TH = 'border border-neutral-500 px-2 py-1 text-center text-[11px] font-semibold uppercase';
-const PRINT_TD = 'border border-neutral-400 px-2 py-1 text-center';
-const PRINT_BLANK = 'border border-neutral-400 px-2 py-3';
 
 const VIEW_STORAGE_KEY = 'comp-software:rack-heights:view';
 const LAYOUT_STORAGE_KEY = 'comp-software:rack-heights:layout';
@@ -198,27 +179,6 @@ function useRackForm({
     online: save.online,
     setRacks,
   };
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-  onBlur,
-  step,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onBlur?: () => void;
-  step: string;
-}) {
-  return (
-    <label className={FIELD_CLASS}>
-      <span className={LABEL_CLASS}>{label}</span>
-      <NumberInput value={value} onChange={onChange} onBlur={onBlur} step={step} className={`${INPUT_CLASS} text-center`} />
-    </label>
-  );
 }
 
 // Memoised so a sibling row reporting its save state up to the page indicator (which re-renders the
@@ -367,22 +327,6 @@ const RackCard = memo(function RackCard({
     </section>
   );
 });
-
-function CellNumber({
-  label,
-  value,
-  onChange,
-  onBlur,
-  step,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onBlur?: () => void;
-  step: string;
-}) {
-  return <NumberInput value={value} onChange={onChange} onBlur={onBlur} step={step} ariaLabel={label} className={CELL_INPUT} />;
-}
 
 // Rack columns shared by the screen table's header and row cells, so the two can't fall out of sync (a
 // header without its cell, or vice versa). `lift` gates which contested lifts show the column.

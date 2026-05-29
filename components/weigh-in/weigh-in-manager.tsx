@@ -16,7 +16,24 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { assignEntryWeightClassAction, weighInAction } from '@/actions/entries';
 import { usePersistentString } from '@/lib/use-persistent-string';
-import { NumberInput, SegmentedToggle } from '@/components/station/controls';
+import { CellNumber, NumberField, SegmentedToggle } from '@/components/station/controls';
+import {
+  CELL_PRIMARY,
+  CELL_SELECT,
+  FIELD_CLASS,
+  GHOST_BUTTON,
+  INPUT_CLASS,
+  LABEL_CLASS,
+  PRIMARY_BUTTON,
+  PRINT_BLANK,
+  PRINT_TD,
+  PRINT_TH,
+  TAB_BASE,
+  TABLE_LABEL,
+  TABLE_TD,
+  TABLE_TH,
+  TABLE_TH_CENTER,
+} from '@/components/station/styles';
 import {
   AUTOSAVE_DEBOUNCE_MS,
   SAVE_RETRY_MS,
@@ -92,48 +109,6 @@ type ViewMode = 'cards' | 'table';
 // settings. This is a display choice only — it never changes what is saved, so hidden rack values are
 // retained and reappear when switched back to full.
 type DetailMode = 'simple' | 'full';
-
-const INPUT_BASE = 'rounded-md border px-3 py-2 text-sm text-neutral-900 focus:outline-none';
-const INPUT_CLASS = `${INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
-// Empty fields that must be filled before a lifter can be marked weighed-in (bodyweight, openers).
-const INPUT_REQUIRED_CLASS = `${INPUT_BASE} border-red-400 bg-red-50 focus:border-red-500`;
-const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
-// Weigh-in fields hold short values (weights, hole numbers, a short setting), so each box is a fixed
-// compact width and the row wraps — roughly half the width of the old full-stretch grid cells.
-const FIELD_CLASS = 'flex w-32 flex-col gap-1';
-const PRIMARY_BUTTON =
-  'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
-const GHOST_BUTTON =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const TAB_BASE = 'rounded-md px-3 py-2 text-sm font-medium';
-
-// Compact controls for the dense table view (the column header carries the label, so cells are bare).
-// Values are centred in their box and the box is centred in the cell, so the numbers line up down a
-// column.
-const CELL_INPUT_BASE = 'mx-auto block w-24 rounded border px-2 py-1 text-center text-sm text-neutral-900 focus:outline-none';
-const CELL_INPUT = `${CELL_INPUT_BASE} border-neutral-300 focus:border-neutral-500`;
-const CELL_INPUT_REQUIRED = `${CELL_INPUT_BASE} border-red-400 bg-red-50 focus:border-red-500`;
-const CELL_SELECT = 'w-full rounded border border-neutral-300 px-2 py-1 text-center text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
-const CELL_PRIMARY =
-  'rounded bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
-// Two-row sticky header: the group-label bar pins at the top, the column headers pin just below it.
-// TABLE_TH's `top-9` must equal the label bar's `h-9` so the headers tuck directly under the label
-// rather than overlapping it. z-order: label (30) over column headers (20) over the frozen lifter
-// column (10), so each layer covers the scrolling cells beneath it.
-const TABLE_LABEL =
-  'sticky top-0 z-30 flex h-9 items-center bg-neutral-100 px-2 text-xs font-semibold uppercase tracking-wide text-neutral-500';
-const TABLE_TH_BASE =
-  'sticky top-9 z-20 border-b border-neutral-300 bg-neutral-100 px-2 py-2 text-xs font-medium text-neutral-600 whitespace-nowrap';
-// The lifter column stays left-aligned over the names; the data columns centre to sit over their
-// centred values.
-const TABLE_TH = `${TABLE_TH_BASE} text-left`;
-const TABLE_TH_CENTER = `${TABLE_TH_BASE} text-center`;
-const TABLE_TD = 'border-b border-neutral-200 px-2 py-1.5 align-top';
-
-// Printable backup sheet: plain ruled cells; the blank cells get extra height to write into by hand.
-const PRINT_TH = 'border border-neutral-500 px-2 py-1 text-center text-[11px] font-semibold uppercase';
-const PRINT_TD = 'border border-neutral-400 px-2 py-1 text-center';
-const PRINT_BLANK = 'border border-neutral-400 px-2 py-3';
 
 const VIEW_STORAGE_KEY = 'comp-software:weigh-in:view';
 const LAYOUT_STORAGE_KEY = 'comp-software:weigh-in:layout';
@@ -495,42 +470,6 @@ function useWeighInForm({
   };
 }
 
-function NumberField({
-  label,
-  value,
-  onChange,
-  onBlur,
-  step,
-  invalid = false,
-  required = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onBlur?: () => void;
-  step: string;
-  invalid?: boolean;
-  required?: boolean;
-}) {
-  return (
-    <label className={FIELD_CLASS}>
-      <span className={LABEL_CLASS}>
-        {label}
-        {required ? <span className="text-red-500"> *</span> : null}
-      </span>
-      <NumberInput
-        value={value}
-        onChange={onChange}
-        onBlur={onBlur}
-        step={step}
-        invalid={invalid}
-        ariaRequired={required}
-        className={`${invalid ? INPUT_REQUIRED_CLASS : INPUT_CLASS} text-center`}
-      />
-    </label>
-  );
-}
-
 // Memoised so a sibling row reporting its save state up to the page indicator (which re-renders the
 // manager) doesn't re-render every card; props are kept referentially stable via renderGroups.
 const WeighInCard = memo(function WeighInCard({
@@ -777,34 +716,6 @@ const WeighInCard = memo(function WeighInCard({
     </section>
   );
 });
-
-function CellNumber({
-  label,
-  value,
-  onChange,
-  onBlur,
-  step,
-  invalid = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onBlur?: () => void;
-  step: string;
-  invalid?: boolean;
-}) {
-  return (
-    <NumberInput
-      value={value}
-      onChange={onChange}
-      onBlur={onBlur}
-      step={step}
-      invalid={invalid}
-      ariaLabel={label}
-      className={invalid ? CELL_INPUT_REQUIRED : CELL_INPUT}
-    />
-  );
-}
 
 // Rack/bench columns shared by the screen table's header and row cells, so the two can't fall out of
 // sync (a header without its cell, or vice versa). `lift` gates which contested lifts show the column;
