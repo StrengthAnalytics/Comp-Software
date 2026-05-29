@@ -29,6 +29,7 @@ import { setAttemptResultAction, setAttemptWeightAction } from '@/actions/attemp
 import { updateEntryRackSettingsAction } from '@/actions/entries';
 import { OptionalSelectField } from '@/components/optional-select-field';
 import { parseOptionalNumber } from '@/lib/number-input';
+import { usePersistentString } from '@/lib/use-persistent-string';
 import type { ActionResult } from '@/types/action-result';
 
 type AttemptRow = Database['public']['Tables']['attempts']['Row'];
@@ -423,6 +424,10 @@ export function ScoresheetBoard({
   // sidebar (~840px), which crushes the wide scoresheet. Full screen reclaims the whole window; Esc or
   // Collapse drops back to the in-flow view (which now scrolls horizontally rather than compressing).
   const [expanded, setExpanded] = useState(true);
+  // Zebra-banding of the roster rows, toggled from the Options dropdown and remembered per browser.
+  // Defaults to on; 'off' disables it.
+  const [stripingPref, setStripingPref] = usePersistentString('scoresheet:striping', 'on');
+  const striped = stripingPref !== 'off';
   const [, startTransition] = useTransition();
 
   const nameById = useMemo(
@@ -605,9 +610,15 @@ export function ScoresheetBoard({
     <div className={expanded ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
       <div className="mb-3 flex items-center justify-between gap-3">
         {expanded ? <h2 className="text-lg font-semibold text-neutral-900">Scoresheet</h2> : <span />}
-        <button type="button" onClick={() => setExpanded((value) => !value)} className={GHOST_BUTTON}>
-          {expanded ? 'Collapse (Esc)' : 'Expand to full screen'}
-        </button>
+        <div className="flex items-center gap-2">
+          <BoardOptions
+            striped={striped}
+            onToggleStriped={() => setStripingPref(striped ? 'off' : 'on')}
+          />
+          <button type="button" onClick={() => setExpanded((value) => !value)} className={GHOST_BUTTON}>
+            {expanded ? 'Collapse (Esc)' : 'Expand to full screen'}
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -625,6 +636,7 @@ export function ScoresheetBoard({
               attempts={attempts}
               columnLifts={columnLifts}
               isTeamCompetition={isTeamCompetition}
+              striped={striped}
               onSetWeight={setWeight}
               onSetResult={setResult}
               onSetRack={setRackSettings}
@@ -642,11 +654,60 @@ export function ScoresheetBoard({
   );
 }
 
+// A small dropdown beside the Collapse button holding scoresheet view options (currently just row
+// striping). The trigger toggles it; clicking anywhere outside closes it. Escape is left to the
+// board's collapse handler.
+function BoardOptions({ striped, onToggleStriped }: { striped: boolean; onToggleStriped: () => void }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    globalThis.addEventListener('pointerdown', onPointerDown);
+    return () => globalThis.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="true"
+        aria-expanded={open}
+        className={GHOST_BUTTON}
+      >
+        Options ▾
+      </button>
+      {open ? (
+        <div className="absolute right-0 z-50 mt-1 w-48 rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100">
+            <span>Row striping</span>
+            <input
+              type="checkbox"
+              checked={striped}
+              onChange={onToggleStriped}
+              className="h-4 w-4 accent-neutral-800"
+            />
+          </label>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function PlatformPanel({
   view,
   attempts,
   columnLifts,
   isTeamCompetition,
+  striped,
   onSetWeight,
   onSetResult,
   onSetRack,
@@ -655,6 +716,7 @@ function PlatformPanel({
   attempts: Map<string, BoardAttempt>;
   columnLifts: LiftType[];
   isTeamCompetition: boolean;
+  striped: boolean;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
   onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
@@ -731,11 +793,15 @@ function PlatformPanel({
               </tr>
             </thead>
             <tbody>
-              {roster.map(({ entry, flightName }) => {
+              {roster.map(({ entry, flightName }, index) => {
                 const total = entryTotal(entry);
+                // Band alternate rows when striping is on. The transparent cells show the row tint;
+                // the sticky first column needs its own opaque background, so it carries the same
+                // band (and stays white otherwise, to mask content scrolling beneath it).
+                const banded = striped && index % 2 === 1;
                 return (
-                  <tr key={entry.id}>
-                    <td className={`sticky left-0 z-10 whitespace-nowrap border-l-[1.5px] bg-white ${CELL}`}>
+                  <tr key={entry.id} className={banded ? 'bg-neutral-50' : ''}>
+                    <td className={`sticky left-0 z-10 whitespace-nowrap border-l-[1.5px] ${banded ? 'bg-neutral-50' : 'bg-white'} ${CELL}`}>
                     <span className="font-medium text-neutral-900">{entry.lifterName}</span>
                     <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                   </td>
