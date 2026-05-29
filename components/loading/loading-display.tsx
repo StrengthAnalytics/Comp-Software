@@ -266,9 +266,9 @@ export function LoadingDisplay({
       </header>
 
       <div className="grid min-h-0 flex-1 grid-rows-3 divide-y divide-neutral-800">
-        <LifterRow role="Previous" card={view.previous} tint="bg-red-950/50" />
-        <LifterRow role="Now loading" card={view.current} tint="bg-green-950/50" highlight />
-        <LifterRow role="On deck" card={view.onDeck} tint="bg-orange-950/50" />
+        <LifterRow role="Previous" card={view.previous} tint="bg-red-950/75" />
+        <LifterRow role="Now loading" card={view.current} tint="bg-green-950/75" highlight />
+        <LifterRow role="On deck" card={view.onDeck} tint="bg-yellow-800/75" />
       </div>
     </div>
   );
@@ -409,7 +409,9 @@ function LifterRow({
 }) {
   return (
     <section
-      className={`grid min-h-0 grid-cols-1 items-center gap-8 px-10 py-6 lg:grid-cols-2 lg:gap-16 lg:px-20 ${tint}`}
+      className={`relative grid min-h-0 grid-cols-1 items-center gap-8 px-10 py-6 lg:grid-cols-2 lg:gap-16 lg:px-20 ${tint} ${
+        highlight ? 'z-10 rounded-xl ring-4 ring-inset ring-white' : ''
+      }`}
     >
       <LifterIdentity role={role} card={card} highlight={highlight} />
       {card ? (
