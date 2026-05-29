@@ -43,6 +43,7 @@ This project is developed online-only against the hosted Supabase dev project an
     /[comp-slug]
       /entries                  ← lifter registration, inline weigh-in editing
       /weigh-in                 ← day-of weigh-in by session (bodyweight, openers, rack settings)
+      /rack-heights             ← squat/bench rack settings by session (warm-up room, mobile-friendly)
       /run                      ← scorekeeper interface
       /refs                     ← ref panel (v2)
       /flights                  ← sessions & flight management

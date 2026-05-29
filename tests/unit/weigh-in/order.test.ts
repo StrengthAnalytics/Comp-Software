@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildWeighInGroups, type WeighInEntryFields } from '@/lib/weigh-in/order';
+import {
+  buildWeighInGroups,
+  liftsForWeighInGroup,
+  weighInGroupLabel,
+  type WeighInEntryFields,
+  type WeighInGroup,
+} from '@/lib/weigh-in/order';
+import type { Lifts } from '@/lib/constants';
 
 type TestEntry = WeighInEntryFields & { id: string };
 
@@ -124,5 +131,50 @@ describe('buildWeighInGroups (edge cases)', () => {
   it('returns no groups for an empty roster', () => {
     expect(buildWeighInGroups([], false)).toEqual([]);
     expect(buildWeighInGroups([], true)).toEqual([]);
+  });
+});
+
+function group<T>(sex: WeighInGroup<T>['sex'], lift: WeighInGroup<T>['lift']): WeighInGroup<T> {
+  return { sex, lift, entries: [] };
+}
+
+const FULL_POWER: Lifts = { squat: true, bench: true, deadlift: true };
+
+describe('weighInGroupLabel', () => {
+  it('labels a non-team group by sex only', () => {
+    expect(weighInGroupLabel(group('female', null), false)).toBe('Female');
+    expect(weighInGroupLabel(group('male', null), false)).toBe('Male');
+  });
+
+  it('labels a team role group by lift and sex', () => {
+    expect(weighInGroupLabel(group('female', 'squat'), true)).toBe('Squat · Female');
+    expect(weighInGroupLabel(group('male', 'deadlift'), true)).toBe('Deadlift · Male');
+  });
+
+  it('labels a role-less team group distinctly', () => {
+    expect(weighInGroupLabel(group('female', null), true)).toBe('No team role · Female');
+  });
+});
+
+describe('liftsForWeighInGroup', () => {
+  it('returns the comp lifts for a non-team group', () => {
+    expect(liftsForWeighInGroup(group('male', null), FULL_POWER, false)).toEqual(FULL_POWER);
+  });
+
+  it('narrows a team role group to just its lift', () => {
+    expect(liftsForWeighInGroup(group('male', 'squat'), FULL_POWER, true)).toEqual({
+      squat: true,
+      bench: false,
+      deadlift: false,
+    });
+    expect(liftsForWeighInGroup(group('female', 'bench'), FULL_POWER, true)).toEqual({
+      squat: false,
+      bench: true,
+      deadlift: false,
+    });
+  });
+
+  it('returns the full comp lifts for a role-less team group (so it is never dropped)', () => {
+    expect(liftsForWeighInGroup(group('male', null), FULL_POWER, true)).toEqual(FULL_POWER);
   });
 });
