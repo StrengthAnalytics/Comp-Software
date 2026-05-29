@@ -666,6 +666,8 @@ function BoardOptions({ striped, onToggleStriped }: { striped: boolean; onToggle
       return;
     }
     const onPointerDown = (event: PointerEvent) => {
+      // event.target is typed EventTarget | null; a pointerdown always originates from a DOM Node,
+      // so the cast is safe and Node.contains accepts it.
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
