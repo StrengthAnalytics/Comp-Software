@@ -244,7 +244,7 @@ export function LoadingDisplay({
   );
 
   const headerMain = view.header
-    ? `Flight ${view.header.flightName} — ${LIFT_LABELS[view.header.lift]}, Round ${view.header.round}`
+    ? `${view.header.flightName} — ${LIFT_LABELS[view.header.lift]}, Round ${view.header.round}`
     : 'No lifter on the platform';
   const headerProgress = view.header ? `${view.header.position} of ${view.header.total} lifters` : '';
 
@@ -398,17 +398,25 @@ function buildView({
 function LifterRow({ role, card, highlight }: { role: string; card: LifterCard | null; highlight?: boolean }) {
   return (
     <section
-      className={`grid min-h-0 grid-cols-[1fr_auto] items-stretch gap-6 px-6 py-4 ${
-        highlight ? 'bg-neutral-900' : ''
+      className={`grid min-h-0 grid-cols-1 items-center gap-8 px-10 py-6 lg:grid-cols-2 lg:gap-16 lg:px-20 ${
+        highlight ? 'bg-white/[0.04]' : ''
       }`}
     >
-      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
-        <LifterIdentity role={role} card={card} highlight={highlight} />
-        {card ? <RackSettings card={card} /> : null}
-      </div>
-      <div className="flex items-center justify-end">
-        {card?.breakdown ? <PlateStack breakdown={card.breakdown} /> : null}
-      </div>
+      <LifterIdentity role={role} card={card} highlight={highlight} />
+      {card ? (
+        // The "how to load it" half: rack settings and the plate diagram grouped in one card, so the
+        // space between them reads as inside a panel rather than as dead screen.
+        <div className="flex h-full items-center justify-between gap-10 rounded-2xl border border-neutral-800 bg-white/[0.02] px-8 py-5">
+          <RackSettings card={card} />
+          <div className="flex shrink-0 items-center justify-end">
+            {card.breakdown ? (
+              <PlateStack breakdown={card.breakdown} />
+            ) : (
+              <p className="text-2xl font-semibold text-neutral-500">No weight declared</p>
+            )}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -417,24 +425,28 @@ function LifterIdentity({ role, card, highlight }: { role: string; card: LifterC
   const chip = card ? RESULT_CHIP[card.result] : null;
   return (
     <div className="flex min-w-0 flex-col justify-center">
-      <p className={`text-sm font-semibold uppercase tracking-widest ${highlight ? 'text-amber-400' : 'text-neutral-500'}`}>
+      <p
+        className={`text-base font-semibold uppercase tracking-widest ${
+          highlight ? 'text-amber-400' : 'text-neutral-500'
+        }`}
+      >
         {role}
       </p>
       {card ? (
         <>
-          <p className={`truncate font-bold leading-tight ${highlight ? 'text-5xl' : 'text-4xl'}`}>{card.lifterName}</p>
-          <div className="mt-1 flex flex-wrap items-center gap-3 text-neutral-300">
-            <span className="text-xl font-medium">
-              Flight {card.flightName} · {LIFT_LABELS[card.lift]} {card.attemptNumber}
+          <p className={`truncate font-bold leading-none ${highlight ? 'text-6xl' : 'text-5xl'}`}>{card.lifterName}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-neutral-300">
+            <span className="text-2xl font-medium">
+              {card.flightName} · {LIFT_LABELS[card.lift]} {card.attemptNumber}
             </span>
             {chip ? (
-              <span className={`rounded px-2 py-0.5 text-sm font-bold ${chip.className}`}>{chip.label}</span>
+              <span className={`rounded px-2.5 py-0.5 text-base font-bold ${chip.className}`}>{chip.label}</span>
             ) : null}
           </div>
           <Weight weightKg={card.weightKg} highlight={highlight} />
         </>
       ) : (
-        <p className="mt-1 text-3xl font-semibold text-neutral-600">—</p>
+        <p className="mt-2 text-3xl font-semibold text-neutral-600">—</p>
       )}
     </div>
   );
@@ -442,63 +454,58 @@ function LifterIdentity({ role, card, highlight }: { role: string; card: LifterC
 
 function Weight({ weightKg, highlight }: { weightKg: number | null; highlight?: boolean }) {
   if (weightKg === null) {
-    return <p className="mt-2 text-2xl font-semibold text-neutral-500">No weight declared</p>;
+    return <p className="mt-3 text-3xl font-semibold text-neutral-500">No weight declared</p>;
   }
   const lbs = (weightKg * KG_TO_LBS).toFixed(1);
   return (
-    <p className="mt-2 tabular-nums">
-      <span className={`font-extrabold ${highlight ? 'text-6xl' : 'text-5xl'}`}>{weightKg}</span>
-      <span className="ml-2 text-2xl font-semibold text-neutral-400">kg</span>
-      <span className="ml-3 text-xl text-neutral-500">({lbs} lb)</span>
+    <p className="mt-3 tabular-nums">
+      <span className={`font-extrabold leading-none ${highlight ? 'text-8xl' : 'text-7xl'}`}>{weightKg}</span>
+      <span className="ml-3 text-3xl font-semibold text-neutral-400">kg</span>
+      <span className="ml-4 text-2xl text-neutral-500">({lbs} lb)</span>
     </p>
   );
 }
 
-const RACK_LABEL = 'text-xs font-semibold uppercase tracking-wide text-neutral-500';
-const RACK_VALUE = 'text-2xl font-bold tabular-nums';
+const RACK_LABEL = 'text-sm font-semibold uppercase tracking-wide text-neutral-500';
+const RACK_VALUE = 'text-4xl font-extrabold tabular-nums leading-none';
+
+// One labelled rack figure (e.g. Height / 14, Setting / IN).
+function RackField({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className={RACK_LABEL}>{label}</span>
+      <span className={RACK_VALUE}>{value}</span>
+    </div>
+  );
+}
 
 function RackSettings({ card }: { card: LifterCard }) {
   const { entry, lift } = card;
+  return (
+    <div className="flex flex-col justify-center gap-4">
+      <p className={RACK_LABEL}>Rack settings</p>
+      <RackFields entry={entry} lift={lift} />
+    </div>
+  );
+}
+
+function RackFields({ entry, lift }: { entry: BoardEntry; lift: LiftType }) {
   if (lift === 'deadlift') {
+    return <p className="text-2xl font-semibold text-neutral-400">No racks — deadlift</p>;
+  }
+  if (lift === 'squat') {
     return (
-      <div className="flex flex-col justify-center rounded-lg border border-neutral-800 px-4 py-3">
-        <p className={RACK_LABEL}>Rack settings</p>
-        <p className="text-xl font-semibold text-neutral-400">No racks — deadlift</p>
+      <div className="flex gap-12">
+        <RackField label="Height" value={entry.rackHeightSquat ?? '—'} />
+        <RackField label="Setting" value={entry.squatRackSetting ? SQUAT_RACK_SETTING_LABELS[entry.squatRackSetting] : '—'} />
       </div>
     );
   }
   return (
-    <div className="flex flex-col justify-center gap-2 rounded-lg border border-neutral-800 px-4 py-3">
-      <p className={RACK_LABEL}>Rack settings</p>
-      {lift === 'squat' ? (
-        <div className="flex gap-8">
-          <div>
-            <p className={RACK_LABEL}>Height</p>
-            <p className={RACK_VALUE}>{entry.rackHeightSquat ?? '—'}</p>
-          </div>
-          <div>
-            <p className={RACK_LABEL}>Setting</p>
-            <p className={RACK_VALUE}>
-              {entry.squatRackSetting ? SQUAT_RACK_SETTING_LABELS[entry.squatRackSetting] : '—'}
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="flex gap-6">
-          <div>
-            <p className={RACK_LABEL}>Rack</p>
-            <p className={RACK_VALUE}>{entry.rackHeightBench ?? '—'}</p>
-          </div>
-          <div>
-            <p className={RACK_LABEL}>Safety</p>
-            <p className={RACK_VALUE}>{entry.benchSafetyHeight ?? '—'}</p>
-          </div>
-          <div>
-            <p className={RACK_LABEL}>Spotting</p>
-            <p className={RACK_VALUE}>{entry.benchSpotting ? BENCH_SPOTTING_LABELS[entry.benchSpotting] : '—'}</p>
-          </div>
-        </div>
-      )}
+    <div className="flex gap-10">
+      <RackField label="Rack" value={entry.rackHeightBench ?? '—'} />
+      <RackField label="Safety" value={entry.benchSafetyHeight ?? '—'} />
+      <RackField label="Spotting" value={entry.benchSpotting ? BENCH_SPOTTING_LABELS[entry.benchSpotting] : '—'} />
     </div>
   );
 }
@@ -514,12 +521,12 @@ function PlateStack({ breakdown }: { breakdown: PlateBreakdown }) {
     Array.from({ length: plate.count }, (_, index) => ({ weightKg: plate.weightKg, index })),
   );
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex items-end gap-1.5">
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex items-end gap-2">
         {bars.map((bar) => (
           <div
             key={`${bar.weightKg}-${bar.index}`}
-            className={`flex w-12 items-end justify-center rounded-sm pb-2 text-lg font-bold ${
+            className={`flex w-14 items-end justify-center rounded-md pb-2 text-xl font-bold ${
               PLATE_HEIGHT[bar.weightKg] ?? 'h-12'
             } ${PLATE_STYLE[bar.weightKg] ?? 'bg-neutral-700 text-white'}`}
           >
@@ -527,7 +534,7 @@ function PlateStack({ breakdown }: { breakdown: PlateBreakdown }) {
           </div>
         ))}
       </div>
-      <p className="text-base text-neutral-400">
+      <p className="text-lg text-neutral-400">
         <span className="font-semibold text-neutral-200">{formatPlatesPerSide(breakdown.plates)}</span> per side
       </p>
     </div>
