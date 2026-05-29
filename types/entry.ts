@@ -160,3 +160,21 @@ export const rackSettingsSchema = z.discriminatedUnion('lift', [
 ]);
 
 export type RackSettingsInput = z.infer<typeof rackSettingsSchema>;
+
+// Recording a lifter's rack heights from the dedicated rack-heights screen (the warm-up room). Like
+// weighInSchema this is a deliberate subset of the entry update — only the squat/bench rack columns
+// plus the `racks_set` completion marker — so the screen can't clobber the weight class, division, lot
+// or weigh-in data. Both lifts are written together (unlike the per-lift rackSettingsSchema the run
+// screen uses); a lift the entry doesn't contest comes through as null and is cleared.
+export const rackHeightsSchema = z.object({
+  entryId: z.uuid(),
+  competitionId: z.uuid(),
+  rackHeightSquat: optionalRackHeight,
+  squatRackSetting: optionalSquatRackSetting,
+  rackHeightBench: optionalRackHeight,
+  benchSafetyHeight: optionalRackHeight,
+  benchSpotting: optionalBenchSpotting,
+  racksSet: z.boolean(),
+});
+
+export type RackHeightsInput = z.infer<typeof rackHeightsSchema>;

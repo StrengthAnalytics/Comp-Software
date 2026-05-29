@@ -14,9 +14,11 @@ import {
   createEntrySchema,
   entryUpdateSchema,
   lifterInputSchema,
+  rackHeightsSchema,
   rackSettingsSchema,
   weighInSchema,
   type EntryUpdateInput,
+  type RackHeightsInput,
   type RackSettingsInput,
   type WeighInInput,
 } from '@/types/entry';
@@ -438,6 +440,56 @@ export async function updateEntryRackSettingsAction(input: RackSettingsInput): P
     if (error) {
       Sentry.captureException(error);
       return fail('Could not save the rack settings. Please try again.');
+    }
+
+    return ok();
+  });
+}
+
+// Records a lifter's rack heights from the dedicated rack-heights screen, and flips the `racks_set`
+// completion marker. Writes only the five squat/bench rack columns plus racks_set — narrow by design,
+// like weighInAction, so the warm-up-room screen can't touch the weight class, division, lot or
+// weigh-in data. Not gated on comp status: rack settings are setup-side data (ARCHITECTURE.md §7).
+export async function updateRackHeightsAction(input: RackHeightsInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('updateRackHeights', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = rackHeightsSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+
+    const { data: entry, error: entryError } = await supabase
+      .from('entries')
+      .select('competition_id')
+      .eq('id', parsed.data.entryId)
+      .maybeSingle();
+    if (entryError) {
+      Sentry.captureException(entryError);
+      return fail('Could not save the rack heights. Please try again.');
+    }
+    if (!entry || entry.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that entry.');
+    }
+
+    const { error } = await supabase
+      .from('entries')
+      .update({
+        rack_height_squat: parsed.data.rackHeightSquat,
+        squat_rack_setting: parsed.data.squatRackSetting,
+        rack_height_bench: parsed.data.rackHeightBench,
+        bench_safety_height: parsed.data.benchSafetyHeight,
+        bench_spotting: parsed.data.benchSpotting,
+        racks_set: parsed.data.racksSet,
+      })
+      .eq('id', parsed.data.entryId);
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not save the rack heights. Please try again.');
     }
 
     return ok();

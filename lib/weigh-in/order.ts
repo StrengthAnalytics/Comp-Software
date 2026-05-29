@@ -6,7 +6,7 @@
 // the flight running order (flight sort order, then lot), with missing values sorted last so nobody
 // without a flight or lot leads the order.
 
-import type { Gender } from '@/lib/constants';
+import { GENDER_LABELS, LIFT_LABELS, type Gender, type Lifts } from '@/lib/constants';
 import { compareValues, nullsLast } from '@/lib/ordering';
 import { TEAM_LIFTS, type TeamLift } from '@/types/team';
 
@@ -77,4 +77,28 @@ export function buildWeighInGroups<T extends WeighInEntryFields>(
   }
 
   return groups;
+}
+
+// Human label for a weigh-in group, e.g. "Squat · Female", "No team role · Male", or just "Female"
+// for a non-team comp. Shared by the weigh-in and rack-heights screens (and their print sheets).
+export function weighInGroupLabel<T>(group: WeighInGroup<T>, isTeamComp: boolean): string {
+  const sex = GENDER_LABELS[group.sex];
+  if (group.lift) {
+    return `${LIFT_LABELS[group.lift]} · ${sex}`;
+  }
+  return isTeamComp ? `No team role · ${sex}` : sex;
+}
+
+// Which lifts every member of a group contests: the whole comp's lifts for an individual comp (or a
+// team entry without a role yet), or just the group's role for a team comp. Drives which opener / rack
+// columns a row shows.
+export function liftsForWeighInGroup<T>(group: WeighInGroup<T>, lifts: Lifts, isTeamComp: boolean): Lifts {
+  if (isTeamComp && group.lift) {
+    return {
+      squat: group.lift === 'squat',
+      bench: group.lift === 'bench',
+      deadlift: group.lift === 'deadlift',
+    };
+  }
+  return lifts;
 }
