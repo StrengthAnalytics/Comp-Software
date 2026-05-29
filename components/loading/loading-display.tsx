@@ -1,15 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { useMemo } from 'react';
 import type { Database } from '@/types/database.types';
-import {
-  BENCH_SPOTTING_LABELS,
-  KG_TO_LBS,
-  LIFT_LABELS,
-  SQUAT_RACK_SETTING_LABELS,
-  type Lifts,
-} from '@/lib/constants';
+import { BENCH_SPOTTING_LABELS, KG_TO_LBS, LIFT_LABELS, SQUAT_RACK_SETTING_LABELS } from '@/lib/constants';
 import { formatPlatesPerSide, platesPerSide, type PlateBreakdown } from '@/lib/plates/plate-math';
 import {
   compareRunningOrder,
@@ -17,19 +10,9 @@ import {
   selectLoadingPositions,
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
-import { useAttemptsSubscription } from '@/lib/realtime/use-attempts-subscription';
-import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
-import { useFlightsSubscription } from '@/lib/realtime/use-flights-subscription';
-import type {
-  BoardAttempt,
-  BoardEntry,
-  BoardFlight,
-  BoardSession,
-} from '@/components/scorekeeper/scoresheet-board';
+import { useBoardState } from '@/lib/realtime/use-board-state';
+import type { BoardAttempt, BoardEntry, BoardFlight, BoardSession } from '@/lib/scorekeeper/board-types';
 
-type AttemptRow = Database['public']['Tables']['attempts']['Row'];
-type EntryRow = Database['public']['Tables']['entries']['Row'];
-type FlightRow = Database['public']['Tables']['flights']['Row'];
 type LiftType = Database['public']['Enums']['lift_type'];
 type AttemptResult = Database['public']['Enums']['attempt_result'];
 
@@ -39,8 +22,6 @@ const UNASSIGNED_PLATFORM_ID = 'none';
 type LoadingDisplayProps = {
   competitionId: string;
   compName: string;
-  isTeamCompetition: boolean;
-  lifts: Lifts;
   platformId: string;
   platformName: string;
   sessions: BoardSession[];
@@ -139,99 +120,6 @@ const RESULT_CHIP: Record<AttemptResult, { label: string; className: string } | 
   pending: null,
 };
 
-function attemptKey(entryId: string, lift: LiftType, attemptNumber: number): string {
-  return `${entryId}:${lift}:${attemptNumber}`;
-}
-
-function mapAttempt(row: AttemptRow): BoardAttempt {
-  return {
-    id: row.id,
-    entryId: row.entry_id,
-    lift: row.lift,
-    attemptNumber: row.attempt_number,
-    weightKg: row.weight_kg,
-    result: row.result,
-    decidedAt: row.decided_at,
-  };
-}
-
-function applyAttemptChange(
-  current: Map<string, BoardAttempt>,
-  payload: RealtimePostgresChangesPayload<AttemptRow>,
-): Map<string, BoardAttempt> {
-  const next = new Map(current);
-  if (payload.eventType === 'DELETE') {
-    const old = payload.old;
-    if (old.entry_id && old.lift && old.attempt_number) {
-      next.delete(attemptKey(old.entry_id, old.lift, old.attempt_number));
-    }
-    return next;
-  }
-  const attempt = mapAttempt(payload.new);
-  next.set(attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt);
-  return next;
-}
-
-function applyEntryChange(
-  rows: BoardEntry[],
-  payload: RealtimePostgresChangesPayload<EntryRow>,
-  nameById: Map<string, string>,
-  sexById: Map<string, BoardEntry['sex']>,
-): BoardEntry[] {
-  if (payload.eventType === 'DELETE') {
-    const removedId = payload.old.id;
-    return removedId ? rows.filter((row) => row.id !== removedId) : rows;
-  }
-  const changed = payload.new;
-  const existing = rows.find((row) => row.id === changed.id);
-  // Lifter name, sex, class and division are not on the entry realtime payload (or are stable), so
-  // preserve the existing/initial values; only the live operational fields below change here.
-  const mapped: BoardEntry = {
-    id: changed.id,
-    lifterName: existing?.lifterName ?? nameById.get(changed.id) ?? '—',
-    sex: existing?.sex ?? sexById.get(changed.id) ?? 'male',
-    flightId: changed.flight_id,
-    lotNumber: changed.lot_number,
-    teamLift: changed.team_lift,
-    bodyweightKg: changed.bodyweight_kg,
-    weightClassName: existing?.weightClassName ?? null,
-    divisionName: existing?.divisionName ?? null,
-    rackHeightSquat: changed.rack_height_squat,
-    squatRackSetting: changed.squat_rack_setting,
-    rackHeightBench: changed.rack_height_bench,
-    benchSafetyHeight: changed.bench_safety_height,
-    benchSpotting: changed.bench_spotting,
-  };
-  const index = rows.findIndex((row) => row.id === mapped.id);
-  if (index === -1) {
-    return [...rows, mapped];
-  }
-  const next = [...rows];
-  next[index] = mapped;
-  return next;
-}
-
-function applyFlightChange(rows: BoardFlight[], payload: RealtimePostgresChangesPayload<FlightRow>): BoardFlight[] {
-  if (payload.eventType === 'DELETE') {
-    const removedId = payload.old.id;
-    return removedId ? rows.filter((row) => row.id !== removedId) : rows;
-  }
-  const changed = payload.new;
-  const mapped: BoardFlight = {
-    id: changed.id,
-    sessionId: changed.session_id,
-    name: changed.name,
-    sortOrder: changed.sort_order,
-  };
-  const index = rows.findIndex((row) => row.id === mapped.id);
-  if (index === -1) {
-    return [...rows, mapped];
-  }
-  const next = [...rows];
-  next[index] = mapped;
-  return next;
-}
-
 // An attempt placed in the running order, carrying its entry and flight so a position can be resolved
 // back to the lifter and flight it belongs to.
 type LiveRow = RunningOrderFields & { entryId: string; result: AttemptResult; flightId: string };
@@ -260,8 +148,6 @@ type DerivedView = {
 export function LoadingDisplay({
   competitionId,
   compName,
-  isTeamCompetition,
-  lifts,
   platformId,
   platformName,
   sessions,
@@ -269,34 +155,19 @@ export function LoadingDisplay({
   entries: initialEntries,
   attempts: initialAttempts,
 }: LoadingDisplayProps) {
-  const [attempts, setAttempts] = useState<Map<string, BoardAttempt>>(
-    () =>
-      new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
-  );
-  const [entries, setEntries] = useState<BoardEntry[]>(initialEntries);
-  const [flights, setFlights] = useState<BoardFlight[]>(initialFlights);
-
-  const nameById = useMemo(() => new Map(initialEntries.map((entry) => [entry.id, entry.lifterName])), [initialEntries]);
-  const sexById = useMemo(() => new Map(initialEntries.map((entry) => [entry.id, entry.sex])), [initialEntries]);
-
-  useAttemptsSubscription(competitionId, (payload) => setAttempts((current) => applyAttemptChange(current, payload)));
-  useEntriesSubscription(competitionId, (payload) =>
-    setEntries((current) => applyEntryChange(current, payload, nameById, sexById)),
-  );
-  useFlightsSubscription(competitionId, (payload) => setFlights((current) => applyFlightChange(current, payload)));
-
-  // Re-seed from the server when fresh props arrive (manual refresh after a realtime gap).
-  useEffect(() => {
-    setAttempts(
-      new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
-    );
-  }, [initialAttempts]);
-  useEffect(() => setEntries(initialEntries), [initialEntries]);
-  useEffect(() => setFlights(initialFlights), [initialFlights]);
+  // Read-only live state shared with the run screen; the loading display never mutates it (no
+  // optimistic writes), it only reads to render. Weight classes/divisions are omitted — this screen
+  // doesn't show those columns.
+  const { attempts, entries, flights } = useBoardState({
+    competitionId,
+    initialAttempts,
+    initialEntries,
+    initialFlights,
+  });
 
   const view = useMemo<DerivedView>(
-    () => buildView({ platformId, isTeamCompetition, lifts, sessions, flights, entries, attempts }),
-    [platformId, isTeamCompetition, lifts, sessions, flights, entries, attempts],
+    () => buildView({ platformId, sessions, flights, entries, attempts }),
+    [platformId, sessions, flights, entries, attempts],
   );
 
   const headerMain = view.header
@@ -333,29 +204,39 @@ export function LoadingDisplay({
 // Pure-ish derivation of the three framed lifters and the header state for the selected platform.
 function buildView({
   platformId,
-  isTeamCompetition,
-  lifts,
   sessions,
   flights,
   entries,
   attempts,
 }: {
   platformId: string;
-  isTeamCompetition: boolean;
-  lifts: Lifts;
   sessions: BoardSession[];
   flights: BoardFlight[];
   entries: BoardEntry[];
   attempts: Map<string, BoardAttempt>;
 }): DerivedView {
-  const platformSessions = sessions
-    .filter((session) => (session.platformId ?? UNASSIGNED_PLATFORM_ID) === platformId)
-    .toSorted((a, b) => a.sortOrder - b.sortOrder);
-  const platformSessionIds = new Set(platformSessions.map((session) => session.id));
-
   const flightById = new Map(flights.map((flight) => [flight.id, flight]));
   const sessionById = new Map(sessions.map((session) => [session.id, session]));
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+
+  // Sessions that have at least one rostered lifter — the only ones that can be "live". Mirrors the
+  // run screen, which filters out empty sessions before selectLiveSession. Without this, an empty
+  // earlier session (lower sort order, no attempts) is never "finished" and would be picked as live,
+  // leaving the display stuck on "No lifter on the platform".
+  const rosteredSessionIds = new Set<string>();
+  for (const entry of entries) {
+    const flight = entry.flightId ? flightById.get(entry.flightId) : undefined;
+    if (flight) {
+      rosteredSessionIds.add(flight.sessionId);
+    }
+  }
+
+  const platformSessions = sessions
+    .filter(
+      (session) => (session.platformId ?? UNASSIGNED_PLATFORM_ID) === platformId && rosteredSessionIds.has(session.id),
+    )
+    .toSorted((a, b) => a.sortOrder - b.sortOrder);
+  const platformSessionIds = new Set(platformSessions.map((session) => session.id));
 
   const rowsBySession = new Map<string, LiveRow[]>();
   const attemptCountBySession = new Map<string, number>();
@@ -411,9 +292,10 @@ function buildView({
     };
   };
 
-  // Header from the lifter the bar is being loaded for. Position = the current lifter's rank within
-  // this flight/lift/round by running order (lightest first); total = lifters in that flight who
-  // contest the lift.
+  // Header from the lifter the bar is being loaded for. `group` is the declared attempts in this
+  // flight/lift/round in running order (lightest first); position = the current lifter's rank within
+  // it and total = its size, so both numbers describe the same set (declared attempts in the round)
+  // and the fraction reads monotonically as the round progresses.
   let header: DerivedView['header'] = null;
   const current = positions.current;
   if (current) {
@@ -427,11 +309,7 @@ function buildView({
       )
       .toSorted(compareRunningOrder);
     const position = group.findIndex((row) => row.entryId === current.entryId) + 1;
-    const total = entries.filter(
-      (entry) =>
-        entry.flightId === current.flightId &&
-        (isTeamCompetition ? entry.teamLift === current.lift : lifts[current.lift]),
-    ).length;
+    const total = group.length;
     const flight = flightById.get(current.flightId);
     header = {
       flightName: flight?.name ?? '—',
@@ -589,11 +467,13 @@ function RackFields({ entry, lift, size }: { entry: BoardEntry; lift: LiftType; 
 }
 
 function PlateStack({ breakdown, size }: { breakdown: PlateBreakdown; size: SizeTier }) {
-  if (!breakdown.loadable) {
-    return <p className="text-xl font-semibold text-red-400">Cannot load {breakdown.totalKg} kg with available plates</p>;
-  }
+  // A weight at or below the bar+collars carries no plates — show "Bar only" rather than the
+  // unloadable-remainder error (which is for weights ABOVE the bar that the plate set can't make).
   if (breakdown.perSideKg === 0) {
     return <p className="text-2xl font-semibold text-white">Bar only</p>;
+  }
+  if (!breakdown.loadable) {
+    return <p className="text-xl font-semibold text-red-400">Cannot load {breakdown.totalKg} kg with available plates</p>;
   }
   const tier = TIER[size];
   const heights = PLATE_HEIGHT[size];

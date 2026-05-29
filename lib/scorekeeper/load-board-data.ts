@@ -8,7 +8,7 @@ import type {
   BoardPlatform,
   BoardSession,
   NamedOption,
-} from '@/components/scorekeeper/scoresheet-board';
+} from '@/lib/scorekeeper/board-types';
 
 // Gender is stored free-form-ish on the lifter; the IPF GL coefficients only distinguish female from
 // everyone else, matching the public results page.

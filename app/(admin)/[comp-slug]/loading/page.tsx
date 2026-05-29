@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
-import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { loadBoardData } from '@/lib/scorekeeper/load-board-data';
 import { LoadingDisplay } from '@/components/loading/loading-display';
 
@@ -76,8 +75,6 @@ export default async function LoadingPage({
     <LoadingDisplay
       competitionId={comp.id}
       compName={comp.name}
-      isTeamCompetition={comp.is_team_competition}
-      lifts={LIFTS_FOR_EVENT[comp.event_type]}
       platformId={selected.id}
       platformName={selected.name}
       sessions={sessions}
