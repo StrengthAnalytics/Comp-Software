@@ -1,9 +1,12 @@
 'use client';
 
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { updateRackHeightsAction } from '@/actions/entries';
+import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
+import { useFlightsSubscription } from '@/lib/realtime/use-flights-subscription';
 import { usePersistentString } from '@/lib/use-persistent-string';
 import { CellNumber, NumberField, SegmentedToggle } from '@/components/station/controls';
 import {
@@ -77,6 +80,10 @@ type ViewMode = 'cards' | 'table';
 
 const VIEW_STORAGE_KEY = 'comp-software:rack-heights:view';
 const LAYOUT_STORAGE_KEY = 'comp-software:rack-heights:layout';
+
+// Coalesce a burst of real-time entry/flight changes (another device working through the roster) into
+// a single server re-pull, so the list re-orders / re-collapses without one router.refresh per event.
+const REALTIME_REFRESH_DEBOUNCE_MS = 500;
 
 // Compact rack readout for the collapsed (racks-set) row, covering only the lifts this entry contests.
 // Takes live values so the collapsed summary reflects the latest (autosaved) edit, not the stale prop.
@@ -641,6 +648,30 @@ export function RackHeightsManager({
     });
   }, []);
   const saveContext = useMemo<SaveContextValue>(() => ({ online, report }), [online, report]);
+
+  // Real-time: when another device (e.g. the head table, or a second warm-up phone) changes an entry
+  // or flight, re-pull the server props so the roster, flight assignments and racks-set completion
+  // reflect live. A row's own in-progress edits are local state seeded at mount, so a refresh re-orders
+  // and re-collapses the list without clobbering what the operator is typing. Coalesced so a burst of
+  // changes is one refresh. Subscriptions are scoped to this competition and inherit RLS.
+  const router = useRouter();
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+    refreshTimerRef.current = setTimeout(() => router.refresh(), REALTIME_REFRESH_DEBOUNCE_MS);
+  }, [router]);
+  useEffect(
+    () => () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+    },
+    [],
+  );
+  useEntriesSubscription(competitionId, scheduleRefresh);
+  useFlightsSubscription(competitionId, scheduleRefresh);
 
   // Esc leaves the full-screen view (matching the weigh-in and run screens).
   useEffect(() => {

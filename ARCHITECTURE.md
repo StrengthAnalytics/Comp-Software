@@ -78,6 +78,7 @@ Which screens subscribe to which tables.
 | Screen | Subscribes to | Filter |
 |--------|---------------|--------|
 | `/(admin)/[comp]/run` | attempts, entries, flights | `competition_id` |
+| `/(admin)/[comp]/rack-heights` | entries, flights | `competition_id` |
 | `/(admin)/[comp]/flights` | flights, entries | `competition_id` |
 | `/(overlay)/[comp]/scoreboard` | attempts, entries | `competition_id` + current session |
 | `/(overlay)/[comp]/lifter` | attempts, entries | `competition_id` + current attempt |
