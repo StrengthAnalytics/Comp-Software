@@ -3,6 +3,13 @@ import { createClient } from '@/lib/supabase/server';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
+import type { Sex } from '@/lib/scoring/ipf-gl';
+
+// Gender is stored free-form-ish on the lifter; the IPF GL coefficients only distinguish female from
+// everyone else, matching the public results page.
+function asSex(gender: string | null): Sex {
+  return gender === 'female' ? 'female' : 'male';
+}
 import {
   ScoresheetBoard,
   type BoardAttempt,
@@ -62,8 +69,8 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
   const lifterIds = [...new Set((entryRows ?? []).map((row) => row.lifter_id))];
   const { data: lifterRows } =
     lifterIds.length > 0
-      ? await supabase.from('lifters').select('id, first_name, surname').in('id', lifterIds)
-      : { data: [] as { id: string; first_name: string; surname: string }[] };
+      ? await supabase.from('lifters').select('id, first_name, surname, gender').in('id', lifterIds)
+      : { data: [] as { id: string; first_name: string; surname: string; gender: string | null }[] };
   const lifterById = new Map((lifterRows ?? []).map((lifter) => [lifter.id, lifter]));
   const weightClassById = new Map((weightClassRows ?? []).map((weightClass) => [weightClass.id, weightClass.name]));
   const divisionById = new Map((divisionRows ?? []).map((division) => [division.id, division.name]));
@@ -91,6 +98,7 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
     return {
       id: row.id,
       lifterName: lifter ? formatLifterName(lifter.surname, lifter.first_name) : '—',
+      sex: asSex(lifter?.gender ?? null),
       flightId: row.flight_id,
       lotNumber: row.lot_number,
       teamLift: row.team_lift,
@@ -123,6 +131,7 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
       <ScoresheetBoard
         competitionId={comp.id}
         isTeamCompetition={comp.is_team_competition}
+        kitType={comp.kit_type}
         lifts={LIFTS_FOR_EVENT[comp.event_type]}
         platforms={platforms}
         sessions={sessions}

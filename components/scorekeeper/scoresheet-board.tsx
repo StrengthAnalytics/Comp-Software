@@ -16,6 +16,7 @@ import {
 } from '@/lib/constants';
 import { bestGoodLift } from '@/lib/attempts/best-lift';
 import { nextAttemptCountdown, type NextAttemptCountdown } from '@/lib/attempts/auto-progression';
+import { ipfGlPoints, type KitType, type Sex } from '@/lib/scoring/ipf-gl';
 import {
   orderSessionRoster,
   selectPlatformPositions,
@@ -45,6 +46,7 @@ export type BoardFlight = { id: string; sessionId: string; name: string; sortOrd
 export type BoardEntry = {
   id: string;
   lifterName: string;
+  sex: Sex;
   flightId: string | null;
   lotNumber: number | null;
   teamLift: LiftType | null;
@@ -71,6 +73,7 @@ export type BoardAttempt = {
 type ScoresheetBoardProps = {
   competitionId: string;
   isTeamCompetition: boolean;
+  kitType: KitType;
   lifts: Lifts;
   platforms: BoardPlatform[];
   sessions: BoardSession[];
@@ -209,6 +212,7 @@ function applyEntryChange(
   rows: BoardEntry[],
   payload: RealtimePostgresChangesPayload<EntryRow>,
   nameById: Map<string, string>,
+  sexById: Map<string, Sex>,
   classNameById: Map<string, string>,
   divisionNameById: Map<string, string>,
 ): BoardEntry[] {
@@ -218,9 +222,12 @@ function applyEntryChange(
   }
   const changed = payload.new;
   const existing = rows.find((row) => row.id === changed.id);
+  // Sex comes from the lifter, not the entry row, so it can't be read off the realtime payload —
+  // preserve the existing value (or the initial-load map), defaulting to male like asSex.
   const mapped: BoardEntry = {
     id: changed.id,
     lifterName: existing?.lifterName ?? nameById.get(changed.id) ?? '—',
+    sex: existing?.sex ?? sexById.get(changed.id) ?? 'male',
     flightId: changed.flight_id,
     lotNumber: changed.lot_number,
     teamLift: changed.team_lift,
@@ -408,6 +415,7 @@ function buildPlatformViews({
 export function ScoresheetBoard({
   competitionId,
   isTeamCompetition,
+  kitType,
   lifts,
   platforms,
   sessions,
@@ -427,14 +435,20 @@ export function ScoresheetBoard({
   // sidebar (~840px), which crushes the wide scoresheet. Full screen reclaims the whole window; Esc or
   // Collapse drops back to the in-flow view (which now scrolls horizontally rather than compressing).
   const [expanded, setExpanded] = useState(true);
-  // Zebra-banding of the roster rows, toggled from the Options dropdown and remembered per browser.
-  // Defaults to on; 'off' disables it.
+  // View options, toggled from the Options dropdown and remembered per browser. Striping defaults on;
+  // the IPF GL column defaults off (it is an extra column most operators won't want by default).
   const [stripingPref, setStripingPref] = usePersistentString('scoresheet:striping', 'on');
   const striped = stripingPref !== 'off';
+  const [glPref, setGlPref] = usePersistentString('scoresheet:gl', 'off');
+  const showGl = glPref === 'on';
   const [, startTransition] = useTransition();
 
   const nameById = useMemo(
     () => new Map(initialEntries.map((entry) => [entry.id, entry.lifterName])),
+    [initialEntries],
+  );
+  const sexById = useMemo(
+    () => new Map(initialEntries.map((entry) => [entry.id, entry.sex])),
     [initialEntries],
   );
   const classNameById = useMemo(
@@ -450,7 +464,7 @@ export function ScoresheetBoard({
     setAttempts((current) => applyAttemptChange(current, payload));
   });
   useEntriesSubscription(competitionId, (payload) => {
-    setEntries((current) => applyEntryChange(current, payload, nameById, classNameById, divisionNameById));
+    setEntries((current) => applyEntryChange(current, payload, nameById, sexById, classNameById, divisionNameById));
   });
   useFlightsSubscription(competitionId, (payload) => {
     setFlights((current) => applyFlightChange(current, payload));
@@ -615,8 +629,20 @@ export function ScoresheetBoard({
         {expanded ? <h2 className="text-lg font-semibold text-neutral-900">Scoresheet</h2> : <span />}
         <div className="flex items-center gap-2">
           <BoardOptions
-            striped={striped}
-            onToggleStriped={() => setStripingPref(striped ? 'off' : 'on')}
+            toggles={[
+              {
+                id: 'striping',
+                label: 'Row striping',
+                checked: striped,
+                onToggle: () => setStripingPref(striped ? 'off' : 'on'),
+              },
+              {
+                id: 'gl',
+                label: 'IPF GL points',
+                checked: showGl,
+                onToggle: () => setGlPref(showGl ? 'off' : 'on'),
+              },
+            ]}
           />
           <button type="button" onClick={() => setExpanded((value) => !value)} className={GHOST_BUTTON}>
             {expanded ? 'Collapse (Esc)' : 'Expand to full screen'}
@@ -639,7 +665,9 @@ export function ScoresheetBoard({
               attempts={attempts}
               columnLifts={columnLifts}
               isTeamCompetition={isTeamCompetition}
+              kitType={kitType}
               striped={striped}
+              showGl={showGl}
               onSetWeight={setWeight}
               onSetResult={setResult}
               onSetRack={setRackSettings}
@@ -657,10 +685,12 @@ export function ScoresheetBoard({
   );
 }
 
-// A small dropdown beside the Collapse button holding scoresheet view options (currently just row
-// striping). The trigger toggles it; clicking anywhere outside closes it. Escape is left to the
-// board's collapse handler.
-function BoardOptions({ striped, onToggleStriped }: { striped: boolean; onToggleStriped: () => void }) {
+// A view-option toggle shown in the Options dropdown.
+type BoardOptionToggle = { id: string; label: string; checked: boolean; onToggle: () => void };
+
+// A small dropdown beside the Collapse button holding scoresheet view options (row striping, IPF GL
+// column). The trigger toggles it; clicking outside or pressing Escape closes it.
+function BoardOptions({ toggles }: { toggles: BoardOptionToggle[] }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -704,15 +734,20 @@ function BoardOptions({ striped, onToggleStriped }: { striped: boolean; onToggle
       </button>
       {open ? (
         <div className="absolute right-0 z-50 mt-1 w-48 rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
-          <label className="flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100">
-            <span>Row striping</span>
-            <input
-              type="checkbox"
-              checked={striped}
-              onChange={onToggleStriped}
-              className="h-4 w-4 accent-neutral-800"
-            />
-          </label>
+          {toggles.map((toggle) => (
+            <label
+              key={toggle.id}
+              className="flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            >
+              <span>{toggle.label}</span>
+              <input
+                type="checkbox"
+                checked={toggle.checked}
+                onChange={toggle.onToggle}
+                className="h-4 w-4 accent-neutral-800"
+              />
+            </label>
+          ))}
         </div>
       ) : null}
     </div>
@@ -724,7 +759,9 @@ function PlatformPanel({
   attempts,
   columnLifts,
   isTeamCompetition,
+  kitType,
   striped,
+  showGl,
   onSetWeight,
   onSetResult,
   onSetRack,
@@ -733,7 +770,9 @@ function PlatformPanel({
   attempts: Map<string, BoardAttempt>;
   columnLifts: LiftType[];
   isTeamCompetition: boolean;
+  kitType: KitType;
   striped: boolean;
+  showGl: boolean;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
   onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
@@ -807,11 +846,21 @@ function PlatformPanel({
                 <th scope="col" className={`w-20 text-center ${HEAD}`}>
                   Total
                 </th>
+                {showGl ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    IPF GL
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
               {roster.map(({ entry, flightName }, index) => {
                 const total = entryTotal(entry);
+                // IPF GL from the lifter's current total (sum of best lifts) and weigh-in bodyweight.
+                // ipfGlPoints returns 0 with no good lifts or before weigh-in, which renders as a dash.
+                const gl = showGl
+                  ? ipfGlPoints({ sex: entry.sex, kitType, bodyweightKg: entry.bodyweightKg ?? 0, liftedKg: total })
+                  : 0;
                 // Band alternate rows when striping is on. The transparent cells show the row tint;
                 // the sticky first column needs its own opaque background, so it carries the same
                 // band (and stays white otherwise, to mask content scrolling beneath it).
@@ -847,6 +896,11 @@ function PlatformPanel({
                   <td className={`text-center font-semibold tabular-nums text-neutral-900 ${CELL}`}>
                     {total > 0 ? total : '—'}
                   </td>
+                  {showGl ? (
+                    <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
+                      {gl > 0 ? gl.toFixed(2) : '—'}
+                    </td>
+                  ) : null}
                 </tr>
               );
             })}
