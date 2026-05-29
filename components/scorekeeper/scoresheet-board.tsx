@@ -85,6 +85,9 @@ type ScoresheetBoardProps = {
 const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => index + 1);
 
 const GHOST_BUTTON = 'rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
+// Zebra band for alternate roster rows. Single-sourced so the row and its sticky first column (which
+// needs its own opaque background) can never drift to different shades.
+const ROW_BAND = 'bg-neutral-50';
 // Gridlines use a border-separate model — right+bottom on every cell, top on the header row, left on
 // the frozen first column — so the bold lines stay attached to the sticky header and frozen column when
 // the table scrolls. (With border-collapse the collapsed borders are owned by the table and drop off
@@ -814,8 +817,8 @@ function PlatformPanel({
                 // band (and stays white otherwise, to mask content scrolling beneath it).
                 const banded = striped && index % 2 === 1;
                 return (
-                  <tr key={entry.id} className={banded ? 'bg-neutral-50' : ''}>
-                    <td className={`sticky left-0 z-10 whitespace-nowrap border-l-[1.5px] ${banded ? 'bg-neutral-50' : 'bg-white'} ${CELL}`}>
+                  <tr key={entry.id} className={banded ? ROW_BAND : ''}>
+                    <td className={`sticky left-0 z-10 whitespace-nowrap border-l-[1.5px] ${banded ? ROW_BAND : 'bg-white'} ${CELL}`}>
                     <span className="font-medium text-neutral-900">{entry.lifterName}</span>
                     <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                   </td>

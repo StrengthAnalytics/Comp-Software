@@ -1,12 +1,8 @@
 import type { Database } from '@/types/database.types';
 import { MIN_ATTEMPT_INCREMENT_KG, NEXT_ATTEMPT_TIMER_SECONDS } from '@/lib/constants';
+import { roundToOneDecimal } from '@/lib/number-input';
 
 type AttemptResult = Database['public']['Enums']['attempt_result'];
-
-// Round to one decimal place — weights are stored as numeric(5,1) — without trailing float noise.
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
-}
 
 // The IPF default weight for a lifter's next attempt when the 60-second clock expires without a
 // declared weight: the smallest legal increase (+2.5 kg) after a good lift, or a repeat of the same
@@ -20,7 +16,7 @@ export function autoNextAttemptWeight(
     return null;
   }
   if (previousResult === 'good_lift') {
-    return round1(previousWeightKg + MIN_ATTEMPT_INCREMENT_KG);
+    return roundToOneDecimal(previousWeightKg + MIN_ATTEMPT_INCREMENT_KG);
   }
   if (previousResult === 'no_lift') {
     return previousWeightKg;

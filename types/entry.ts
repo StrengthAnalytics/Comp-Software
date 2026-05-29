@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BENCH_SPOTTINGS, SQUAT_RACK_SETTINGS } from '@/lib/constants';
+import { roundToOneDecimal } from '@/lib/number-input';
 
 // Blank string → null, so optional text fields clear cleanly when the operator empties them.
 function optionalText(max: number, tooLong: string) {
@@ -23,7 +24,7 @@ const optionalWeightKg = z
   .number()
   .gt(0, 'Weight must be greater than zero.')
   .max(9999.9, 'Weight is too large.')
-  .transform((value) => Math.round(value * 10) / 10)
+  .transform(roundToOneDecimal)
   .nullable();
 
 const optionalLotNumber = z

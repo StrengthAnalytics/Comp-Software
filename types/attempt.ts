@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ATTEMPTS_PER_LIFT } from '@/lib/constants';
+import { roundToOneDecimal } from '@/lib/number-input';
 
 const LIFT_VALUES = ['squat', 'bench', 'deadlift'] as const;
 
@@ -11,7 +12,7 @@ const weightKg = z
   .number()
   .gt(0, 'Weight must be greater than zero.')
   .max(9999.9, 'Weight is too large.')
-  .transform((value) => Math.round(value * 10) / 10);
+  .transform(roundToOneDecimal);
 
 // Setting an attempt's weight. Creates attempts 2 and 3 on demand and updates an existing weight in
 // place (an entry-error fix keeps the attempt's result). The progression guard against the previous

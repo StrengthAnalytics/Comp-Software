@@ -14,3 +14,11 @@ export function parseOptionalNumber(value: string): number | null {
 export function numberToInput(value: number | null): string {
   return value === null ? '' : String(value);
 }
+
+// Rounds to one decimal place — weights and bodyweights are stored as numeric(5,1) — without the
+// trailing float noise the raw arithmetic can leave (e.g. 0.1 + 0.2). The single rounding rule for
+// every kg value: the registration/weigh-in/competition Zod transforms, the bulk-import parser, and
+// the run screen's auto-progression all route through here so they round identically.
+export function roundToOneDecimal(value: number): number {
+  return Math.round(value * 10) / 10;
+}

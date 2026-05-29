@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { roundToOneDecimal } from '@/lib/number-input';
 
 // Lowercase letters, numbers and single hyphens; no leading, trailing or doubled hyphens.
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -69,7 +70,7 @@ const weightKg = z
   .number()
   .min(0, 'Weight cannot be negative.')
   .max(9999.9, 'Weight is too large.')
-  .transform((value) => Math.round(value * 10) / 10);
+  .transform(roundToOneDecimal);
 
 export const weightClassInputSchema = z
   .object({
