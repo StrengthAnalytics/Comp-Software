@@ -8,6 +8,7 @@ import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
 import {
   compareRunningOrder,
   orderSessionRoster,
+  orderTeamSessionRoster,
   selectLiveSession,
   selectPlatformPositions,
   type RunningOrderFields,
@@ -128,8 +129,8 @@ export function WarmUpDisplay({
   );
 
   const view = useMemo<WarmUpView>(
-    () => buildView({ platformId, sessions, flights, entries, attempts }),
-    [platformId, sessions, flights, entries, attempts],
+    () => buildView({ platformId, sessions, flights, entries, attempts, isTeamCompetition }),
+    [platformId, sessions, flights, entries, attempts, isTeamCompetition],
   );
 
   const headerMain = view.header
@@ -374,12 +375,14 @@ function buildView({
   flights,
   entries,
   attempts,
+  isTeamCompetition,
 }: {
   platformId: string;
   sessions: BoardSession[];
   flights: BoardFlight[];
   entries: BoardEntry[];
   attempts: Map<string, BoardAttempt>;
+  isTeamCompetition: boolean;
 }): WarmUpView {
   const flightById = new Map(flights.map((flight) => [flight.id, flight]));
   const sessionById = new Map(sessions.map((session) => [session.id, session]));
@@ -458,16 +461,19 @@ function buildView({
   const liveRows = rowsBySession.get(liveSession.id) ?? [];
   const positions = selectPlatformPositions(liveRows);
 
-  const roster = orderSessionRoster(
-    (rosterBySession.get(liveSession.id) ?? []).map((item) => ({
-      entryId: item.entry.id,
-      flightId: item.flight.id,
-      flightSortOrder: item.flight.sortOrder,
-      lotNumber: item.entry.lotNumber,
-      entry: item.entry,
-      flightName: item.flight.name,
-    })),
-    liveRows,
+  // A team comp groups by lift across the whole session (each member contests one assigned lift)
+  // instead of by the flight's single current lift; otherwise order by the round in progress.
+  const rosterRows = (rosterBySession.get(liveSession.id) ?? []).map((item) => ({
+    entryId: item.entry.id,
+    flightId: item.flight.id,
+    flightSortOrder: item.flight.sortOrder,
+    lotNumber: item.entry.lotNumber,
+    teamLift: item.entry.teamLift,
+    entry: item.entry,
+    flightName: item.flight.name,
+  }));
+  const roster = (
+    isTeamCompetition ? orderTeamSessionRoster(rosterRows, liveRows) : orderSessionRoster(rosterRows, liveRows)
   ).map(({ entry, flightName }) => ({ entry, flightName }));
 
   const toCard = (row: LiveRow | null): PositionCardData =>

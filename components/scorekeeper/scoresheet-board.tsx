@@ -19,6 +19,7 @@ import { nextAttemptCountdown, type NextAttemptCountdown } from '@/lib/attempts/
 import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
 import {
   orderSessionRoster,
+  orderTeamSessionRoster,
   selectLiveSession,
   selectPlatformPositions,
   type PlatformPositions,
@@ -109,12 +110,14 @@ function buildPlatformViews({
   flights,
   entries,
   attempts,
+  isTeamCompetition,
 }: {
   platforms: BoardPlatform[];
   sessions: BoardSession[];
   flights: BoardFlight[];
   entries: BoardEntry[];
   attempts: Map<string, BoardAttempt>;
+  isTeamCompetition: boolean;
 }): PlatformView[] {
   const flightById = new Map(flights.map((flight) => [flight.id, flight]));
   const sessionById = new Map(sessions.map((session) => [session.id, session]));
@@ -187,17 +190,21 @@ function buildPlatformViews({
     }
 
     // Rows follow the running order of the round in progress (lightest bar first), re-sorting as each
-    // round, lift and flight advances — rather than a static flight-then-lot scoresheet.
-    const roster = orderSessionRoster(
-      (rosterBySession.get(liveSession.id) ?? []).map((item) => ({
-        entryId: item.entry.id,
-        flightId: item.flight.id,
-        flightSortOrder: item.flight.sortOrder,
-        lotNumber: item.entry.lotNumber,
-        entry: item.entry,
-        flightName: item.flight.name,
-      })),
-      rowsBySession.get(liveSession.id) ?? [],
+    // round, lift and flight advances — rather than a static flight-then-lot scoresheet. A team comp
+    // groups by lift across the whole session (each member contests one assigned lift) instead of by
+    // the flight's single current lift.
+    const rosterRows = (rosterBySession.get(liveSession.id) ?? []).map((item) => ({
+      entryId: item.entry.id,
+      flightId: item.flight.id,
+      flightSortOrder: item.flight.sortOrder,
+      lotNumber: item.entry.lotNumber,
+      teamLift: item.entry.teamLift,
+      entry: item.entry,
+      flightName: item.flight.name,
+    }));
+    const sessionRows = rowsBySession.get(liveSession.id) ?? [];
+    const roster = (
+      isTeamCompetition ? orderTeamSessionRoster(rosterRows, sessionRows) : orderSessionRoster(rosterRows, sessionRows)
     ).map(({ entry, flightName }) => ({ entry, flightName }));
 
     views.push({
@@ -312,8 +319,8 @@ export function ScoresheetBoard({
   const showTeam = isTeamCompetition && teamPref;
 
   const views = useMemo(
-    () => buildPlatformViews({ platforms, sessions, flights, entries, attempts }),
-    [platforms, sessions, flights, entries, attempts],
+    () => buildPlatformViews({ platforms, sessions, flights, entries, attempts, isTeamCompetition }),
+    [platforms, sessions, flights, entries, attempts, isTeamCompetition],
   );
 
   // Mirror the outbox to localStorage so edits queued in this session survive a page reload — e.g. the
