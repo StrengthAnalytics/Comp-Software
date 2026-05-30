@@ -81,6 +81,7 @@ export function LifterOverlay({
   });
 
   const columnLifts = useMemo(
+    // The literal array is exactly the lift_type members, so narrowing it to LiftType[] is sound.
     () => (['squat', 'bench', 'deadlift'] as LiftType[]).filter((lift) => lifts[lift]),
     [lifts],
   );
@@ -139,7 +140,11 @@ export function LifterOverlay({
   // (set the source to 1920×1080). Everything outside the card stays transparent so the livestream
   // shows through; only the card paints. With no lifter on the platform the overlay renders nothing.
   return (
-    <div className="relative h-[1080px] w-[1920px] overflow-hidden">
+    <div
+      aria-live="polite"
+      aria-label="Current lifter"
+      className="relative h-[1080px] w-[1920px] overflow-hidden"
+    >
       {current ? <LifterCard key={current.key} current={current} /> : null}
     </div>
   );
