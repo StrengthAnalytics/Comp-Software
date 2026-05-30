@@ -27,6 +27,7 @@ import {
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
 import { loadOutbox, saveOutbox, type PendingOp, type RackPatch } from '@/lib/scorekeeper/outbox';
+import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import type {
   BoardAttempt,
   BoardEntry,
@@ -89,57 +90,6 @@ function readError(result: ActionResult<unknown>): string {
 
 // Prefix for an optimistic attempt id that has not yet been persisted (no real uuid yet).
 const TEMP_ID_PREFIX = 'temp:';
-
-// Only squat and bench have rack settings; deadlift has none. A type guard so the rack cell narrows
-// the lift to the two rack disciplines.
-function liftHasRack(lift: LiftType): lift is 'squat' | 'bench' {
-  return lift === 'squat' || lift === 'bench';
-}
-
-
-function rackText(entry: BoardEntry, lift: LiftType): string {
-  if (lift === 'squat') {
-    const parts: string[] = [];
-    if (entry.rackHeightSquat !== null) {
-      parts.push(String(entry.rackHeightSquat));
-    }
-    if (entry.squatRackSetting) {
-      parts.push(SQUAT_RACK_SETTING_LABELS[entry.squatRackSetting]);
-    }
-    return parts.length > 0 ? parts.join(' ') : '—';
-  }
-  if (lift === 'bench') {
-    const parts: string[] = [];
-    if (entry.rackHeightBench !== null) {
-      parts.push(`R${entry.rackHeightBench}`);
-    }
-    if (entry.benchSafetyHeight !== null) {
-      parts.push(`S${entry.benchSafetyHeight}`);
-    }
-    if (entry.benchSpotting) {
-      parts.push(BENCH_SPOTTING_LABELS[entry.benchSpotting]);
-    }
-    return parts.length > 0 ? parts.join(' ') : '—';
-  }
-  return '—';
-}
-
-// Background tint for an attempt cell: green for a good lift, red for a no lift, neutral for another
-// terminal result, amber for the lifter currently on the platform, untinted while simply pending.
-function cellTint(attempt: BoardAttempt | undefined, isCurrent: boolean): string {
-  if (attempt && attempt.weightKg !== null) {
-    if (attempt.result === 'good_lift') {
-      return 'bg-green-200';
-    }
-    if (attempt.result === 'no_lift') {
-      return 'bg-red-200';
-    }
-    if (attempt.result !== 'pending') {
-      return 'bg-neutral-200';
-    }
-  }
-  return isCurrent ? 'bg-amber-100' : '';
-}
 
 type RunRow = RunningOrderFields & { entryId: string; lifterName: string; flightName: string };
 

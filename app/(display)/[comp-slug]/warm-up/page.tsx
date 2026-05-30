@@ -1,13 +1,16 @@
 import { notFound } from 'next/navigation';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
+import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { loadBoardData } from '@/lib/scorekeeper/load-board-data';
 import { resolveDisplayPlatform } from '@/lib/scorekeeper/display-platforms';
 import { DisplayPlatformChooser } from '@/components/display/platform-chooser';
-import { LoadingDisplay } from '@/components/loading/loading-display';
+import { WarmUpDisplay } from '@/components/warm-up/warm-up-display';
 
-// The loading-crew display is scoped to one platform via the ?platform=<id> query (per-platform URL).
-// With a single platform it auto-selects; with several and none chosen it renders a chooser.
-export default async function LoadingPage({
+// The warm-up room display is scoped to one platform via the ?platform=<id> query (per-platform URL).
+// With a single platform it auto-selects; with several and none chosen it renders a chooser. It mirrors
+// the run-screen scoresheet read-only (no result buttons, so rows compress) so warming-up lifters can
+// see the comp's live state and who is up next.
+export default async function WarmUpPage({
   params,
   searchParams,
 }: {
@@ -21,7 +24,7 @@ export default async function LoadingPage({
     notFound();
   }
 
-  const { platforms, sessions, flights, entries, attempts } = await loadBoardData(comp.id);
+  const { platforms, sessions, flights, weightClasses, divisions, entries, attempts } = await loadBoardData(comp.id);
 
   const { platform: requested } = await searchParams;
   const requestedId = Array.isArray(requested) ? requested[0] : requested;
@@ -30,22 +33,26 @@ export default async function LoadingPage({
   if (!selected) {
     return (
       <DisplayPlatformChooser
-        title="Loading crew display"
+        title="Warm-up board"
         candidates={candidates}
-        emptyMessage="No sessions are assigned to a platform yet. Set up sessions & flights to use the crew display."
-        hrefForPlatform={(platformId) => `/${comp.slug}/loading?platform=${platformId}`}
+        emptyMessage="No sessions are assigned to a platform yet. Set up sessions & flights to use the warm-up board."
+        hrefForPlatform={(platformId) => `/${comp.slug}/warm-up?platform=${platformId}`}
       />
     );
   }
 
   return (
-    <LoadingDisplay
+    <WarmUpDisplay
       competitionId={comp.id}
       compName={comp.name}
+      isTeamCompetition={comp.is_team_competition}
+      lifts={LIFTS_FOR_EVENT[comp.event_type]}
       platformId={selected.id}
       platformName={selected.name}
       sessions={sessions}
       flights={flights}
+      weightClasses={weightClasses}
+      divisions={divisions}
       entries={entries}
       attempts={attempts}
     />
