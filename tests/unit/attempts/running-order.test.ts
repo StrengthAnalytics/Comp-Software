@@ -254,6 +254,16 @@ function ids(rows: RosterEntryFields[]): string[] {
   return rows.map((row) => row.entryId);
 }
 
+// A team-comp roster row: reuses `lifter` and tags on the member's single assigned lift.
+function member(
+  entryId: string,
+  teamLift: LiftType | null,
+  overrides: Partial<RosterEntryFields> = {},
+  lotNumber = 1,
+): RosterEntryFields & { teamLift: LiftType | null } {
+  return { ...lifter(entryId, lotNumber, overrides), teamLift };
+}
+
 describe('orderSessionRoster', () => {
   it('orders the live flight by the round-in-progress bar weight, lightest first', () => {
     const roster = [lifter('a', 1), lifter('b', 2), lifter('c', 3)];
@@ -404,14 +414,6 @@ describe('orderSessionRoster', () => {
 });
 
 describe('orderTeamSessionRoster', () => {
-  // A team-comp roster row reuses `lifter` and tags on the member's single assigned lift.
-  const member = (
-    entryId: string,
-    teamLift: LiftType | null,
-    overrides: Partial<RosterEntryFields> = {},
-    lotNumber = 1,
-  ) => ({ ...lifter(entryId, lotNumber, overrides), teamLift });
-
   // Flight A (sort 0) and flight B (sort 1).
   const flightB = { flightId: 'B', flightSortOrder: 1 };
 
