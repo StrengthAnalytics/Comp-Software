@@ -60,7 +60,8 @@ This project is developed online-only against the hosted Supabase dev project an
       /weight-class             ← weight class standings overlay
   /(public)                     ← public-facing views
     /[comp-slug]                ← comp landing page
-    /[comp-slug]/live           ← live scoreboard for venue TVs and socials
+    /[comp-slug]/live           ← live scoreboard for venue TVs and socials (planned)
+    /[comp-slug]/live/warm-up   ← public, sign-in-free warm-up board (per-platform via ?platform=)
     /[comp-slug]/results        ← final results
   /auth                         ← sign-in (email + password; OTP for production)
   /account                      ← profile management
