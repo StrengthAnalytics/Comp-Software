@@ -7,11 +7,11 @@ import { bestGoodLift } from '@/lib/attempts/best-lift';
 import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
 import {
   compareRunningOrder,
-  orderSessionRoster,
   selectLiveSession,
   selectPlatformPositions,
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
+import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import { BoardOptions, type BoardOptionToggle } from '@/components/scorekeeper/board-options';
@@ -128,8 +128,8 @@ export function WarmUpDisplay({
   );
 
   const view = useMemo<WarmUpView>(
-    () => buildView({ platformId, sessions, flights, entries, attempts }),
-    [platformId, sessions, flights, entries, attempts],
+    () => buildView({ platformId, sessions, flights, entries, attempts, isTeamCompetition }),
+    [platformId, sessions, flights, entries, attempts, isTeamCompetition],
   );
 
   const headerMain = view.header
@@ -374,12 +374,14 @@ function buildView({
   flights,
   entries,
   attempts,
+  isTeamCompetition,
 }: {
   platformId: string;
   sessions: BoardSession[];
   flights: BoardFlight[];
   entries: BoardEntry[];
   attempts: Map<string, BoardAttempt>;
+  isTeamCompetition: boolean;
 }): WarmUpView {
   const flightById = new Map(flights.map((flight) => [flight.id, flight]));
   const sessionById = new Map(sessions.map((session) => [session.id, session]));
@@ -458,17 +460,9 @@ function buildView({
   const liveRows = rowsBySession.get(liveSession.id) ?? [];
   const positions = selectPlatformPositions(liveRows);
 
-  const roster = orderSessionRoster(
-    (rosterBySession.get(liveSession.id) ?? []).map((item) => ({
-      entryId: item.entry.id,
-      flightId: item.flight.id,
-      flightSortOrder: item.flight.sortOrder,
-      lotNumber: item.entry.lotNumber,
-      entry: item.entry,
-      flightName: item.flight.name,
-    })),
-    liveRows,
-  ).map(({ entry, flightName }) => ({ entry, flightName }));
+  // A team comp groups by lift across the whole session (each member contests one assigned lift)
+  // instead of by the flight's single current lift; otherwise order by the round in progress.
+  const roster = orderRosterForSession(rosterBySession.get(liveSession.id) ?? [], liveRows, isTeamCompetition);
 
   const toCard = (row: LiveRow | null): PositionCardData =>
     row

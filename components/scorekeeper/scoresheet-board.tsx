@@ -18,12 +18,12 @@ import { bestGoodLift } from '@/lib/attempts/best-lift';
 import { nextAttemptCountdown, type NextAttemptCountdown } from '@/lib/attempts/auto-progression';
 import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
 import {
-  orderSessionRoster,
   selectLiveSession,
   selectPlatformPositions,
   type PlatformPositions,
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
+import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
 import { loadOutbox, saveOutbox, type PendingOp, type RackPatch } from '@/lib/scorekeeper/outbox';
@@ -109,12 +109,14 @@ function buildPlatformViews({
   flights,
   entries,
   attempts,
+  isTeamCompetition,
 }: {
   platforms: BoardPlatform[];
   sessions: BoardSession[];
   flights: BoardFlight[];
   entries: BoardEntry[];
   attempts: Map<string, BoardAttempt>;
+  isTeamCompetition: boolean;
 }): PlatformView[] {
   const flightById = new Map(flights.map((flight) => [flight.id, flight]));
   const sessionById = new Map(sessions.map((session) => [session.id, session]));
@@ -187,18 +189,14 @@ function buildPlatformViews({
     }
 
     // Rows follow the running order of the round in progress (lightest bar first), re-sorting as each
-    // round, lift and flight advances — rather than a static flight-then-lot scoresheet.
-    const roster = orderSessionRoster(
-      (rosterBySession.get(liveSession.id) ?? []).map((item) => ({
-        entryId: item.entry.id,
-        flightId: item.flight.id,
-        flightSortOrder: item.flight.sortOrder,
-        lotNumber: item.entry.lotNumber,
-        entry: item.entry,
-        flightName: item.flight.name,
-      })),
+    // round, lift and flight advances — rather than a static flight-then-lot scoresheet. A team comp
+    // groups by lift across the whole session (each member contests one assigned lift) instead of by
+    // the flight's single current lift.
+    const roster = orderRosterForSession(
+      rosterBySession.get(liveSession.id) ?? [],
       rowsBySession.get(liveSession.id) ?? [],
-    ).map(({ entry, flightName }) => ({ entry, flightName }));
+      isTeamCompetition,
+    );
 
     views.push({
       key,
@@ -312,8 +310,8 @@ export function ScoresheetBoard({
   const showTeam = isTeamCompetition && teamPref;
 
   const views = useMemo(
-    () => buildPlatformViews({ platforms, sessions, flights, entries, attempts }),
-    [platforms, sessions, flights, entries, attempts],
+    () => buildPlatformViews({ platforms, sessions, flights, entries, attempts, isTeamCompetition }),
+    [platforms, sessions, flights, entries, attempts, isTeamCompetition],
   );
 
   // Mirror the outbox to localStorage so edits queued in this session survive a page reload — e.g. the

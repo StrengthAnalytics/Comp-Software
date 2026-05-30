@@ -147,7 +147,7 @@ export function selectLoadingPositions<T extends RunningOrderFields & { result: 
 }
 
 // One attempt from a live session, enough to place its flight in the running order.
-type SessionAttempt = {
+export type SessionAttempt = {
   entryId: string;
   lift: LiftType;
   attemptNumber: number;
@@ -175,6 +175,56 @@ type FlightLiftState = {
   hasActivity: boolean;
 };
 
+// Accumulates, per flight and per lift, what that flight has done so far in the lift: which rounds
+// still have a pending declared attempt, the highest round reached, and whether the lift has seen real
+// activity (a resolved attempt or a 2nd/3rd attempt declared, as opposed to only a seeded-and-pending
+// opener). Shared by the individual-comp lead selection and the team-comp roster ordering so the two
+// read the same state.
+function buildFlightLiftStates(
+  attempts: readonly SessionAttempt[],
+  flightByEntry: Map<string, string>,
+): Map<string, Map<LiftType, FlightLiftState>> {
+  const byFlight = new Map<string, Map<LiftType, FlightLiftState>>();
+  for (const attempt of attempts) {
+    const flightId = flightByEntry.get(attempt.entryId);
+    if (flightId === undefined) {
+      continue;
+    }
+    const liftStates = byFlight.get(flightId) ?? new Map<LiftType, FlightLiftState>();
+    const state = liftStates.get(attempt.lift) ?? { pendingRounds: [], maxRound: 0, hasActivity: false };
+    state.maxRound = Math.max(state.maxRound, attempt.attemptNumber);
+    if (attempt.result === 'pending') {
+      if (attempt.weightKg !== null) {
+        state.pendingRounds.push(attempt.attemptNumber);
+      }
+    } else {
+      state.hasActivity = true;
+    }
+    if (attempt.attemptNumber >= 2) {
+      state.hasActivity = true;
+    }
+    liftStates.set(attempt.lift, state);
+    byFlight.set(flightId, liftStates);
+  }
+  return byFlight;
+}
+
+// A flight's contested lift is finished once it has no pending declared attempt AND either its final
+// round has been reached or a later lift has begun lifting. The later-lift clause stops a flight that
+// has merely paused between rounds (the next round not yet declared) from reading as done; it never
+// applies to a single-lift team member, so the team path passes laterStarted = false. Shared so the
+// individual and team orderings agree on when a flight has left a lift.
+function isFlightLiftComplete(state: FlightLiftState, laterStarted: boolean): boolean {
+  return state.pendingRounds.length === 0 && (state.maxRound >= ATTEMPTS_PER_LIFT || laterStarted);
+}
+
+// Tie-break for roster rows with nothing live to lift (a finished flight, or a not-weighed-in lifter):
+// flight order, then lot. Shared by both roster orderings so the bottom-of-board order can't drift.
+function compareInactiveRoster(a: RosterEntryFields, b: RosterEntryFields): number {
+  const byFlight = compareValues(nullsLast(a.flightSortOrder), nullsLast(b.flightSortOrder));
+  return byFlight === 0 ? compareValues(nullsLast(a.lotNumber), nullsLast(b.lotNumber)) : byFlight;
+}
+
 // For each flight, the lift+round it is on right now. The flight is on the earliest contested lift
 // (squat, then bench, then deadlift) that is not yet complete; within it, the lowest round that still
 // has a pending attempt, or — in the gap between rounds, before the next is declared — the last round
@@ -187,35 +237,12 @@ function leadRoundByFlight(
   attempts: readonly SessionAttempt[],
   flightByEntry: Map<string, string>,
 ): Map<string, LeadRound> {
-  const byFlight = new Map<string, Map<LiftType, FlightLiftState>>();
-  const flightsWithPending = new Set<string>();
-
-  for (const attempt of attempts) {
-    const flightId = flightByEntry.get(attempt.entryId);
-    if (flightId === undefined) {
-      continue;
-    }
-    const liftStates = byFlight.get(flightId) ?? new Map<LiftType, FlightLiftState>();
-    const state = liftStates.get(attempt.lift) ?? { pendingRounds: [], maxRound: 0, hasActivity: false };
-    state.maxRound = Math.max(state.maxRound, attempt.attemptNumber);
-    if (attempt.result === 'pending') {
-      if (attempt.weightKg !== null) {
-        state.pendingRounds.push(attempt.attemptNumber);
-        flightsWithPending.add(flightId);
-      }
-    } else {
-      state.hasActivity = true;
-    }
-    if (attempt.attemptNumber >= 2) {
-      state.hasActivity = true;
-    }
-    liftStates.set(attempt.lift, state);
-    byFlight.set(flightId, liftStates);
-  }
+  const byFlight = buildFlightLiftStates(attempts, flightByEntry);
 
   const lead = new Map<string, LeadRound>();
   for (const [flightId, liftStates] of byFlight) {
-    if (!flightsWithPending.has(flightId)) {
+    const hasPending = [...liftStates.values()].some((state) => state.pendingRounds.length > 0);
+    if (!hasPending) {
       continue;
     }
     let leadLift: LiftType | null = null;
@@ -227,8 +254,7 @@ function leadRoundByFlight(
       const laterStarted = LIFTS_IN_ORDER.some(
         (later) => LIFT_ORDER[later] > LIFT_ORDER[lift] && (liftStates.get(later)?.hasActivity ?? false),
       );
-      const complete = state.pendingRounds.length === 0 && (state.maxRound >= ATTEMPTS_PER_LIFT || laterStarted);
-      if (!complete) {
+      if (!isFlightLiftComplete(state, laterStarted)) {
         leadLift = lift;
         break;
       }
@@ -281,10 +307,78 @@ export function orderSessionRoster<E extends RosterEntryFields>(
   const activeSorted = active
     .toSorted((a, b) => compareRunningOrder(keyFor(a.entry, a.flightLead), keyFor(b.entry, b.flightLead)))
     .map((item) => item.entry);
-  const inactiveSorted = inactive.toSorted((a, b) => {
-    const byFlight = compareValues(nullsLast(a.flightSortOrder), nullsLast(b.flightSortOrder));
-    return byFlight === 0 ? compareValues(nullsLast(a.lotNumber), nullsLast(b.lotNumber)) : byFlight;
+  const inactiveSorted = inactive.toSorted(compareInactiveRoster);
+
+  return [...activeSorted, ...inactiveSorted];
+}
+
+// The team-competition variant of orderSessionRoster. In a team comp each lifter contests only one
+// lift (their team_lift), so the board groups by LIFT across the whole session — every squatter
+// together, then every bencher, then every deadlifter — rather than by each flight's single current
+// lift (which would cluster a flight's squatter, bencher and deadlifter together). Within a lift the
+// flight currently working it leads, flights yet to reach it follow in flight order, and a flight that
+// has finished that lift drops below the active ones; within an active flight the round-in-progress bar
+// weight orders the lifters (lightest first), exactly like orderSessionRoster. Members whose flight has
+// no attempt for their lift yet (not weighed in) — and any with no team_lift — sink to the bottom in
+// flight-then-lot order. Pure; unit-tested.
+export function orderTeamSessionRoster<E extends RosterEntryFields & { teamLift: LiftType | null }>(
+  roster: readonly E[],
+  attempts: readonly SessionAttempt[],
+): E[] {
+  const flightByEntry = new Map(roster.map((entry) => [entry.entryId, entry.flightId]));
+  const byFlight = buildFlightLiftStates(attempts, flightByEntry);
+
+  const weightByAttempt = new Map<string, number | null>();
+  for (const attempt of attempts) {
+    weightByAttempt.set(`${attempt.entryId}:${attempt.lift}:${attempt.attemptNumber}`, attempt.weightKg);
+  }
+
+  const keyFor = (entry: E, lift: LiftType, round: number): RunningOrderFields => ({
+    lift,
+    flightSortOrder: entry.flightSortOrder,
+    attemptNumber: round,
+    weightKg: weightByAttempt.get(`${entry.entryId}:${lift}:${round}`) ?? null,
+    lotNumber: entry.lotNumber,
   });
+
+  // A roster row placed in its lift group, carrying the running-order key that sorts it within the
+  // flight, plus whether its flight has finished this lift (so completed flights drop below).
+  type Placed = { entry: E; lift: LiftType; completed: boolean; key: RunningOrderFields };
+  const active: Placed[] = [];
+  const inactive: E[] = [];
+
+  for (const entry of roster) {
+    const lift = entry.teamLift;
+    const state = lift ? byFlight.get(entry.flightId)?.get(lift) : undefined;
+    if (!lift || !state) {
+      inactive.push(entry);
+      continue;
+    }
+    // The flight's round in this lift: the lowest still-pending round, or — between rounds, or once the
+    // lift is done — the last round reached. "Completed" uses the same test as the individual path
+    // (laterStarted = false, since a team member only contests this one lift), so a flight that has
+    // merely paused between rounds stays active rather than dropping below later flights.
+    const round = state.pendingRounds.length > 0 ? Math.min(...state.pendingRounds) : state.maxRound;
+    active.push({ entry, lift, completed: isFlightLiftComplete(state, false), key: keyFor(entry, lift, round) });
+  }
+
+  const activeSorted = active
+    .toSorted((a, b) => {
+      const byLift = compareValues(LIFT_ORDER[a.lift], LIFT_ORDER[b.lift]);
+      if (byLift !== 0) {
+        return byLift;
+      }
+      // Within a lift, flights still working it lead; a flight that has finished the lift drops below.
+      const byCompleted = compareValues(a.completed ? 1 : 0, b.completed ? 1 : 0);
+      if (byCompleted !== 0) {
+        return byCompleted;
+      }
+      // Same lift, both same completion band: flight, then round, then rising bar, then lot.
+      return compareRunningOrder(a.key, b.key);
+    })
+    .map((item) => item.entry);
+
+  const inactiveSorted = inactive.toSorted(compareInactiveRoster);
 
   return [...activeSorted, ...inactiveSorted];
 }
