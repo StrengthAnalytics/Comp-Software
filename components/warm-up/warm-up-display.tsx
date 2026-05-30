@@ -64,6 +64,19 @@ type PositionCardData = {
   weightKg: number | null;
 } | null;
 
+// Projects a live running-order row (or null) into the up-next card shape.
+function toCard(row: PlatformLiveRow | null): PositionCardData {
+  return row
+    ? {
+        lifterName: row.entry.lifterName,
+        flightName: row.flight.name,
+        lift: row.lift,
+        attemptNumber: row.attemptNumber,
+        weightKg: row.weightKg,
+      }
+    : null;
+}
+
 type WarmUpView = {
   sessionName: string | null;
   // The round in progress and how far into it we are, from the lifter on the platform.
@@ -389,17 +402,6 @@ function buildView({
   // A team comp groups by lift across the whole session (each member contests one assigned lift)
   // instead of by the flight's single current lift; otherwise order by the round in progress.
   const roster = orderRosterForSession(rosterItems, liveRows, isTeamCompetition);
-
-  const toCard = (row: PlatformLiveRow | null): PositionCardData =>
-    row
-      ? {
-          lifterName: row.entry.lifterName,
-          flightName: row.flight.name,
-          lift: row.lift,
-          attemptNumber: row.attemptNumber,
-          weightKg: row.weightKg,
-        }
-      : null;
 
   // Header from the lifter on the platform: `group` is the declared attempts in this flight/lift/round
   // in running order (lightest first); position = the on-platform lifter's rank within it, total = its

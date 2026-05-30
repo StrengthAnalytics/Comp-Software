@@ -119,7 +119,7 @@ export function LifterOverlay({
     // Category line: weight class · division for an individual comp, or the team name for a team comp.
     const subtitle = isTeamCompetition
       ? (entry.teamName ?? '')
-      : [entry.weightClassName, entry.divisionName].filter((part): part is string => Boolean(part)).join(' · ');
+      : [entry.weightClassName, entry.divisionName].filter(Boolean).join(' · ');
 
     return {
       key: attemptKey(entry.id, onPlatform.lift, onPlatform.attemptNumber),
