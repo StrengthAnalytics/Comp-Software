@@ -5,6 +5,7 @@ import { CompForm } from '@/components/comps/comp-form';
 import { CompShell } from '@/components/comps/comp-shell';
 import { DeleteCompetition } from '@/components/comps/delete-competition';
 import { DivisionsEditor } from '@/components/comps/divisions-editor';
+import { OverlayLinks } from '@/components/comps/overlay-links';
 import { WeightClassesEditor } from '@/components/comps/weight-classes-editor';
 
 export default async function EditCompPage({ params }: { params: Promise<{ id: string }> }) {
@@ -21,19 +22,27 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
     notFound();
   }
 
-  const [{ data: divisions }, { data: weightClasses }, { count: entryCount }] = await Promise.all([
-    supabase
-      .from('divisions')
-      .select('id, name, sort_order')
-      .eq('competition_id', id)
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('weight_classes')
-      .select('id, name, gender, lower_kg, upper_kg, sort_order')
-      .eq('competition_id', id)
-      .order('sort_order', { ascending: true }),
-    supabase.from('entries').select('id', { count: 'exact', head: true }).eq('competition_id', id),
-  ]);
+  const [{ data: divisions }, { data: weightClasses }, { count: entryCount }, { data: platformRows }, { data: sessionRows }] =
+    await Promise.all([
+      supabase
+        .from('divisions')
+        .select('id, name, sort_order')
+        .eq('competition_id', id)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('weight_classes')
+        .select('id, name, gender, lower_kg, upper_kg, sort_order')
+        .eq('competition_id', id)
+        .order('sort_order', { ascending: true }),
+      supabase.from('entries').select('id', { count: 'exact', head: true }).eq('competition_id', id),
+      supabase.from('platforms').select('id, name').eq('competition_id', id).order('name', { ascending: true }),
+      supabase.from('sessions').select('id, platform_id').eq('competition_id', id),
+    ]);
+
+  // The overlay control offers a per-platform URL only when there is a real choice — the platforms that
+  // actually have a session, mirroring how the venue displays resolve their platform.
+  const sessionPlatformIds = new Set((sessionRows ?? []).map((session) => session.platform_id).filter(Boolean));
+  const overlayPlatforms = (platformRows ?? []).filter((platform) => sessionPlatformIds.has(platform.id));
 
   return (
     <CompShell
@@ -69,6 +78,8 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
 
         <DivisionsEditor competitionId={comp.id} divisions={divisions ?? []} />
         <WeightClassesEditor competitionId={comp.id} weightClasses={weightClasses ?? []} />
+
+        <OverlayLinks slug={comp.slug} platforms={overlayPlatforms} />
 
         <DeleteCompetition
           competitionId={comp.id}
