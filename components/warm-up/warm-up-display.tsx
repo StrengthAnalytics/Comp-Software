@@ -7,12 +7,11 @@ import { bestGoodLift } from '@/lib/attempts/best-lift';
 import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
 import {
   compareRunningOrder,
-  orderSessionRoster,
-  orderTeamSessionRoster,
   selectLiveSession,
   selectPlatformPositions,
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
+import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import { BoardOptions, type BoardOptionToggle } from '@/components/scorekeeper/board-options';
@@ -463,18 +462,7 @@ function buildView({
 
   // A team comp groups by lift across the whole session (each member contests one assigned lift)
   // instead of by the flight's single current lift; otherwise order by the round in progress.
-  const rosterRows = (rosterBySession.get(liveSession.id) ?? []).map((item) => ({
-    entryId: item.entry.id,
-    flightId: item.flight.id,
-    flightSortOrder: item.flight.sortOrder,
-    lotNumber: item.entry.lotNumber,
-    teamLift: item.entry.teamLift,
-    entry: item.entry,
-    flightName: item.flight.name,
-  }));
-  const roster = (
-    isTeamCompetition ? orderTeamSessionRoster(rosterRows, liveRows) : orderSessionRoster(rosterRows, liveRows)
-  ).map(({ entry, flightName }) => ({ entry, flightName }));
+  const roster = orderRosterForSession(rosterBySession.get(liveSession.id) ?? [], liveRows, isTeamCompetition);
 
   const toCard = (row: LiveRow | null): PositionCardData =>
     row

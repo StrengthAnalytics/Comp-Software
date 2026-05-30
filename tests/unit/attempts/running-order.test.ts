@@ -457,6 +457,18 @@ describe('orderTeamSessionRoster', () => {
     expect(ids(orderTeamSessionRoster(roster, attempts))).toEqual(['live', 'done']);
   });
 
+  it('holds a flight between rounds above a later flight not yet on the lift', () => {
+    // Flight A finished squat round 1 (decided) but round 2 is not declared yet — a normal
+    // between-rounds gap. Flight B has not squatted; its seeded opener is pending+declared. Flight A
+    // must NOT read as "finished" and drop below B: it is only paused, with rounds 2-3 still to come.
+    const roster = [member('a', 'squat'), member('b', 'squat', flightB)];
+    const attempts = [
+      attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('b', 'squat', 1, 90, 'pending'),
+    ];
+    expect(ids(orderTeamSessionRoster(roster, attempts))).toEqual(['a', 'b']);
+  });
+
   it('keeps a member who has taken their attempt in slot while their flight is still on the round', () => {
     const roster = [member('a', 'squat', {}, 1), member('b', 'squat', {}, 2)];
     const attempts = [

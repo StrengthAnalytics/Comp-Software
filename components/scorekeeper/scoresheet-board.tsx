@@ -18,13 +18,12 @@ import { bestGoodLift } from '@/lib/attempts/best-lift';
 import { nextAttemptCountdown, type NextAttemptCountdown } from '@/lib/attempts/auto-progression';
 import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
 import {
-  orderSessionRoster,
-  orderTeamSessionRoster,
   selectLiveSession,
   selectPlatformPositions,
   type PlatformPositions,
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
+import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
 import { loadOutbox, saveOutbox, type PendingOp, type RackPatch } from '@/lib/scorekeeper/outbox';
@@ -193,19 +192,11 @@ function buildPlatformViews({
     // round, lift and flight advances — rather than a static flight-then-lot scoresheet. A team comp
     // groups by lift across the whole session (each member contests one assigned lift) instead of by
     // the flight's single current lift.
-    const rosterRows = (rosterBySession.get(liveSession.id) ?? []).map((item) => ({
-      entryId: item.entry.id,
-      flightId: item.flight.id,
-      flightSortOrder: item.flight.sortOrder,
-      lotNumber: item.entry.lotNumber,
-      teamLift: item.entry.teamLift,
-      entry: item.entry,
-      flightName: item.flight.name,
-    }));
-    const sessionRows = rowsBySession.get(liveSession.id) ?? [];
-    const roster = (
-      isTeamCompetition ? orderTeamSessionRoster(rosterRows, sessionRows) : orderSessionRoster(rosterRows, sessionRows)
-    ).map(({ entry, flightName }) => ({ entry, flightName }));
+    const roster = orderRosterForSession(
+      rosterBySession.get(liveSession.id) ?? [],
+      rowsBySession.get(liveSession.id) ?? [],
+      isTeamCompetition,
+    );
 
     views.push({
       key,

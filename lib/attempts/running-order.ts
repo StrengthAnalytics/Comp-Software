@@ -147,7 +147,7 @@ export function selectLoadingPositions<T extends RunningOrderFields & { result: 
 }
 
 // One attempt from a live session, enough to place its flight in the running order.
-type SessionAttempt = {
+export type SessionAttempt = {
   entryId: string;
   lift: LiftType;
   attemptNumber: number;
@@ -209,6 +209,22 @@ function buildFlightLiftStates(
   return byFlight;
 }
 
+// A flight's contested lift is finished once it has no pending declared attempt AND either its final
+// round has been reached or a later lift has begun lifting. The later-lift clause stops a flight that
+// has merely paused between rounds (the next round not yet declared) from reading as done; it never
+// applies to a single-lift team member, so the team path passes laterStarted = false. Shared so the
+// individual and team orderings agree on when a flight has left a lift.
+function isFlightLiftComplete(state: FlightLiftState, laterStarted: boolean): boolean {
+  return state.pendingRounds.length === 0 && (state.maxRound >= ATTEMPTS_PER_LIFT || laterStarted);
+}
+
+// Tie-break for roster rows with nothing live to lift (a finished flight, or a not-weighed-in lifter):
+// flight order, then lot. Shared by both roster orderings so the bottom-of-board order can't drift.
+function compareInactiveRoster(a: RosterEntryFields, b: RosterEntryFields): number {
+  const byFlight = compareValues(nullsLast(a.flightSortOrder), nullsLast(b.flightSortOrder));
+  return byFlight === 0 ? compareValues(nullsLast(a.lotNumber), nullsLast(b.lotNumber)) : byFlight;
+}
+
 // For each flight, the lift+round it is on right now. The flight is on the earliest contested lift
 // (squat, then bench, then deadlift) that is not yet complete; within it, the lowest round that still
 // has a pending attempt, or — in the gap between rounds, before the next is declared — the last round
@@ -238,8 +254,7 @@ function leadRoundByFlight(
       const laterStarted = LIFTS_IN_ORDER.some(
         (later) => LIFT_ORDER[later] > LIFT_ORDER[lift] && (liftStates.get(later)?.hasActivity ?? false),
       );
-      const complete = state.pendingRounds.length === 0 && (state.maxRound >= ATTEMPTS_PER_LIFT || laterStarted);
-      if (!complete) {
+      if (!isFlightLiftComplete(state, laterStarted)) {
         leadLift = lift;
         break;
       }
@@ -292,10 +307,7 @@ export function orderSessionRoster<E extends RosterEntryFields>(
   const activeSorted = active
     .toSorted((a, b) => compareRunningOrder(keyFor(a.entry, a.flightLead), keyFor(b.entry, b.flightLead)))
     .map((item) => item.entry);
-  const inactiveSorted = inactive.toSorted((a, b) => {
-    const byFlight = compareValues(nullsLast(a.flightSortOrder), nullsLast(b.flightSortOrder));
-    return byFlight === 0 ? compareValues(nullsLast(a.lotNumber), nullsLast(b.lotNumber)) : byFlight;
-  });
+  const inactiveSorted = inactive.toSorted(compareInactiveRoster);
 
   return [...activeSorted, ...inactiveSorted];
 }
@@ -321,9 +333,17 @@ export function orderTeamSessionRoster<E extends RosterEntryFields & { teamLift:
     weightByAttempt.set(`${attempt.entryId}:${attempt.lift}:${attempt.attemptNumber}`, attempt.weightKg);
   }
 
-  // A roster row placed in its lift group, carrying the round and bar weight that order it within the
+  const keyFor = (entry: E, lift: LiftType, round: number): RunningOrderFields => ({
+    lift,
+    flightSortOrder: entry.flightSortOrder,
+    attemptNumber: round,
+    weightKg: weightByAttempt.get(`${entry.entryId}:${lift}:${round}`) ?? null,
+    lotNumber: entry.lotNumber,
+  });
+
+  // A roster row placed in its lift group, carrying the running-order key that sorts it within the
   // flight, plus whether its flight has finished this lift (so completed flights drop below).
-  type Placed = { entry: E; lift: LiftType; completed: boolean; round: number; weightKg: number | null };
+  type Placed = { entry: E; lift: LiftType; completed: boolean; key: RunningOrderFields };
   const active: Placed[] = [];
   const inactive: E[] = [];
 
@@ -334,17 +354,12 @@ export function orderTeamSessionRoster<E extends RosterEntryFields & { teamLift:
       inactive.push(entry);
       continue;
     }
-    const hasPending = state.pendingRounds.length > 0;
     // The flight's round in this lift: the lowest still-pending round, or — between rounds, or once the
-    // lift is done — the last round reached. A finished lift (no pending) drops the flight below.
-    const round = hasPending ? Math.min(...state.pendingRounds) : state.maxRound;
-    active.push({
-      entry,
-      lift,
-      completed: !hasPending,
-      round,
-      weightKg: weightByAttempt.get(`${entry.entryId}:${lift}:${round}`) ?? null,
-    });
+    // lift is done — the last round reached. "Completed" uses the same test as the individual path
+    // (laterStarted = false, since a team member only contests this one lift), so a flight that has
+    // merely paused between rounds stays active rather than dropping below later flights.
+    const round = state.pendingRounds.length > 0 ? Math.min(...state.pendingRounds) : state.maxRound;
+    active.push({ entry, lift, completed: isFlightLiftComplete(state, false), key: keyFor(entry, lift, round) });
   }
 
   const activeSorted = active
@@ -359,29 +374,11 @@ export function orderTeamSessionRoster<E extends RosterEntryFields & { teamLift:
         return byCompleted;
       }
       // Same lift, both same completion band: flight, then round, then rising bar, then lot.
-      return compareRunningOrder(
-        {
-          lift: a.lift,
-          flightSortOrder: a.entry.flightSortOrder,
-          attemptNumber: a.round,
-          weightKg: a.weightKg,
-          lotNumber: a.entry.lotNumber,
-        },
-        {
-          lift: b.lift,
-          flightSortOrder: b.entry.flightSortOrder,
-          attemptNumber: b.round,
-          weightKg: b.weightKg,
-          lotNumber: b.entry.lotNumber,
-        },
-      );
+      return compareRunningOrder(a.key, b.key);
     })
     .map((item) => item.entry);
 
-  const inactiveSorted = inactive.toSorted((a, b) => {
-    const byFlight = compareValues(nullsLast(a.flightSortOrder), nullsLast(b.flightSortOrder));
-    return byFlight === 0 ? compareValues(nullsLast(a.lotNumber), nullsLast(b.lotNumber)) : byFlight;
-  });
+  const inactiveSorted = inactive.toSorted(compareInactiveRoster);
 
   return [...activeSorted, ...inactiveSorted];
 }
