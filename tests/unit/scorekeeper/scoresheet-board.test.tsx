@@ -163,15 +163,55 @@ describe('ScoresheetBoard offline resilience', () => {
 
     await waitFor(() => expect(resultAction).toHaveBeenCalledTimes(1));
     expect(weightAction).toHaveBeenCalledTimes(1);
-    expect(resultAction).toHaveBeenCalledWith({
-      competitionId: COMP_ID,
-      entryId: 'entry-1',
-      lift: 'squat',
-      attemptNumber: 1,
-      result: 'good_lift',
-    });
+    expect(resultAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        competitionId: COMP_ID,
+        entryId: 'entry-1',
+        lift: 'squat',
+        attemptNumber: 1,
+        result: 'good_lift',
+        // The mark time is carried on the wire so the server anchors the next-attempt countdown to
+        // when the operator marked it offline, not to this reconnect-time flush.
+        decidedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
     // The weight must reach the server before the result that depends on the attempt existing.
     expect(weightAction.mock.invocationCallOrder[0]).toBeLessThan(resultAction.mock.invocationCallOrder[0]);
+  });
+
+  it('does not drop a re-edit made while the previous save of the same cell is in flight', async () => {
+    renderBoard(); // online
+
+    // Hold the first save open so the operator can correct the cell while it is still in flight.
+    let resolveFirst!: (value: { status: 'ok'; data: { id: string } }) => void;
+    weightAction.mockReturnValueOnce(
+      new Promise<{ status: 'ok'; data: { id: string } }>((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
+
+    enterSquatOpener('100');
+    await waitFor(() => expect(weightAction).toHaveBeenCalledTimes(1));
+    expect(weightAction).toHaveBeenNthCalledWith(1, expect.objectContaining({ weightKg: 100 }));
+
+    // Correct the same cell to 105 while the 100 save has not yet resolved.
+    enterSquatOpener('105');
+    expect(squatOpenerCell()).toHaveTextContent('105');
+
+    // The 100 save now lands. The drain must NOT discard the queued 105 (which sits under the same
+    // outbox key) — it has to send it on the follow-up flush, or the server would keep 100 while the
+    // board shows 105.
+    await act(async () => {
+      resolveFirst({ status: 'ok', data: { id: 'attempt-server-id' } });
+    });
+
+    await waitFor(() => expect(weightAction).toHaveBeenCalledTimes(2));
+    expect(weightAction).toHaveBeenNthCalledWith(2, expect.objectContaining({ weightKg: 105 }));
+    expect(squatOpenerCell()).toHaveTextContent('105');
+    // Once both have flushed nothing is left queued.
+    await waitFor(() =>
+      expect(screen.queryByText(/change(s)? .*sync|Syncing/)).not.toBeInTheDocument(),
+    );
   });
 
   it('keeps the screen alive and the value on-screen when a save fails on the wire', async () => {

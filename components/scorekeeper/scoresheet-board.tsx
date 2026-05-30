@@ -313,6 +313,9 @@ export function ScoresheetBoard({
   // The flush is recreated each render (closing over the latest state setters); a ref lets the effects
   // and handlers call the current one without re-subscribing, mirroring the realtime callback pattern.
   const flushRef = useRef<() => void>(() => {});
+  // Same ref pattern for the deferred reconcile, so the reconnect effect can run it without depending
+  // on every render's closure.
+  const maybeReconcileRef = useRef<() => void>(() => {});
 
   // Esc leaves the expanded view.
   useEffect(() => {
@@ -360,6 +363,18 @@ export function ScoresheetBoard({
     persistOutbox();
   }
 
+  // Retire a queued op once its send has been handled — but only if the operator hasn't re-edited the
+  // same cell during the round-trip. If a newer op now sits under the same key, dropping it would
+  // discard that edit (the board would keep the new value while the server kept the old). Leaving the
+  // newer op queued lets the follow-up drain send it. Returns whether the op was actually removed.
+  function retire(key: string, op: PendingOp): boolean {
+    if (pendingOpsRef.current.get(key) !== op) {
+      return false;
+    }
+    dropPending(key);
+    return true;
+  }
+
   // Sends one op to its server action and reconciles local state on success (adopting the real id for a
   // freshly-created attempt). Returns the action result; throws only on a transport failure (offline /
   // server unreachable), which the flush loop catches.
@@ -393,6 +408,9 @@ export function ScoresheetBoard({
         lift: op.lift,
         attemptNumber: op.attemptNumber,
         result: op.result,
+        // Carry the operator's mark time so an offline good/no lift anchors its next-attempt
+        // countdown to when it was marked, not to this (reconnect-time) flush.
+        decidedAt: op.decidedAt,
       });
     }
     // RackPatch is exactly the action payload minus the ids, so it spreads straight in.
@@ -408,6 +426,23 @@ export function ScoresheetBoard({
       flushRef.current();
     }, SAVE_RETRY_MS);
   }
+
+  // Re-pull the authoritative server snapshot after a rejection left local state showing a value the
+  // server refused, so the run screen (the source of truth every other screen reads) converges instead
+  // of holding the rejected edit. Only fires when online and the queue has fully drained: a refresh
+  // while offline would no-op and waste the flag, and refreshing with ops still queued could wipe
+  // still-pending optimistic edits. The flag persists across an offline gap so the reconnect flush
+  // can run it. Callable from the flush tail and the reconnect effect (the latter because flush
+  // no-ops on an already-empty queue, so a reconnect with nothing queued would otherwise never
+  // reconcile a rejection that was flagged while offline).
+  function maybeReconcile() {
+    const onlineNow = typeof navigator === 'undefined' || navigator.onLine;
+    if (onlineNow && pendingOpsRef.current.size === 0 && needsReconcileRef.current) {
+      needsReconcileRef.current = false;
+      router.refresh();
+    }
+  }
+  maybeReconcileRef.current = maybeReconcile;
 
   // Drains the outbox: weights first, then racks, then results, so an attempt created offline exists
   // before its result is replayed. A transport failure (still offline / server down) stops the drain
@@ -427,7 +462,9 @@ export function ScoresheetBoard({
       return;
     }
     flushingRef.current = true;
-    let removedAny = false;
+    // Whether this drain handled at least one op (sent or skipped) or left a superseded op behind —
+    // either way there may be more to do, so a follow-up drain is scheduled below.
+    let progressed = false;
     let transportFailed = false;
     try {
       const queued = [...pendingOpsRef.current.entries()];
@@ -442,8 +479,8 @@ export function ScoresheetBoard({
       const rejectedWeightCells = new Set<string>();
       for (const [key, op] of ordered) {
         if (op.kind === 'result' && rejectedWeightCells.has(attemptKey(op.entryId, op.lift, op.attemptNumber))) {
-          dropPending(key);
-          removedAny = true;
+          retire(key, op);
+          progressed = true;
           continue;
         }
         let result: ActionResult<unknown>;
@@ -454,8 +491,10 @@ export function ScoresheetBoard({
           transportFailed = true;
           break;
         }
-        dropPending(key);
-        removedAny = true;
+        // Retire the op we just sent unless the operator re-edited this cell mid-send (retire leaves a
+        // superseded op queued for the follow-up drain).
+        retire(key, op);
+        progressed = true;
         if (result.status === 'error') {
           setError(readError(result));
           needsReconcileRef.current = true;
@@ -468,29 +507,32 @@ export function ScoresheetBoard({
       flushingRef.current = false;
     }
 
-    const onlineNow = typeof navigator === 'undefined' || navigator.onLine;
-    if (onlineNow && pendingOpsRef.current.size > 0) {
-      if (removedAny) {
-        // Ops arrived while we were flushing — drain them too.
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      // Went offline mid-drain: leave whatever is left queued for the reconnect flush. Don't schedule
+      // a retry or reconcile here — the reconnect effect drives both, and a router.refresh while
+      // offline would no-op and waste the deferred reconcile.
+      return;
+    }
+    if (pendingOpsRef.current.size > 0) {
+      if (progressed) {
+        // Ops arrived (or were superseded) while we were flushing — drain them too.
         void flush();
       } else if (transportFailed) {
         scheduleRetry();
       }
-    } else if (pendingOpsRef.current.size === 0 && needsReconcileRef.current) {
-      // The queue has fully drained but a rejection left local state showing a value the server
-      // refused; re-pull the authoritative snapshot so the run screen (the source of truth every other
-      // screen reads) converges to the database instead of holding the rejected edit. Deferred until
-      // the queue is empty so it can't wipe still-pending optimistic edits.
-      needsReconcileRef.current = false;
-      router.refresh();
+      return;
     }
+    maybeReconcile();
   }
   flushRef.current = () => void flush();
 
-  // Replay the outbox as soon as the browser reports it is back online.
+  // Replay the outbox as soon as the browser reports it is back online. Also reconcile: a rejection
+  // flagged while offline can't be re-pulled until reconnect, and flush no-ops on an already-empty
+  // queue, so without this a reconnect with nothing queued would never converge that rejected edit.
   useEffect(() => {
     if (online) {
       flushRef.current();
+      maybeReconcileRef.current();
     }
   }, [online]);
   // Tear down the retry timer on unmount.
