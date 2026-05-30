@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import type { Database } from '@/types/database.types';
 import { ATTEMPTS_PER_LIFT, LIFT_LABELS, type Lifts } from '@/lib/constants';
 import { bestGoodLift } from '@/lib/attempts/best-lift';
+import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
 import {
   compareRunningOrder,
   orderSessionRoster,
@@ -14,7 +15,7 @@ import {
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import { BoardOptions, type BoardOptionToggle } from '@/components/scorekeeper/board-options';
-import { usePersistentString } from '@/lib/use-persistent-string';
+import { usePersistentToggle } from '@/lib/use-persistent-toggle';
 import type {
   BoardAttempt,
   BoardEntry,
@@ -45,19 +46,11 @@ const ROW_BAND = 'bg-neutral-50';
 // light-toolbar trigger).
 const DARK_TRIGGER = 'rounded border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-100 hover:bg-neutral-800';
 
-// A boolean view toggle persisted per browser in localStorage, so each TV keeps its own column set
-// while several show the same comp. Stored as 'on'/'off'; defaults to on (the full view) so an
-// untouched screen looks unchanged.
-function useColumnToggle(key: string): readonly [boolean, () => void] {
-  const [pref, setPref] = usePersistentString(key, 'on');
-  const on = pref !== 'off';
-  return [on, () => setPref(on ? 'off' : 'on')];
-}
-
 type WarmUpDisplayProps = {
   competitionId: string;
   compName: string;
   isTeamCompetition: boolean;
+  kitType: KitType;
   lifts: Lifts;
   platformId: string;
   platformName: string;
@@ -106,6 +99,7 @@ export function WarmUpDisplay({
   competitionId,
   compName,
   isTeamCompetition,
+  kitType,
   lifts,
   platformId,
   platformName,
@@ -158,14 +152,23 @@ export function WarmUpDisplay({
 
   // Per-browser column visibility, so each TV can show its own cut of the same comp. The lifter and
   // attempt columns are the point of the screen, so they are always shown; everything else is optional.
-  const [showLot, toggleLot] = useColumnToggle('warmup:col:lot');
-  const [showBw, toggleBw] = useColumnToggle('warmup:col:bw');
-  const [showClass, toggleClass] = useColumnToggle('warmup:col:class');
-  const [showDiv, toggleDiv] = useColumnToggle('warmup:col:div');
-  const [showRack, toggleRack] = useColumnToggle('warmup:col:rack');
-  const [showBest, toggleBest] = useColumnToggle('warmup:col:best');
-  const [showTotal, toggleTotal] = useColumnToggle('warmup:col:total');
-  const [striped, toggleStriping] = useColumnToggle('warmup:striping');
+  // Lot/BW/class/div/rack/best/total default on (the full view); the sub-total and IPF GL columns are
+  // extras, so they default off.
+  const [showLot, toggleLot] = usePersistentToggle('warmup:col:lot');
+  const [showBw, toggleBw] = usePersistentToggle('warmup:col:bw');
+  const [showClass, toggleClass] = usePersistentToggle('warmup:col:class');
+  const [showDiv, toggleDiv] = usePersistentToggle('warmup:col:div');
+  const [showRack, toggleRack] = usePersistentToggle('warmup:col:rack');
+  const [showBest, toggleBest] = usePersistentToggle('warmup:col:best');
+  const [showTotal, toggleTotal] = usePersistentToggle('warmup:col:total');
+  const [subTotalPref, toggleSubTotal] = usePersistentToggle('warmup:col:subtotal', false);
+  const [showGl, toggleGl] = usePersistentToggle('warmup:col:gl', false);
+  const [striped, toggleStriping] = usePersistentToggle('warmup:striping');
+
+  // The sub-total (best squat + best bench) only means anything when both lifts are contested, so the
+  // option is offered only then and the column is shown after the bench's Best column.
+  const canSubTotal = columnLifts.includes('squat') && columnLifts.includes('bench');
+  const showSubTotal = canSubTotal && subTotalPref;
 
   const columnToggles: BoardOptionToggle[] = [
     { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
@@ -174,7 +177,11 @@ export function WarmUpDisplay({
     { id: 'div', label: 'Division', checked: showDiv, onToggle: toggleDiv },
     { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
     { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest },
+    ...(canSubTotal
+      ? [{ id: 'subtotal', label: 'Sub-total (S+B)', checked: showSubTotal, onToggle: toggleSubTotal }]
+      : []),
     { id: 'total', label: 'Total', checked: showTotal, onToggle: toggleTotal },
+    { id: 'gl', label: 'IPF GL points', checked: showGl, onToggle: toggleGl },
     { id: 'striping', label: 'Row striping', checked: striped, onToggle: toggleStriping },
   ];
 
@@ -237,18 +244,37 @@ export function WarmUpDisplay({
                   </th>
                 ) : null}
                 {columnLifts.map((lift) => (
-                  <LiftHeader key={lift} lift={lift} showRack={showRack} showBest={showBest} />
+                  <Fragment key={lift}>
+                    <LiftHeader lift={lift} showRack={showRack} showBest={showBest} />
+                    {showSubTotal && lift === 'bench' ? (
+                      <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                        S+B
+                      </th>
+                    ) : null}
+                  </Fragment>
                 ))}
                 {showTotal ? (
                   <th scope="col" className={`w-20 text-center ${HEAD}`}>
                     Total
                   </th>
                 ) : null}
+                {showGl ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    IPF GL
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
               {view.roster.map(({ entry, flightName }, index) => {
-                const total = showTotal ? entryTotal(entry) : 0;
+                // The total (best S+B+D) feeds both the Total column and the IPF GL points.
+                const total = showTotal || showGl ? entryTotal(entry) : 0;
+                const subTotal = showSubTotal ? bestForLift(entry.id, 'squat') + bestForLift(entry.id, 'bench') : 0;
+                // IPF GL from the lifter's current total and weigh-in bodyweight; 0 (a dash) with no good
+                // lifts or before weigh-in.
+                const gl = showGl
+                  ? ipfGlPoints({ sex: entry.sex, kitType, bodyweightKg: entry.bodyweightKg ?? 0, liftedKg: total })
+                  : 0;
                 // Band alternate rows when striping is on. The transparent cells show the row tint; the
                 // sticky first column needs its own opaque background, so it carries the same band
                 // (white otherwise, to mask content scrolling beneath it).
@@ -277,22 +303,33 @@ export function WarmUpDisplay({
                       const active = isTeamCompetition ? entry.teamLift === lift : true;
                       const best = active ? bestForLift(entry.id, lift) : 0;
                       return (
-                        <LiftCells
-                          key={lift}
-                          lift={lift}
-                          entry={entry}
-                          active={active}
-                          best={best}
-                          attempts={attempts}
-                          current={view.current}
-                          showRack={showRack}
-                          showBest={showBest}
-                        />
+                        <Fragment key={lift}>
+                          <LiftCells
+                            lift={lift}
+                            entry={entry}
+                            active={active}
+                            best={best}
+                            attempts={attempts}
+                            current={view.current}
+                            showRack={showRack}
+                            showBest={showBest}
+                          />
+                          {showSubTotal && lift === 'bench' ? (
+                            <td className={`text-center font-semibold tabular-nums text-neutral-800 ${CELL}`}>
+                              {subTotal > 0 ? subTotal : '—'}
+                            </td>
+                          ) : null}
+                        </Fragment>
                       );
                     })}
                     {showTotal ? (
                       <td className={`text-center font-bold tabular-nums text-neutral-900 ${CELL}`}>
                         {total > 0 ? total : '—'}
+                      </td>
+                    ) : null}
+                    {showGl ? (
+                      <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
+                        {gl > 0 ? gl.toFixed(2) : '—'}
                       </td>
                     ) : null}
                   </tr>

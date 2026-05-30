@@ -46,6 +46,7 @@ export default async function WarmUpPage({
       competitionId={comp.id}
       compName={comp.name}
       isTeamCompetition={comp.is_team_competition}
+      kitType={comp.kit_type}
       lifts={LIFTS_FOR_EVENT[comp.event_type]}
       platformId={selected.id}
       platformName={selected.name}

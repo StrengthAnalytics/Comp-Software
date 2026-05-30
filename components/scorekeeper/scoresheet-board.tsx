@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Database } from '@/types/database.types';
 import {
@@ -42,7 +42,7 @@ import { updateEntryRackSettingsAction } from '@/actions/entries';
 import { OptionalSelectField } from '@/components/optional-select-field';
 import { SAVE_RETRY_MS } from '@/components/station/save-state';
 import { parseOptionalNumber } from '@/lib/number-input';
-import { usePersistentString } from '@/lib/use-persistent-string';
+import { usePersistentToggle } from '@/lib/use-persistent-toggle';
 import { useOnline } from '@/lib/use-online';
 import type { ActionResult } from '@/types/action-result';
 
@@ -237,12 +237,20 @@ export function ScoresheetBoard({
   // sidebar (~840px), which crushes the wide scoresheet. Full screen reclaims the whole window; Esc or
   // Collapse drops back to the in-flow view (which now scrolls horizontally rather than compressing).
   const [expanded, setExpanded] = useState(true);
-  // View options, toggled from the Options dropdown and remembered per browser. Striping defaults on;
-  // the IPF GL column defaults off (it is an extra column most operators won't want by default).
-  const [stripingPref, setStripingPref] = usePersistentString('scoresheet:striping', 'on');
-  const striped = stripingPref !== 'off';
-  const [glPref, setGlPref] = usePersistentString('scoresheet:gl', 'off');
-  const showGl = glPref === 'on';
+  // View options, toggled from the Options dropdown and remembered per browser (so two operators — or a
+  // scorer and a mirrored display — can show different cuts of the same comp). The lifter and attempt
+  // columns are always shown; everything else is optional. The structural columns default on (the full
+  // sheet); the sub-total and IPF GL columns are extras, so they default off.
+  const [showLot, toggleLot] = usePersistentToggle('scoresheet:col:lot');
+  const [showBw, toggleBw] = usePersistentToggle('scoresheet:col:bw');
+  const [showClass, toggleClass] = usePersistentToggle('scoresheet:col:class');
+  const [showDiv, toggleDiv] = usePersistentToggle('scoresheet:col:div');
+  const [showRack, toggleRack] = usePersistentToggle('scoresheet:col:rack');
+  const [showBest, toggleBest] = usePersistentToggle('scoresheet:col:best');
+  const [showTotal, toggleTotal] = usePersistentToggle('scoresheet:col:total');
+  const [subTotalPref, toggleSubTotal] = usePersistentToggle('scoresheet:col:subtotal', false);
+  const [showGl, toggleGl] = usePersistentToggle('scoresheet:gl', false);
+  const [striped, toggleStriping] = usePersistentToggle('scoresheet:striping');
 
   // Browser connectivity, for gating and flushing the offline outbox. (The realtime channel health in
   // `connection` drives the indicator colour; this boolean is the HTTP-availability signal the server
@@ -286,6 +294,11 @@ export function ScoresheetBoard({
     () => (['squat', 'bench', 'deadlift'] as LiftType[]).filter((lift) => lifts[lift]),
     [lifts],
   );
+
+  // The sub-total (best squat + best bench) only means anything when both lifts are contested, so the
+  // option is offered only then and the column is shown after the bench's Best column.
+  const canSubTotal = columnLifts.includes('squat') && columnLifts.includes('bench');
+  const showSubTotal = canSubTotal && subTotalPref;
 
   const views = useMemo(
     () => buildPlatformViews({ platforms, sessions, flights, entries, attempts }),
@@ -659,18 +672,18 @@ export function ScoresheetBoard({
           </div>
           <BoardOptions
             toggles={[
-              {
-                id: 'striping',
-                label: 'Row striping',
-                checked: striped,
-                onToggle: () => setStripingPref(striped ? 'off' : 'on'),
-              },
-              {
-                id: 'gl',
-                label: 'IPF GL points',
-                checked: showGl,
-                onToggle: () => setGlPref(showGl ? 'off' : 'on'),
-              },
+              { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
+              { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
+              { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
+              { id: 'div', label: 'Division', checked: showDiv, onToggle: toggleDiv },
+              { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
+              { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest },
+              ...(canSubTotal
+                ? [{ id: 'subtotal', label: 'Sub-total (S+B)', checked: showSubTotal, onToggle: toggleSubTotal }]
+                : []),
+              { id: 'total', label: 'Total', checked: showTotal, onToggle: toggleTotal },
+              { id: 'gl', label: 'IPF GL points', checked: showGl, onToggle: toggleGl },
+              { id: 'striping', label: 'Row striping', checked: striped, onToggle: toggleStriping },
             ]}
           />
           <button type="button" onClick={() => setExpanded((value) => !value)} className={GHOST_BUTTON}>
@@ -697,6 +710,14 @@ export function ScoresheetBoard({
               kitType={kitType}
               striped={striped}
               showGl={showGl}
+              showLot={showLot}
+              showBw={showBw}
+              showClass={showClass}
+              showDiv={showDiv}
+              showRack={showRack}
+              showBest={showBest}
+              showTotal={showTotal}
+              showSubTotal={showSubTotal}
               onSetWeight={setWeight}
               onSetResult={setResult}
               onSetRack={setRackSettings}
@@ -722,6 +743,14 @@ function PlatformPanel({
   kitType,
   striped,
   showGl,
+  showLot,
+  showBw,
+  showClass,
+  showDiv,
+  showRack,
+  showBest,
+  showTotal,
+  showSubTotal,
   onSetWeight,
   onSetResult,
   onSetRack,
@@ -733,6 +762,14 @@ function PlatformPanel({
   kitType: KitType;
   striped: boolean;
   showGl: boolean;
+  showLot: boolean;
+  showBw: boolean;
+  showClass: boolean;
+  showDiv: boolean;
+  showRack: boolean;
+  showBest: boolean;
+  showTotal: boolean;
+  showSubTotal: boolean;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
   onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
@@ -788,24 +825,41 @@ function PlatformPanel({
                 <th scope="col" className={`sticky left-0 z-30 min-w-[11rem] border-l-[1.5px] text-left ${HEAD}`}>
                   Lifter
                 </th>
-                <th scope="col" className={`w-12 text-center ${HEAD}`}>
-                  Lot
-                </th>
-                <th scope="col" className={`w-14 text-center ${HEAD}`}>
-                  BW
-                </th>
-                <th scope="col" className={`w-28 text-left ${HEAD}`}>
-                  Class
-                </th>
-                <th scope="col" className={`w-24 text-left ${HEAD}`}>
-                  Div
-                </th>
+                {showLot ? (
+                  <th scope="col" className={`w-12 text-center ${HEAD}`}>
+                    Lot
+                  </th>
+                ) : null}
+                {showBw ? (
+                  <th scope="col" className={`w-14 text-center ${HEAD}`}>
+                    BW
+                  </th>
+                ) : null}
+                {showClass ? (
+                  <th scope="col" className={`w-28 text-left ${HEAD}`}>
+                    Class
+                  </th>
+                ) : null}
+                {showDiv ? (
+                  <th scope="col" className={`w-24 text-left ${HEAD}`}>
+                    Div
+                  </th>
+                ) : null}
                 {columnLifts.map((lift) => (
-                  <FragmentHeader key={lift} lift={lift} />
+                  <Fragment key={lift}>
+                    <FragmentHeader lift={lift} showRack={showRack} showBest={showBest} />
+                    {showSubTotal && lift === 'bench' ? (
+                      <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                        S+B
+                      </th>
+                    ) : null}
+                  </Fragment>
                 ))}
-                <th scope="col" className={`w-20 text-center ${HEAD}`}>
-                  Total
-                </th>
+                {showTotal ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    Total
+                  </th>
+                ) : null}
                 {showGl ? (
                   <th scope="col" className={`w-20 text-center ${HEAD}`}>
                     IPF GL
@@ -815,7 +869,9 @@ function PlatformPanel({
             </thead>
             <tbody>
               {roster.map(({ entry, flightName }, index) => {
-                const total = entryTotal(entry);
+                // The total (best S+B+D) feeds both the Total column and the IPF GL points.
+                const total = showTotal || showGl ? entryTotal(entry) : 0;
+                const subTotal = showSubTotal ? bestForLift(entry.id, 'squat') + bestForLift(entry.id, 'bench') : 0;
                 // IPF GL from the lifter's current total (sum of best lifts) and weigh-in bodyweight.
                 // ipfGlPoints returns 0 with no good lifts or before weigh-in, which renders as a dash.
                 const gl = showGl
@@ -831,31 +887,49 @@ function PlatformPanel({
                     <span className="font-medium text-neutral-900">{entry.lifterName}</span>
                     <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                   </td>
-                  <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.lotNumber ?? '—'}</td>
-                  <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.bodyweightKg ?? '—'}</td>
-                  <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.weightClassName ?? '—'}</td>
-                  <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.divisionName ?? '—'}</td>
+                  {showLot ? (
+                    <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.lotNumber ?? '—'}</td>
+                  ) : null}
+                  {showBw ? (
+                    <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.bodyweightKg ?? '—'}</td>
+                  ) : null}
+                  {showClass ? (
+                    <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.weightClassName ?? '—'}</td>
+                  ) : null}
+                  {showDiv ? (
+                    <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.divisionName ?? '—'}</td>
+                  ) : null}
                   {columnLifts.map((lift) => {
                     const active = isTeamCompetition ? entry.teamLift === lift : true;
                     const best = active ? bestForLift(entry.id, lift) : 0;
                     return (
-                      <FragmentCells
-                        key={lift}
-                        lift={lift}
-                        entry={entry}
-                        active={active}
-                        best={best}
-                        attempts={attempts}
-                        current={current}
-                        onSetWeight={onSetWeight}
-                        onSetResult={onSetResult}
-                        onSetRack={onSetRack}
-                      />
+                      <Fragment key={lift}>
+                        <FragmentCells
+                          lift={lift}
+                          entry={entry}
+                          active={active}
+                          best={best}
+                          attempts={attempts}
+                          current={current}
+                          showRack={showRack}
+                          showBest={showBest}
+                          onSetWeight={onSetWeight}
+                          onSetResult={onSetResult}
+                          onSetRack={onSetRack}
+                        />
+                        {showSubTotal && lift === 'bench' ? (
+                          <td className={`text-center font-semibold tabular-nums text-neutral-800 ${CELL}`}>
+                            {subTotal > 0 ? subTotal : '—'}
+                          </td>
+                        ) : null}
+                      </Fragment>
                     );
                   })}
-                  <td className={`text-center font-semibold tabular-nums text-neutral-900 ${CELL}`}>
-                    {total > 0 ? total : '—'}
-                  </td>
+                  {showTotal ? (
+                    <td className={`text-center font-semibold tabular-nums text-neutral-900 ${CELL}`}>
+                      {total > 0 ? total : '—'}
+                    </td>
+                  ) : null}
                   {showGl ? (
                     <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
                       {gl > 0 ? gl.toFixed(2) : '—'}
@@ -874,10 +948,10 @@ function PlatformPanel({
   );
 }
 
-function FragmentHeader({ lift }: { lift: LiftType }) {
+function FragmentHeader({ lift, showRack, showBest }: { lift: LiftType; showRack: boolean; showBest: boolean }) {
   return (
     <>
-      {liftHasRack(lift) ? (
+      {showRack && liftHasRack(lift) ? (
         <th scope="col" className={`w-24 text-center ${HEAD}`}>
           {LIFT_LABELS[lift]} rack
         </th>
@@ -887,9 +961,11 @@ function FragmentHeader({ lift }: { lift: LiftType }) {
           {attemptNumber === 1 ? `${LIFT_LABELS[lift]} ${attemptNumber}` : String(attemptNumber)}
         </th>
       ))}
-      <th scope="col" className={`w-16 text-center ${HEAD}`}>
-        Best
-      </th>
+      {showBest ? (
+        <th scope="col" className={`w-16 text-center ${HEAD}`}>
+          Best
+        </th>
+      ) : null}
     </>
   );
 }
@@ -901,6 +977,8 @@ function FragmentCells({
   best,
   attempts,
   current,
+  showRack,
+  showBest,
   onSetWeight,
   onSetResult,
   onSetRack,
@@ -911,13 +989,15 @@ function FragmentCells({
   best: number;
   attempts: Map<string, BoardAttempt>;
   current: RunRow | null;
+  showRack: boolean;
+  showBest: boolean;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
   onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
 }) {
   return (
     <>
-      {liftHasRack(lift) ? (
+      {showRack && liftHasRack(lift) ? (
         <td className={`text-center text-xs text-neutral-500 ${CELL}`}>
           {active ? (
             <RackCell entry={entry} lift={lift} onSetRack={onSetRack} />
@@ -956,7 +1036,9 @@ function FragmentCells({
           </td>
         );
       })}
-      <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>{active && best > 0 ? best : '—'}</td>
+      {showBest ? (
+        <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>{active && best > 0 ? best : '—'}</td>
+      ) : null}
     </>
   );
 }
