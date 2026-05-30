@@ -19,6 +19,7 @@ export type BoardEntry = {
   flightId: string | null;
   lotNumber: number | null;
   teamLift: LiftType | null;
+  teamName: string | null;
   bodyweightKg: number | null;
   weightClassName: string | null;
   divisionName: string | null;

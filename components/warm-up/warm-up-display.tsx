@@ -58,6 +58,7 @@ type WarmUpDisplayProps = {
   flights: BoardFlight[];
   weightClasses: NamedOption[];
   divisions: NamedOption[];
+  teams: NamedOption[];
   entries: BoardEntry[];
   attempts: BoardAttempt[];
 };
@@ -107,6 +108,7 @@ export function WarmUpDisplay({
   flights: initialFlights,
   weightClasses,
   divisions,
+  teams,
   entries: initialEntries,
   attempts: initialAttempts,
 }: WarmUpDisplayProps) {
@@ -117,6 +119,7 @@ export function WarmUpDisplay({
     initialFlights,
     weightClasses,
     divisions,
+    teams,
   });
 
   const columnLifts = useMemo(
@@ -154,6 +157,7 @@ export function WarmUpDisplay({
   // attempt columns are the point of the screen, so they are always shown; everything else is optional.
   // Lot/BW/class/div/rack/best/total default on (the full view); the sub-total and IPF GL columns are
   // extras, so they default off.
+  const [teamPref, toggleTeam] = usePersistentToggle('warmup:col:team');
   const [showLot, toggleLot] = usePersistentToggle('warmup:col:lot');
   const [showBw, toggleBw] = usePersistentToggle('warmup:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('warmup:col:class');
@@ -165,12 +169,20 @@ export function WarmUpDisplay({
   const [showGl, toggleGl] = usePersistentToggle('warmup:col:gl', false);
   const [striped, toggleStriping] = usePersistentToggle('warmup:striping');
 
-  // The sub-total (best squat + best bench) only means anything when both lifts are contested, so the
-  // option is offered only then and the column is shown after the bench's Best column.
-  const canSubTotal = columnLifts.includes('squat') && columnLifts.includes('bench');
+  // The sub-total (best squat + best bench) only means anything when both lifts are contested by the
+  // same lifter, so the option is offered only then and the column is shown after the bench's Best
+  // column. Excluded for team comps, where each member contests a single assigned lift — a squat-only
+  // member has no bench to combine, so an "S+B" column would just relabel their one lift.
+  const canSubTotal =
+    !isTeamCompetition && columnLifts.includes('squat') && columnLifts.includes('bench');
   const showSubTotal = canSubTotal && subTotalPref;
 
+  // The team column only applies to team comps (the lifter's team sits right after their name); the
+  // toggle is offered only then and defaults on.
+  const showTeam = isTeamCompetition && teamPref;
+
   const columnToggles: BoardOptionToggle[] = [
+    ...(isTeamCompetition ? [{ id: 'team', label: 'Team', checked: showTeam, onToggle: toggleTeam }] : []),
     { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
     { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
     { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
@@ -223,6 +235,11 @@ export function WarmUpDisplay({
                 <th scope="col" className={`sticky left-0 z-30 min-w-[12rem] border-l text-left ${HEAD}`}>
                   Lifter
                 </th>
+                {showTeam ? (
+                  <th scope="col" className={`w-32 text-left ${HEAD}`}>
+                    Team
+                  </th>
+                ) : null}
                 {showLot ? (
                   <th scope="col" className={`w-12 text-center ${HEAD}`}>
                     Lot
@@ -287,6 +304,9 @@ export function WarmUpDisplay({
                       <span className="font-semibold text-neutral-900">{entry.lifterName}</span>
                       <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                     </td>
+                    {showTeam ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.teamName ?? '—'}</td>
+                    ) : null}
                     {showLot ? (
                       <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.lotNumber ?? '—'}</td>
                     ) : null}

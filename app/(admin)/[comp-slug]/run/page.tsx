@@ -12,7 +12,9 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
     notFound();
   }
 
-  const { platforms, sessions, flights, weightClasses, divisions, entries, attempts } = await loadBoardData(comp.id);
+  const { platforms, sessions, flights, weightClasses, divisions, teams, entries, attempts } = await loadBoardData(
+    comp.id,
+  );
 
   return (
     <div className="space-y-8">
@@ -30,6 +32,7 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
         flights={flights}
         weightClasses={weightClasses}
         divisions={divisions}
+        teams={teams}
         entries={entries}
         attempts={attempts}
       />

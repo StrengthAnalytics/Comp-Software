@@ -24,7 +24,9 @@ export default async function WarmUpPage({
     notFound();
   }
 
-  const { platforms, sessions, flights, weightClasses, divisions, entries, attempts } = await loadBoardData(comp.id);
+  const { platforms, sessions, flights, weightClasses, divisions, teams, entries, attempts } = await loadBoardData(
+    comp.id,
+  );
 
   const { platform: requested } = await searchParams;
   const requestedId = Array.isArray(requested) ? requested[0] : requested;
@@ -54,6 +56,7 @@ export default async function WarmUpPage({
       flights={flights}
       weightClasses={weightClasses}
       divisions={divisions}
+      teams={teams}
       entries={entries}
       attempts={attempts}
     />
