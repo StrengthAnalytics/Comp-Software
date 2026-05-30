@@ -51,6 +51,7 @@ This project is developed online-only against the hosted Supabase dev project an
   /(display)                    ← auth-gated full-screen venue displays, no chrome (sidebar/header)
     /[comp-slug]
       /loading                  ← platform loading-crew display (per-platform via ?platform=)
+      /warm-up                  ← warm-up room board: read-only run scoresheet + up-next (per-platform via ?platform=)
   /(overlay)                    ← OBS browser sources, transparent bg, fixed dimensions
     /[comp-slug]
       /scoreboard               ← current scoreboard overlay
