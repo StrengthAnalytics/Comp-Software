@@ -210,7 +210,10 @@ export async function setAttemptResultAction(input: SetAttemptResultInput): Prom
     } else if (attempt.result === parsed.data.result && attempt.decided_at !== null) {
       decidedAt = attempt.decided_at;
     } else {
-      decidedAt = new Date().toISOString();
+      // A genuine new/changed decision: prefer the client's mark time so a result recorded offline
+      // anchors the countdown to when the operator actually marked it (the client stamps this on
+      // click), falling back to now for a caller that doesn't supply one.
+      decidedAt = parsed.data.decidedAt ?? new Date().toISOString();
     }
 
     const { error } = await supabase

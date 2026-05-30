@@ -30,11 +30,17 @@ export type SetAttemptWeightInput = z.infer<typeof setAttemptWeightSchema>;
 // attempt number) rather than its database id, so an attempt created offline — which has no server id
 // yet — can still have a result recorded and synced on reconnect. Any result is accepted so an
 // operator can correct a call, including back to 'pending' to reopen it.
+//
+// `decidedAt` is the moment the operator marked the call, supplied by the client so a good/no lift
+// recorded offline anchors the next-attempt countdown to when it was actually marked rather than to
+// the reconnect time the server would otherwise stamp. Optional (older/other callers omit it) and only
+// honoured for a genuine new/changed decision — see setAttemptResultAction.
 export const setAttemptResultSchema = z.object({
   competitionId: z.uuid(),
   entryId: z.uuid(),
   lift: z.enum(LIFT_VALUES),
   attemptNumber: z.number().int().min(1).max(ATTEMPTS_PER_LIFT),
   result: z.enum(ATTEMPT_RESULT_VALUES),
+  decidedAt: z.iso.datetime().nullable().optional(),
 });
 export type SetAttemptResultInput = z.infer<typeof setAttemptResultSchema>;
