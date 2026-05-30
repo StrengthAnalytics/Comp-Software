@@ -28,6 +28,7 @@ import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
 import { loadOutbox, saveOutbox, type PendingOp, type RackPatch } from '@/lib/scorekeeper/outbox';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
+import { BoardOptions } from '@/components/scorekeeper/board-options';
 import type {
   BoardAttempt,
   BoardEntry,
@@ -709,75 +710,6 @@ export function ScoresheetBoard({
           </p>
         </div>
       )}
-    </div>
-  );
-}
-
-// A view-option toggle shown in the Options dropdown.
-type BoardOptionToggle = { id: string; label: string; checked: boolean; onToggle: () => void };
-
-// A small dropdown beside the Collapse button holding scoresheet view options (row striping, IPF GL
-// column). The trigger toggles it; clicking outside or pressing Escape closes it.
-function BoardOptions({ toggles }: { toggles: BoardOptionToggle[] }) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onPointerDown = (event: PointerEvent) => {
-      // event.target is typed EventTarget | null; a pointerdown always originates from a DOM Node,
-      // so the cast is safe and Node.contains accepts it.
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    // Escape closes the menu. Listen in the capture phase and stop propagation so it beats the
-    // board's own keydown handler (which would otherwise collapse the whole full-screen view).
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        setOpen(false);
-      }
-    };
-    globalThis.addEventListener('pointerdown', onPointerDown);
-    globalThis.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      globalThis.removeEventListener('pointerdown', onPointerDown);
-      globalThis.removeEventListener('keydown', onKeyDown, true);
-    };
-  }, [open]);
-
-  return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-haspopup="true"
-        aria-expanded={open}
-        className={GHOST_BUTTON}
-      >
-        Options ▾
-      </button>
-      {open ? (
-        <div className="absolute right-0 z-50 mt-1 w-48 rounded-md border border-neutral-200 bg-white p-1 shadow-lg">
-          {toggles.map((toggle) => (
-            <label
-              key={toggle.id}
-              className="flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
-            >
-              <span>{toggle.label}</span>
-              <input
-                type="checkbox"
-                checked={toggle.checked}
-                onChange={toggle.onToggle}
-                className="h-4 w-4 accent-neutral-800"
-              />
-            </label>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }

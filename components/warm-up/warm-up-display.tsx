@@ -13,6 +13,8 @@ import {
 } from '@/lib/attempts/running-order';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
+import { BoardOptions, type BoardOptionToggle } from '@/components/scorekeeper/board-options';
+import { usePersistentString } from '@/lib/use-persistent-string';
 import type {
   BoardAttempt,
   BoardEntry,
@@ -39,6 +41,18 @@ const CELL = 'border-b border-r border-neutral-300 px-2 py-1 align-middle';
 // Zebra band for alternate roster rows, single-sourced so the row and its opaque sticky first column
 // can never drift to different shades.
 const ROW_BAND = 'bg-neutral-50';
+// Options-dropdown trigger styling for the dark header (the shared BoardOptions defaults to a
+// light-toolbar trigger).
+const DARK_TRIGGER = 'rounded border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-100 hover:bg-neutral-800';
+
+// A boolean view toggle persisted per browser in localStorage, so each TV keeps its own column set
+// while several show the same comp. Stored as 'on'/'off'; defaults to on (the full view) so an
+// untouched screen looks unchanged.
+function useColumnToggle(key: string): readonly [boolean, () => void] {
+  const [pref, setPref] = usePersistentString(key, 'on');
+  const on = pref !== 'off';
+  return [on, () => setPref(on ? 'off' : 'on')];
+}
 
 type WarmUpDisplayProps = {
   competitionId: string;
@@ -142,6 +156,28 @@ export function WarmUpDisplay({
     return total;
   };
 
+  // Per-browser column visibility, so each TV can show its own cut of the same comp. The lifter and
+  // attempt columns are the point of the screen, so they are always shown; everything else is optional.
+  const [showLot, toggleLot] = useColumnToggle('warmup:col:lot');
+  const [showBw, toggleBw] = useColumnToggle('warmup:col:bw');
+  const [showClass, toggleClass] = useColumnToggle('warmup:col:class');
+  const [showDiv, toggleDiv] = useColumnToggle('warmup:col:div');
+  const [showRack, toggleRack] = useColumnToggle('warmup:col:rack');
+  const [showBest, toggleBest] = useColumnToggle('warmup:col:best');
+  const [showTotal, toggleTotal] = useColumnToggle('warmup:col:total');
+  const [striped, toggleStriping] = useColumnToggle('warmup:striping');
+
+  const columnToggles: BoardOptionToggle[] = [
+    { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
+    { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
+    { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
+    { id: 'div', label: 'Division', checked: showDiv, onToggle: toggleDiv },
+    { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
+    { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest },
+    { id: 'total', label: 'Total', checked: showTotal, onToggle: toggleTotal },
+    { id: 'striping', label: 'Row striping', checked: striped, onToggle: toggleStriping },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-white text-neutral-900">
       <header className="flex shrink-0 items-center justify-between gap-4 bg-neutral-900 px-6 py-3 text-white">
@@ -151,11 +187,14 @@ export function WarmUpDisplay({
           </p>
           <h1 className="truncate text-3xl font-bold tracking-tight">{headerMain}</h1>
         </div>
-        <div className="shrink-0 text-right">
-          {view.sessionName ? (
-            <p className="text-sm font-medium uppercase tracking-wide text-neutral-300">{view.sessionName}</p>
-          ) : null}
-          {headerProgress ? <p className="text-2xl font-semibold tabular-nums">{headerProgress}</p> : null}
+        <div className="flex shrink-0 items-start gap-4">
+          <div className="text-right">
+            {view.sessionName ? (
+              <p className="text-sm font-medium uppercase tracking-wide text-neutral-300">{view.sessionName}</p>
+            ) : null}
+            {headerProgress ? <p className="text-2xl font-semibold tabular-nums">{headerProgress}</p> : null}
+          </div>
+          <BoardOptions toggles={columnToggles} triggerClassName={DARK_TRIGGER} />
         </div>
       </header>
 
@@ -177,33 +216,43 @@ export function WarmUpDisplay({
                 <th scope="col" className={`sticky left-0 z-30 min-w-[12rem] border-l text-left ${HEAD}`}>
                   Lifter
                 </th>
-                <th scope="col" className={`w-12 text-center ${HEAD}`}>
-                  Lot
-                </th>
-                <th scope="col" className={`w-16 text-center ${HEAD}`}>
-                  BW
-                </th>
-                <th scope="col" className={`w-28 text-left ${HEAD}`}>
-                  Class
-                </th>
-                <th scope="col" className={`w-24 text-left ${HEAD}`}>
-                  Div
-                </th>
+                {showLot ? (
+                  <th scope="col" className={`w-12 text-center ${HEAD}`}>
+                    Lot
+                  </th>
+                ) : null}
+                {showBw ? (
+                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                    BW
+                  </th>
+                ) : null}
+                {showClass ? (
+                  <th scope="col" className={`w-28 text-left ${HEAD}`}>
+                    Class
+                  </th>
+                ) : null}
+                {showDiv ? (
+                  <th scope="col" className={`w-24 text-left ${HEAD}`}>
+                    Div
+                  </th>
+                ) : null}
                 {columnLifts.map((lift) => (
-                  <LiftHeader key={lift} lift={lift} />
+                  <LiftHeader key={lift} lift={lift} showRack={showRack} showBest={showBest} />
                 ))}
-                <th scope="col" className={`w-20 text-center ${HEAD}`}>
-                  Total
-                </th>
+                {showTotal ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    Total
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
               {view.roster.map(({ entry, flightName }, index) => {
-                const total = entryTotal(entry);
-                // Band alternate rows. The transparent cells show the row tint; the sticky first
-                // column needs its own opaque background, so it carries the same band (white otherwise,
-                // to mask content scrolling beneath it).
-                const banded = index % 2 === 1;
+                const total = showTotal ? entryTotal(entry) : 0;
+                // Band alternate rows when striping is on. The transparent cells show the row tint; the
+                // sticky first column needs its own opaque background, so it carries the same band
+                // (white otherwise, to mask content scrolling beneath it).
+                const banded = striped && index % 2 === 1;
                 return (
                   <tr key={entry.id} className={banded ? ROW_BAND : ''}>
                     <td
@@ -212,10 +261,18 @@ export function WarmUpDisplay({
                       <span className="font-semibold text-neutral-900">{entry.lifterName}</span>
                       <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                     </td>
-                    <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.lotNumber ?? '—'}</td>
-                    <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.bodyweightKg ?? '—'}</td>
-                    <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.weightClassName ?? '—'}</td>
-                    <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.divisionName ?? '—'}</td>
+                    {showLot ? (
+                      <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.lotNumber ?? '—'}</td>
+                    ) : null}
+                    {showBw ? (
+                      <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.bodyweightKg ?? '—'}</td>
+                    ) : null}
+                    {showClass ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.weightClassName ?? '—'}</td>
+                    ) : null}
+                    {showDiv ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.divisionName ?? '—'}</td>
+                    ) : null}
                     {columnLifts.map((lift) => {
                       const active = isTeamCompetition ? entry.teamLift === lift : true;
                       const best = active ? bestForLift(entry.id, lift) : 0;
@@ -228,12 +285,16 @@ export function WarmUpDisplay({
                           best={best}
                           attempts={attempts}
                           current={view.current}
+                          showRack={showRack}
+                          showBest={showBest}
                         />
                       );
                     })}
-                    <td className={`text-center font-bold tabular-nums text-neutral-900 ${CELL}`}>
-                      {total > 0 ? total : '—'}
-                    </td>
+                    {showTotal ? (
+                      <td className={`text-center font-bold tabular-nums text-neutral-900 ${CELL}`}>
+                        {total > 0 ? total : '—'}
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })}
@@ -428,10 +489,10 @@ function PositionCard({ label, card, highlight }: { label: string; card: Positio
   );
 }
 
-function LiftHeader({ lift }: { lift: LiftType }) {
+function LiftHeader({ lift, showRack, showBest }: { lift: LiftType; showRack: boolean; showBest: boolean }) {
   return (
     <>
-      {liftHasRack(lift) ? (
+      {showRack && liftHasRack(lift) ? (
         <th scope="col" className={`w-24 text-center ${HEAD}`}>
           {LIFT_LABELS[lift]} rack
         </th>
@@ -441,9 +502,11 @@ function LiftHeader({ lift }: { lift: LiftType }) {
           {attemptNumber === 1 ? `${LIFT_LABELS[lift]} ${attemptNumber}` : String(attemptNumber)}
         </th>
       ))}
-      <th scope="col" className={`w-16 text-center ${HEAD}`}>
-        Best
-      </th>
+      {showBest ? (
+        <th scope="col" className={`w-16 text-center ${HEAD}`}>
+          Best
+        </th>
+      ) : null}
     </>
   );
 }
@@ -458,6 +521,8 @@ function LiftCells({
   best,
   attempts,
   current,
+  showRack,
+  showBest,
 }: {
   lift: LiftType;
   entry: BoardEntry;
@@ -465,10 +530,12 @@ function LiftCells({
   best: number;
   attempts: Map<string, BoardAttempt>;
   current: WarmUpView['current'];
+  showRack: boolean;
+  showBest: boolean;
 }) {
   return (
     <>
-      {liftHasRack(lift) ? (
+      {showRack && liftHasRack(lift) ? (
         <td className={`whitespace-nowrap text-center text-xs text-neutral-500 ${CELL}`}>
           {active ? rackText(entry, lift) : <span className="text-neutral-300">—</span>}
         </td>
@@ -488,7 +555,9 @@ function LiftCells({
           </td>
         );
       })}
-      <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>{active && best > 0 ? best : '—'}</td>
+      {showBest ? (
+        <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>{active && best > 0 ? best : '—'}</td>
+      ) : null}
     </>
   );
 }
