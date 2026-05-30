@@ -81,7 +81,7 @@ Which screens subscribe to which tables.
 | `/(admin)/[comp]/run` | attempts, entries, flights | `competition_id` |
 | `/(display)/[comp]/loading` | attempts, entries, flights | `competition_id` (display scoped to one platform via `?platform`) |
 | `/(display)/[comp]/warm-up` | attempts, entries, flights | `competition_id` (display scoped to one platform via `?platform`) |
-| `/(public)/[comp]/warm-up-public` | attempts, entries, flights | `competition_id` (public warm-up board, scoped to one platform via `?platform`; anon, RLS-gated to public comps) |
+| `/(public)/[comp]/live/warm-up` | attempts, entries, flights | `competition_id` (public warm-up board, scoped to one platform via `?platform`; anon, RLS-gated to public comps) |
 | `/(admin)/[comp]/rack-heights` | entries, flights | `competition_id` |
 | `/(admin)/[comp]/flights` | flights, entries | `competition_id` |
 | `/(overlay)/[comp]/scoreboard` | attempts, entries | `competition_id` + current session |
