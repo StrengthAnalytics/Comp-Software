@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Database } from '@/types/database.types';
 import {
   ATTEMPTS_PER_LIFT,
@@ -304,6 +305,11 @@ export function ScoresheetBoard({
   const [pendingCount, setPendingCount] = useState(0);
   const flushingRef = useRef(false);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set when a queued op is rejected deterministically by the server (e.g. the progression guard). The
+  // optimistic state still shows the refused value, so once the queue has drained we re-pull the
+  // authoritative server snapshot to converge — see flush().
+  const needsReconcileRef = useRef(false);
+  const router = useRouter();
   // The flush is recreated each render (closing over the latest state setters); a ref lets the effects
   // and handlers call the current one without re-subscribing, mirroring the realtime callback pattern.
   const flushRef = useRef<() => void>(() => {});
@@ -405,8 +411,9 @@ export function ScoresheetBoard({
 
   // Drains the outbox: weights first, then racks, then results, so an attempt created offline exists
   // before its result is replayed. A transport failure (still offline / server down) stops the drain
-  // and leaves the rest queued; a deterministic rejection (e.g. the progression guard) drops that op
-  // and surfaces the message, leaving the operator's typed value on screen to fix. One flush runs at a
+  // and leaves the rest queued; a deterministic rejection (e.g. the progression guard) drops that op,
+  // surfaces the message, and — because the optimistic state still shows the refused value — flags a
+  // reconcile so the board re-pulls server truth once the queue has fully drained. One flush runs at a
   // time; ops that arrive mid-flush are picked up by a follow-up drain, and a transient failure
   // schedules a retry so a passing blip self-heals.
   async function flush() {
@@ -429,7 +436,16 @@ export function ScoresheetBoard({
         ...queued.filter(([, op]) => op.kind === 'rack'),
         ...queued.filter(([, op]) => op.kind === 'result'),
       ];
+      // Cells whose weight op was rejected this drain. Since weights are ordered before results, a
+      // result for such a cell can be skipped: its attempt was never created, so the send would only
+      // fail with a confusing "declare a weight" message. Drop it and let the reconcile re-pull truth.
+      const rejectedWeightCells = new Set<string>();
       for (const [key, op] of ordered) {
+        if (op.kind === 'result' && rejectedWeightCells.has(attemptKey(op.entryId, op.lift, op.attemptNumber))) {
+          dropPending(key);
+          removedAny = true;
+          continue;
+        }
         let result: ActionResult<unknown>;
         try {
           result = await sendOp(op);
@@ -442,6 +458,10 @@ export function ScoresheetBoard({
         removedAny = true;
         if (result.status === 'error') {
           setError(readError(result));
+          needsReconcileRef.current = true;
+          if (op.kind === 'weight') {
+            rejectedWeightCells.add(attemptKey(op.entryId, op.lift, op.attemptNumber));
+          }
         }
       }
     } finally {
@@ -456,6 +476,13 @@ export function ScoresheetBoard({
       } else if (transportFailed) {
         scheduleRetry();
       }
+    } else if (pendingOpsRef.current.size === 0 && needsReconcileRef.current) {
+      // The queue has fully drained but a rejection left local state showing a value the server
+      // refused; re-pull the authoritative snapshot so the run screen (the source of truth every other
+      // screen reads) converges to the database instead of holding the rejected edit. Deferred until
+      // the queue is empty so it can't wipe still-pending optimistic edits.
+      needsReconcileRef.current = false;
+      router.refresh();
     }
   }
   flushRef.current = () => void flush();
@@ -521,8 +548,9 @@ export function ScoresheetBoard({
         if (!existing) {
           continue;
         }
-        const decidedAt = op.result === 'good_lift' || op.result === 'no_lift' ? new Date().toISOString() : null;
-        next.set(key, { ...existing, result: op.result, decidedAt });
+        // Replay the original decision time so a good/no-lift's next-attempt countdown anchors to when
+        // the operator actually marked it, not to this reload.
+        next.set(key, { ...existing, result: op.result, decidedAt: op.decidedAt });
       }
       return next;
     });
@@ -616,6 +644,7 @@ export function ScoresheetBoard({
       lift: attempt.lift,
       attemptNumber: attempt.attemptNumber,
       result,
+      decidedAt,
     });
   }
 

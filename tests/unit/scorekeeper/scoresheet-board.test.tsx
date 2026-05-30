@@ -4,7 +4,12 @@ import type { BoardEntry, BoardFlight, BoardPlatform, BoardSession } from '@/lib
 
 // The run screen's writes and its realtime subscriptions are the only things that reach the network;
 // stub them so the test drives the offline/online behaviour deterministically. The subscription hook is
-// a no-op (no websocket), and the three server actions are spies whose resolution we control.
+// a no-op (no websocket), the three server actions are spies whose resolution we control, and the
+// router's refresh (used to reconcile after a rejected save) is a spy.
+const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: refreshMock }),
+}));
 vi.mock('@/actions/attempts', () => ({
   setAttemptWeightAction: vi.fn(),
   setAttemptResultAction: vi.fn(),
@@ -179,5 +184,43 @@ describe('ScoresheetBoard offline resilience', () => {
     // retained for the scheduled retry.
     await waitFor(() => expect(weightAction).toHaveBeenCalled());
     expect(squatOpenerCell()).toHaveTextContent('100');
+  });
+
+  it('reconciles to the server (and does not retry) when a save is rejected deterministically', async () => {
+    weightAction.mockResolvedValue({
+      status: 'error',
+      message: 'After a good lift, the next attempt must be heavier than 105 kg.',
+    });
+    renderBoard(); // online
+
+    enterSquatOpener('100');
+
+    // The rejected op is sent once, surfaces the message, and is not retried; a server re-pull is
+    // requested so the board converges to the database rather than holding the refused value.
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    expect(weightAction).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/must be heavier than 105 kg/)).toBeInTheDocument();
+  });
+
+  it('does not waste a call recording a result whose offline weight is rejected on reconnect', async () => {
+    weightAction.mockResolvedValue({
+      status: 'error',
+      message: 'After a good lift, the next attempt must be heavier than 105 kg.',
+    });
+    renderBoard();
+    setOnline(false);
+
+    enterSquatOpener('100');
+    fireEvent.click(screen.getByLabelText(/Good lift for Smith, John/));
+    expect(weightAction).not.toHaveBeenCalled();
+    expect(resultAction).not.toHaveBeenCalled();
+
+    setOnline(true);
+
+    // The weight is rejected, so the dependent result is dropped without being sent (its attempt was
+    // never created), and the board re-pulls server truth.
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    expect(weightAction).toHaveBeenCalledTimes(1);
+    expect(resultAction).not.toHaveBeenCalled();
   });
 });

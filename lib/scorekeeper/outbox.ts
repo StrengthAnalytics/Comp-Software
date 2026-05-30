@@ -22,7 +22,7 @@ export type RackPatch =
 // to be replayed when the connection returns.
 export type PendingOp =
   | { kind: 'weight'; entryId: string; lift: LiftType; attemptNumber: number; weightKg: number }
-  | { kind: 'result'; entryId: string; lift: LiftType; attemptNumber: number; result: AttemptResult }
+  | { kind: 'result'; entryId: string; lift: LiftType; attemptNumber: number; result: AttemptResult; decidedAt: string | null }
   | { kind: 'rack'; entryId: string; patch: RackPatch };
 
 // localStorage is an untrusted boundary (a stale build, a tampered value, a corrupt write): validate
@@ -44,11 +44,19 @@ const rackPatchSchema = z.discriminatedUnion('lift', [
 ]);
 const pendingOpSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('weight'), entryId: z.string(), lift: liftSchema, attemptNumber: z.number().int(), weightKg: z.number() }),
-  z.object({ kind: z.literal('result'), entryId: z.string(), lift: liftSchema, attemptNumber: z.number().int(), result: resultSchema }),
+  z.object({
+    kind: z.literal('result'),
+    entryId: z.string(),
+    lift: liftSchema,
+    attemptNumber: z.number().int(),
+    result: resultSchema,
+    decidedAt: z.string().nullable(),
+  }),
   z.object({ kind: z.literal('rack'), entryId: z.string(), patch: rackPatchSchema }),
 ]);
-// Stored as the Map's [key, op] entries so insertion order — which the flush relies on — round-trips.
-const storedOutboxSchema = z.array(z.tuple([z.string(), pendingOpSchema]));
+// One stored Map entry: [key, op]. The whole outbox is persisted as an array of these so the Map's
+// insertion order — which the flush relies on — round-trips.
+const storedEntrySchema = z.tuple([z.string(), pendingOpSchema]);
 
 const STORAGE_PREFIX = 'scoresheet:outbox:';
 
@@ -66,8 +74,10 @@ function getStorage(): Storage | null {
   }
 }
 
-// Restores the persisted outbox for a competition (empty when there is none, or when the stored value
-// is missing/corrupt — corrupt data is cleared so it can't fail every load).
+// Restores the persisted outbox for a competition. Each stored entry is validated independently and
+// only the valid ones are kept, so a single malformed op — most realistically an op shape from an
+// older build after a schema change — can't discard the whole queue of un-synced edits. Unparseable or
+// non-array data is dropped wholesale; a partially-bad array is cleaned and rewritten.
 export function loadOutbox(competitionId: string): Map<string, PendingOp> {
   const storage = getStorage();
   if (!storage) {
@@ -78,17 +88,33 @@ export function loadOutbox(competitionId: string): Map<string, PendingOp> {
   if (!raw) {
     return new Map();
   }
+  let items: unknown;
   try {
-    const parsed = storedOutboxSchema.safeParse(JSON.parse(raw));
-    if (!parsed.success) {
-      storage.removeItem(key);
-      return new Map();
-    }
-    return new Map(parsed.data);
+    items = JSON.parse(raw);
   } catch {
     storage.removeItem(key);
     return new Map();
   }
+  if (!Array.isArray(items)) {
+    storage.removeItem(key);
+    return new Map();
+  }
+  const valid: [string, PendingOp][] = [];
+  let droppedAny = false;
+  for (const item of items) {
+    const entry = storedEntrySchema.safeParse(item);
+    if (entry.success) {
+      valid.push(entry.data);
+    } else {
+      droppedAny = true;
+    }
+  }
+  const ops = new Map(valid);
+  // Rewrite the cleaned set (removing the key if nothing valid remained) so a bad entry isn't re-read.
+  if (droppedAny) {
+    saveOutbox(competitionId, ops);
+  }
+  return ops;
 }
 
 // Persists the outbox, removing the key entirely once it is empty so a synced session leaves nothing
