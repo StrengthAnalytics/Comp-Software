@@ -31,7 +31,15 @@ export type BoardData = {
 // classes, divisions, entries (with rack settings) and attempts — mapped into the flat Board* shapes
 // the client surfaces consume. Shared by the run screen and the loading-crew display so both seed
 // from one identical query set (and then reconcile via the same realtime subscriptions).
-export async function loadBoardData(competitionId: string): Promise<BoardData> {
+//
+// `publicView` sources lifter names from the PII-free `public_lifters` view instead of the base
+// `lifters` table (which anon cannot read — RLS revokes it). The public warm-up board passes it so the
+// same snapshot loads for an anonymous visitor; every other table here already has an anon read policy
+// scoped to publicly-visible comps, so the rest of the query set is unchanged.
+export async function loadBoardData(
+  competitionId: string,
+  { publicView = false }: { publicView?: boolean } = {},
+): Promise<BoardData> {
   const supabase = await createClient();
 
   const [
@@ -71,13 +79,25 @@ export async function loadBoardData(competitionId: string): Promise<BoardData> {
   ]);
 
   // The generated types carry no relationships, so lifter names are joined in a second query rather
-  // than an embedded select, matching the rest of the codebase.
+  // than an embedded select, matching the rest of the codebase. The public view's columns are all
+  // nullable, so the joined shape is widened to match and the nulls are coalesced when mapping below.
+  type LifterNameRow = { id: string | null; first_name: string | null; surname: string | null; gender: string | null };
   const lifterIds = [...new Set((entryRows ?? []).map((row) => row.lifter_id))];
-  const { data: lifterRows } =
-    lifterIds.length > 0
-      ? await supabase.from('lifters').select('id, first_name, surname, gender').in('id', lifterIds)
-      : { data: [] as { id: string; first_name: string; surname: string; gender: string | null }[] };
-  const lifterById = new Map((lifterRows ?? []).map((lifter) => [lifter.id, lifter]));
+  let lifterRows: LifterNameRow[] = [];
+  if (lifterIds.length > 0) {
+    // Branch on the source table rather than passing a union to `.from()`, which the typed client's
+    // per-table overloads don't resolve cleanly.
+    if (publicView) {
+      const { data } = await supabase.from('public_lifters').select('id, first_name, surname, gender').in('id', lifterIds);
+      lifterRows = data ?? [];
+    } else {
+      const { data } = await supabase.from('lifters').select('id, first_name, surname, gender').in('id', lifterIds);
+      lifterRows = data ?? [];
+    }
+  }
+  const lifterById = new Map(
+    lifterRows.flatMap((lifter) => (lifter.id ? [[lifter.id, lifter] as const] : [])),
+  );
   const weightClassById = new Map((weightClassRows ?? []).map((weightClass) => [weightClass.id, weightClass.name]));
   const divisionById = new Map((divisionRows ?? []).map((division) => [division.id, division.name]));
   const teamNameById = new Map((teamRows ?? []).map((team) => [team.id, team.name]));
@@ -105,7 +125,7 @@ export async function loadBoardData(competitionId: string): Promise<BoardData> {
     const lifter = lifterById.get(row.lifter_id);
     return {
       id: row.id,
-      lifterName: lifter ? formatLifterName(lifter.surname, lifter.first_name) : '—',
+      lifterName: lifter ? formatLifterName(lifter.surname ?? '', lifter.first_name ?? '') : '—',
       sex: asSex(lifter?.gender ?? null),
       flightId: row.flight_id,
       lotNumber: row.lot_number,

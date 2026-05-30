@@ -62,6 +62,7 @@ This project is developed online-only against the hosted Supabase dev project an
     /[comp-slug]                ← comp landing page
     /[comp-slug]/live           ← live scoreboard for venue TVs and socials
     /[comp-slug]/results        ← final results
+    /[comp-slug]/warm-up-public ← public, sign-in-free warm-up board (per-platform via ?platform=)
   /auth                         ← sign-in (email + password; OTP for production)
   /account                      ← profile management
 /components                     ← shared UI
