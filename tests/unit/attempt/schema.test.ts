@@ -78,4 +78,27 @@ describe('setAttemptResultSchema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('accepts an optional decidedAt as an ISO timestamp, null, or omitted', () => {
+    const base = { competitionId: uuid, entryId: uuid, lift: 'squat', attemptNumber: 1, result: 'good_lift' } as const;
+    // Omitted (older/other callers don't supply it).
+    expect(setAttemptResultSchema.safeParse(base).success).toBe(true);
+    // The client stamps new Date().toISOString() on a decision.
+    expect(setAttemptResultSchema.safeParse({ ...base, decidedAt: '2026-05-30T10:00:00.000Z' }).success).toBe(true);
+    // Null clears it (a non-decision / reopened call).
+    expect(setAttemptResultSchema.safeParse({ ...base, decidedAt: null }).success).toBe(true);
+  });
+
+  it('rejects a decidedAt that is not an ISO datetime', () => {
+    expect(
+      setAttemptResultSchema.safeParse({
+        competitionId: uuid,
+        entryId: uuid,
+        lift: 'squat',
+        attemptNumber: 1,
+        result: 'good_lift',
+        decidedAt: 'yesterday',
+      }).success,
+    ).toBe(false);
+  });
 });

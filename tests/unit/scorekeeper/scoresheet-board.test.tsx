@@ -4,7 +4,12 @@ import type { BoardEntry, BoardFlight, BoardPlatform, BoardSession } from '@/lib
 
 // The run screen's writes and its realtime subscriptions are the only things that reach the network;
 // stub them so the test drives the offline/online behaviour deterministically. The subscription hook is
-// a no-op (no websocket), and the three server actions are spies whose resolution we control.
+// a no-op (no websocket), the three server actions are spies whose resolution we control, and the
+// router's refresh (used to reconcile after a rejected save) is a spy.
+const { refreshMock } = vi.hoisted(() => ({ refreshMock: vi.fn() }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: refreshMock }),
+}));
 vi.mock('@/actions/attempts', () => ({
   setAttemptWeightAction: vi.fn(),
   setAttemptResultAction: vi.fn(),
@@ -158,15 +163,55 @@ describe('ScoresheetBoard offline resilience', () => {
 
     await waitFor(() => expect(resultAction).toHaveBeenCalledTimes(1));
     expect(weightAction).toHaveBeenCalledTimes(1);
-    expect(resultAction).toHaveBeenCalledWith({
-      competitionId: COMP_ID,
-      entryId: 'entry-1',
-      lift: 'squat',
-      attemptNumber: 1,
-      result: 'good_lift',
-    });
+    expect(resultAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        competitionId: COMP_ID,
+        entryId: 'entry-1',
+        lift: 'squat',
+        attemptNumber: 1,
+        result: 'good_lift',
+        // The mark time is carried on the wire so the server anchors the next-attempt countdown to
+        // when the operator marked it offline, not to this reconnect-time flush.
+        decidedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
     // The weight must reach the server before the result that depends on the attempt existing.
     expect(weightAction.mock.invocationCallOrder[0]).toBeLessThan(resultAction.mock.invocationCallOrder[0]);
+  });
+
+  it('does not drop a re-edit made while the previous save of the same cell is in flight', async () => {
+    renderBoard(); // online
+
+    // Hold the first save open so the operator can correct the cell while it is still in flight.
+    let resolveFirst!: (value: { status: 'ok'; data: { id: string } }) => void;
+    weightAction.mockReturnValueOnce(
+      new Promise<{ status: 'ok'; data: { id: string } }>((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
+
+    enterSquatOpener('100');
+    await waitFor(() => expect(weightAction).toHaveBeenCalledTimes(1));
+    expect(weightAction).toHaveBeenNthCalledWith(1, expect.objectContaining({ weightKg: 100 }));
+
+    // Correct the same cell to 105 while the 100 save has not yet resolved.
+    enterSquatOpener('105');
+    expect(squatOpenerCell()).toHaveTextContent('105');
+
+    // The 100 save now lands. The drain must NOT discard the queued 105 (which sits under the same
+    // outbox key) — it has to send it on the follow-up flush, or the server would keep 100 while the
+    // board shows 105.
+    await act(async () => {
+      resolveFirst({ status: 'ok', data: { id: 'attempt-server-id' } });
+    });
+
+    await waitFor(() => expect(weightAction).toHaveBeenCalledTimes(2));
+    expect(weightAction).toHaveBeenNthCalledWith(2, expect.objectContaining({ weightKg: 105 }));
+    expect(squatOpenerCell()).toHaveTextContent('105');
+    // Once both have flushed nothing is left queued.
+    await waitFor(() =>
+      expect(screen.queryByText(/change(s)? .*sync|Syncing/)).not.toBeInTheDocument(),
+    );
   });
 
   it('keeps the screen alive and the value on-screen when a save fails on the wire', async () => {
@@ -179,5 +224,73 @@ describe('ScoresheetBoard offline resilience', () => {
     // retained for the scheduled retry.
     await waitFor(() => expect(weightAction).toHaveBeenCalled());
     expect(squatOpenerCell()).toHaveTextContent('100');
+  });
+
+  it('reconciles to the server (and does not retry) when a save is rejected deterministically', async () => {
+    weightAction.mockResolvedValue({
+      status: 'error',
+      message: 'After a good lift, the next attempt must be heavier than 105 kg.',
+    });
+    renderBoard(); // online
+
+    enterSquatOpener('100');
+
+    // The rejected op is sent once, surfaces the message, and is not retried; a server re-pull is
+    // requested so the board converges to the database rather than holding the refused value.
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    expect(weightAction).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/must be heavier than 105 kg/)).toBeInTheDocument();
+  });
+
+  it('does not waste a call recording a result whose offline weight is rejected on reconnect', async () => {
+    weightAction.mockResolvedValue({
+      status: 'error',
+      message: 'After a good lift, the next attempt must be heavier than 105 kg.',
+    });
+    renderBoard();
+    setOnline(false);
+
+    enterSquatOpener('100');
+    fireEvent.click(screen.getByLabelText(/Good lift for Smith, John/));
+    expect(weightAction).not.toHaveBeenCalled();
+    expect(resultAction).not.toHaveBeenCalled();
+
+    setOnline(true);
+
+    // The weight is rejected, so the dependent result is dropped without being sent (its attempt was
+    // never created), and the board re-pulls server truth.
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    expect(weightAction).toHaveBeenCalledTimes(1);
+    expect(resultAction).not.toHaveBeenCalled();
+  });
+
+  it('defers a rejection reconcile while offline and runs it on reconnect', async () => {
+    renderBoard(); // online
+
+    // Hold the save open so we can drop the connection before its rejection lands.
+    let rejectWith!: (result: { status: 'error'; message: string }) => void;
+    weightAction.mockReturnValueOnce(
+      new Promise<{ status: 'error'; message: string }>((resolve) => {
+        rejectWith = resolve;
+      }),
+    );
+
+    enterSquatOpener('100');
+    await waitFor(() => expect(weightAction).toHaveBeenCalledTimes(1));
+
+    // Connection drops while the save is in flight.
+    setOnline(false);
+
+    // The save resolves with a deterministic rejection. The reconcile (a full re-pull) must NOT fire
+    // while offline — a router.refresh offline would no-op and waste the deferred reconcile.
+    await act(async () => {
+      rejectWith({ status: 'error', message: 'After a good lift, the next attempt must be heavier than 105 kg.' });
+    });
+    expect(refreshMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/must be heavier than 105 kg/)).toBeInTheDocument();
+
+    // On reconnect the deferred reconcile runs so the board converges to server truth.
+    setOnline(true);
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
   });
 });

@@ -82,7 +82,7 @@ proxy.ts                        ← replaces middleware.ts in Next.js 16
 ## Coding conventions
 
 - TypeScript strict mode. No `any`. No type assertions without an inline comment explaining why.
-- Named exports only. Exceptions: `page.tsx` and `layout.tsx` default exports.
+- Named exports only. Exceptions: the Next App Router files that the framework loads by default export — `page.tsx`, `layout.tsx`, and the route convention files (`error.tsx`, `not-found.tsx`, `loading.tsx`, `global-error.tsx`).
 - Client components are the default for `/(admin)/run`, `/(display)/[comp-slug]/loading`, `/(overlay)`, and the live public scoreboard. Server components elsewhere.
 - All mutations via server actions. Never call Supabase from the client for writes.
 - Client-side Supabase is read-only and primarily for real-time subscriptions.
@@ -113,6 +113,8 @@ At the head table the operator cannot wait for a round-trip. Standard pattern fo
 4. If the action succeeds, the real-time subscription reconciles (usually a no-op since local state already matches).
 
 Use React `useOptimistic` where it fits. Otherwise hand-roll with local state plus try/catch around the action call.
+
+The run screen (the source of truth every other screen reads) uses an offline-resilient variant of this pattern: instead of failing the mutation on a dropped connection, every edit goes through an in-memory + `localStorage` outbox (`lib/scorekeeper/outbox.ts`) that holds it and replays it on reconnect. Step 3 differs accordingly — a *transport* failure holds the edit and retries; a *deterministic* rejection (e.g. the progression guard) surfaces the message in a `role="alert"` banner and, once the queue has drained, re-pulls the authoritative server snapshot (`router.refresh()`) to converge rather than rolling back a single cell. See the "Run screen … offline-resilient" entry in CHANGELOG.md.
 
 ## Supabase conventions
 
