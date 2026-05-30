@@ -3,11 +3,11 @@
 import { Fragment, useMemo } from 'react';
 import type { Database } from '@/types/database.types';
 import { ATTEMPTS_PER_LIFT, LIFT_LABELS, type Lifts } from '@/lib/constants';
-import { bestGoodLift } from '@/lib/attempts/best-lift';
-import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
+import type { KitType } from '@/lib/scoring/ipf-gl';
 import { compareRunningOrder } from '@/lib/attempts/running-order';
 import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { buildPlatformLiveView, type PlatformLiveRow } from '@/lib/scorekeeper/platform-live-view';
+import { bestLiftFor, computeEntryScore } from '@/lib/scorekeeper/entry-score';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import { BoardOptions, type BoardOptionToggle } from '@/components/scorekeeper/board-options';
@@ -133,21 +133,9 @@ export function WarmUpDisplay({
     : 'No lifter on the platform';
   const headerProgress = view.header ? `${view.header.position} of ${view.header.total} lifters` : '';
 
-  const bestForLift = (entryId: string, lift: LiftType): number =>
-    bestGoodLift(
-      ATTEMPT_NUMBERS.map((attemptNumber) => attempts.get(attemptKey(entryId, lift, attemptNumber)))
-        .filter((attempt): attempt is BoardAttempt => attempt !== undefined)
-        .map((attempt) => ({ result: attempt.result, weightKg: attempt.weightKg })),
-    );
-
-  const entryTotal = (entry: BoardEntry): number => {
-    const contributing = isTeamCompetition && entry.teamLift ? [entry.teamLift] : columnLifts;
-    let total = 0;
-    for (const lift of contributing) {
-      total += bestForLift(entry.id, lift);
-    }
-    return total;
-  };
+  // Per-lift best and the entry's total/GL both go through the shared entry-score helpers, so the
+  // warm-up board stays in step with the run screen and overlay on every lifter's numbers.
+  const bestForLift = (entryId: string, lift: LiftType): number => bestLiftFor(attempts, entryId, lift);
 
   // Per-browser column visibility, so each TV can show its own cut of the same comp. The lifter and
   // attempt columns are the point of the screen, so they are always shown; everything else is optional.
@@ -280,14 +268,13 @@ export function WarmUpDisplay({
             </thead>
             <tbody>
               {view.roster.map(({ entry, flightName }, index) => {
-                // The total (best S+B+D) feeds both the Total column and the IPF GL points.
-                const total = showTotal || showGl ? entryTotal(entry) : 0;
+                // Total (best S+B+D) and IPF GL come together from the shared entry-score helper; they
+                // feed the Total and IPF GL columns (computed only when one of them is shown).
+                const { total, glPoints: gl } =
+                  showTotal || showGl
+                    ? computeEntryScore(attempts, entry, columnLifts, kitType, isTeamCompetition)
+                    : { total: 0, glPoints: 0 };
                 const subTotal = showSubTotal ? bestForLift(entry.id, 'squat') + bestForLift(entry.id, 'bench') : 0;
-                // IPF GL from the lifter's current total and weigh-in bodyweight; 0 (a dash) with no good
-                // lifts or before weigh-in.
-                const gl = showGl
-                  ? ipfGlPoints({ sex: entry.sex, kitType, bodyweightKg: entry.bodyweightKg ?? 0, liftedKg: total })
-                  : 0;
                 // Band alternate rows when striping is on. The transparent cells show the row tint; the
                 // sticky first column needs its own opaque background, so it carries the same band
                 // (white otherwise, to mask content scrolling beneath it).

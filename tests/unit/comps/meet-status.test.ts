@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canRecordMeetResults } from '@/lib/comps/meet-status';
+import { canRecordMeetResults, isCompPubliclyVisible } from '@/lib/comps/meet-status';
 
 describe('canRecordMeetResults', () => {
   it('allows meet-time writes for draft, published, and active comps', () => {
@@ -10,5 +10,17 @@ describe('canRecordMeetResults', () => {
 
   it('locks meet-time writes once a comp is completed', () => {
     expect(canRecordMeetResults('completed')).toBe(false);
+  });
+});
+
+describe('isCompPubliclyVisible', () => {
+  it('hides a draft comp from the public/overlay/display surfaces', () => {
+    expect(isCompPubliclyVisible('draft')).toBe(false);
+  });
+
+  it('shows published, active and completed comps (matching the is_comp_public RLS predicate)', () => {
+    expect(isCompPubliclyVisible('published')).toBe(true);
+    expect(isCompPubliclyVisible('active')).toBe(true);
+    expect(isCompPubliclyVisible('completed')).toBe(true);
   });
 });

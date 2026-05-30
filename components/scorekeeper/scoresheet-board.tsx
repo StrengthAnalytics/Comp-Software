@@ -14,9 +14,8 @@ import {
   type Lifts,
   type SquatRackSetting,
 } from '@/lib/constants';
-import { bestGoodLift } from '@/lib/attempts/best-lift';
 import { nextAttemptCountdown, type NextAttemptCountdown } from '@/lib/attempts/auto-progression';
-import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
+import type { KitType } from '@/lib/scoring/ipf-gl';
 import {
   selectLiveSession,
   selectPlatformPositions,
@@ -24,6 +23,7 @@ import {
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
 import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
+import { bestLiftFor, computeEntryScore } from '@/lib/scorekeeper/entry-score';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
 import { loadOutbox, saveOutbox, type PendingOp, type RackPatch } from '@/lib/scorekeeper/outbox';
@@ -792,21 +792,9 @@ function PlatformPanel({
   const { platformName, sessionName, positions, roster } = view;
   const current = positions.onPlatform;
 
-  const bestForLift = (entryId: string, lift: LiftType): number =>
-    bestGoodLift(
-      ATTEMPT_NUMBERS.map((attemptNumber) => attempts.get(attemptKey(entryId, lift, attemptNumber)))
-        .filter((attempt): attempt is BoardAttempt => attempt !== undefined)
-        .map((attempt) => ({ result: attempt.result, weightKg: attempt.weightKg })),
-    );
-
-  const entryTotal = (entry: BoardEntry): number => {
-    const contributing = isTeamCompetition && entry.teamLift ? [entry.teamLift] : columnLifts;
-    let total = 0;
-    for (const lift of contributing) {
-      total += bestForLift(entry.id, lift);
-    }
-    return total;
-  };
+  // Per-lift best and the entry's total/GL both go through the shared entry-score helpers, so the run
+  // screen, warm-up board and overlay can't disagree on a lifter's numbers.
+  const bestForLift = (entryId: string, lift: LiftType): number => bestLiftFor(attempts, entryId, lift);
 
   return (
     <section className="space-y-4 rounded-lg border border-neutral-200 p-4">
@@ -889,14 +877,13 @@ function PlatformPanel({
             </thead>
             <tbody>
               {roster.map(({ entry, flightName }, index) => {
-                // The total (best S+B+D) feeds both the Total column and the IPF GL points.
-                const total = showTotal || showGl ? entryTotal(entry) : 0;
+                // Total (best S+B+D) and IPF GL come together from the shared entry-score helper; they
+                // feed the Total and IPF GL columns (computed only when one of them is shown).
+                const { total, glPoints: gl } =
+                  showTotal || showGl
+                    ? computeEntryScore(attempts, entry, columnLifts, kitType, isTeamCompetition)
+                    : { total: 0, glPoints: 0 };
                 const subTotal = showSubTotal ? bestForLift(entry.id, 'squat') + bestForLift(entry.id, 'bench') : 0;
-                // IPF GL from the lifter's current total (sum of best lifts) and weigh-in bodyweight.
-                // ipfGlPoints returns 0 with no good lifts or before weigh-in, which renders as a dash.
-                const gl = showGl
-                  ? ipfGlPoints({ sex: entry.sex, kitType, bodyweightKg: entry.bodyweightKg ?? 0, liftedKg: total })
-                  : 0;
                 // Band alternate rows when striping is on. The transparent cells show the row tint;
                 // the sticky first column needs its own opaque background, so it carries the same
                 // band (and stays white otherwise, to mask content scrolling beneath it).

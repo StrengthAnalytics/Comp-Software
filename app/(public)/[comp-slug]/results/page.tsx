@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { LIFT_LABELS } from '@/lib/constants';
+import { isCompPubliclyVisible } from '@/lib/comps/meet-status';
 import { formatLifterName } from '@/lib/lifters/name';
 import { computeTeamStandings, type StandingMemberInput, type StandingTeamInput } from '@/lib/scoring/team-standings';
 import type { Sex } from '@/lib/scoring/ipf-gl';
@@ -35,9 +36,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ 'comp-
   // Lifter names come from public_lifters, which is scoped to publicly visible comps. Until the comp
   // is published the view returns no rows (names would show as "Unknown"), so guide the operator
   // rather than render an empty-looking table.
-  const isPubliclyVisible =
-    comp.status === 'published' || comp.status === 'active' || comp.status === 'completed';
-  if (!isPubliclyVisible) {
+  if (!isCompPubliclyVisible(comp.status)) {
     return (
       <main className="mx-auto max-w-3xl p-6">
         <h1 className="text-2xl font-semibold tracking-tight">{comp.name}</h1>

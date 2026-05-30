@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
+import { isCompPubliclyVisible } from '@/lib/comps/meet-status';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { loadBoardData } from '@/lib/scorekeeper/load-board-data';
 import { resolveDisplayPlatform } from '@/lib/scorekeeper/display-platforms';
@@ -31,9 +32,7 @@ export default async function LifterOverlayPage({
   // comp is published the overlay would render empty, so guide the operator instead — mirroring the
   // public warm-up board. (Anon can't load a non-public comp at all; this notice is reached when an
   // admin previews a still-draft comp.)
-  const isPubliclyVisible =
-    comp.status === 'published' || comp.status === 'active' || comp.status === 'completed';
-  if (!isPubliclyVisible) {
+  if (!isCompPubliclyVisible(comp.status)) {
     return (
       <main className="mx-auto max-w-2xl p-8">
         <h1 className="text-2xl font-semibold tracking-tight">{comp.name}</h1>

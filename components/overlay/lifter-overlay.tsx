@@ -2,11 +2,11 @@
 
 import { useMemo } from 'react';
 import type { Database } from '@/types/database.types';
-import { ATTEMPTS_PER_LIFT, KG_TO_LBS, LIFT_LABELS, type Lifts } from '@/lib/constants';
-import { bestGoodLift } from '@/lib/attempts/best-lift';
-import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
+import { KG_TO_LBS, LIFT_LABELS, type Lifts } from '@/lib/constants';
+import type { KitType } from '@/lib/scoring/ipf-gl';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { buildPlatformLiveView } from '@/lib/scorekeeper/platform-live-view';
+import { computeEntryScore } from '@/lib/scorekeeper/entry-score';
 import type {
   BoardAttempt,
   BoardEntry,
@@ -16,9 +16,6 @@ import type {
 } from '@/lib/scorekeeper/board-types';
 
 type LiftType = Database['public']['Enums']['lift_type'];
-
-// Attempt numbers 1..3 (CLAUDE.md: three attempts per lift), derived so the literal lives once.
-const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => index + 1);
 
 type LifterOverlayProps = {
   competitionId: string;
@@ -100,22 +97,9 @@ export function LifterOverlay({
     }
     const entry = onPlatform.entry;
 
-    const bestForLift = (lift: LiftType): number =>
-      bestGoodLift(
-        ATTEMPT_NUMBERS.map((attemptNumber) => attempts.get(attemptKey(entry.id, lift, attemptNumber)))
-          .filter((attempt): attempt is BoardAttempt => attempt !== undefined)
-          .map((attempt) => ({ result: attempt.result, weightKg: attempt.weightKg })),
-      );
-
-    // In a team comp each member contests a single assigned lift, so their score is taken from that one
-    // lift; otherwise it is the best squat + bench + deadlift across the contested lifts.
-    const contributingLifts = isTeamCompetition && entry.teamLift ? [entry.teamLift] : columnLifts;
-    const bestLifts = contributingLifts
-      .map((lift) => ({ lift, weight: bestForLift(lift) }))
-      .filter((best) => best.weight > 0);
-    const total = bestLifts.reduce((sum, best) => sum + best.weight, 0);
-    const glPoints =
-      total > 0 ? ipfGlPoints({ sex: entry.sex, kitType, bodyweightKg: entry.bodyweightKg ?? 0, liftedKg: total }) : 0;
+    // Best lifts / total / IPF GL through the shared entry-score helper, so the overlay can't drift
+    // from the run screen and warm-up board on what a lifter's total or points are.
+    const { bestLifts, total, glPoints } = computeEntryScore(attempts, entry, columnLifts, kitType, isTeamCompetition);
 
     // Category line: weight class · division for an individual comp, or the team name for a team comp.
     const subtitle = isTeamCompetition
