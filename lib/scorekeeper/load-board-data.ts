@@ -22,6 +22,7 @@ export type BoardData = {
   flights: BoardFlight[];
   weightClasses: NamedOption[];
   divisions: NamedOption[];
+  teams: NamedOption[];
   entries: BoardEntry[];
   attempts: BoardAttempt[];
 };
@@ -39,6 +40,7 @@ export async function loadBoardData(competitionId: string): Promise<BoardData> {
     { data: flightRows },
     { data: weightClassRows },
     { data: divisionRows },
+    { data: teamRows },
     { data: entryRows },
     { data: attemptRows },
   ] = await Promise.all([
@@ -55,10 +57,11 @@ export async function loadBoardData(competitionId: string): Promise<BoardData> {
       .order('sort_order', { ascending: true }),
     supabase.from('weight_classes').select('id, name').eq('competition_id', competitionId),
     supabase.from('divisions').select('id, name').eq('competition_id', competitionId),
+    supabase.from('teams').select('id, name').eq('competition_id', competitionId),
     supabase
       .from('entries')
       .select(
-        'id, lifter_id, flight_id, weight_class_id, division_id, lot_number, team_lift, bodyweight_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting',
+        'id, lifter_id, flight_id, weight_class_id, division_id, lot_number, team_id, team_lift, bodyweight_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting',
       )
       .eq('competition_id', competitionId),
     supabase
@@ -77,6 +80,7 @@ export async function loadBoardData(competitionId: string): Promise<BoardData> {
   const lifterById = new Map((lifterRows ?? []).map((lifter) => [lifter.id, lifter]));
   const weightClassById = new Map((weightClassRows ?? []).map((weightClass) => [weightClass.id, weightClass.name]));
   const divisionById = new Map((divisionRows ?? []).map((division) => [division.id, division.name]));
+  const teamNameById = new Map((teamRows ?? []).map((team) => [team.id, team.name]));
 
   const platforms: BoardPlatform[] = (platformRows ?? []).map((platform) => ({ id: platform.id, name: platform.name }));
   const sessions: BoardSession[] = (sessionRows ?? []).map((session) => ({
@@ -96,6 +100,7 @@ export async function loadBoardData(competitionId: string): Promise<BoardData> {
     name: weightClass.name,
   }));
   const divisions: NamedOption[] = (divisionRows ?? []).map((division) => ({ id: division.id, name: division.name }));
+  const teams: NamedOption[] = (teamRows ?? []).map((team) => ({ id: team.id, name: team.name }));
   const entries: BoardEntry[] = (entryRows ?? []).map((row) => {
     const lifter = lifterById.get(row.lifter_id);
     return {
@@ -105,6 +110,7 @@ export async function loadBoardData(competitionId: string): Promise<BoardData> {
       flightId: row.flight_id,
       lotNumber: row.lot_number,
       teamLift: row.team_lift,
+      teamName: row.team_id ? (teamNameById.get(row.team_id) ?? null) : null,
       bodyweightKg: row.bodyweight_kg,
       weightClassName: row.weight_class_id ? (weightClassById.get(row.weight_class_id) ?? null) : null,
       divisionName: row.division_id ? (divisionById.get(row.division_id) ?? null) : null,
@@ -125,5 +131,5 @@ export async function loadBoardData(competitionId: string): Promise<BoardData> {
     decidedAt: row.decided_at,
   }));
 
-  return { platforms, sessions, flights, weightClasses, divisions, entries, attempts };
+  return { platforms, sessions, flights, weightClasses, divisions, teams, entries, attempts };
 }

@@ -65,6 +65,7 @@ export function applyEntryChange(
   sexById: Map<string, Sex>,
   classNameById: Map<string, string>,
   divisionNameById: Map<string, string>,
+  teamNameById: Map<string, string>,
 ): BoardEntry[] {
   if (payload.eventType === 'DELETE') {
     const removedId = payload.old.id;
@@ -81,6 +82,7 @@ export function applyEntryChange(
     flightId: changed.flight_id,
     lotNumber: changed.lot_number,
     teamLift: changed.team_lift,
+    teamName: changed.team_id ? (teamNameById.get(changed.team_id) ?? null) : null,
     bodyweightKg: changed.bodyweight_kg,
     weightClassName: changed.weight_class_id ? (classNameById.get(changed.weight_class_id) ?? null) : null,
     divisionName: changed.division_id ? (divisionNameById.get(changed.division_id) ?? null) : null,
@@ -150,6 +152,7 @@ export function useBoardState({
   initialFlights,
   weightClasses = NO_OPTIONS,
   divisions = NO_OPTIONS,
+  teams = NO_OPTIONS,
 }: {
   competitionId: string;
   initialAttempts: BoardAttempt[];
@@ -157,6 +160,7 @@ export function useBoardState({
   initialFlights: BoardFlight[];
   weightClasses?: NamedOption[];
   divisions?: NamedOption[];
+  teams?: NamedOption[];
 }): BoardState {
   const [attempts, setAttempts] = useState<Map<string, BoardAttempt>>(
     () => new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
@@ -168,6 +172,7 @@ export function useBoardState({
   const sexById = useMemo(() => new Map(initialEntries.map((entry) => [entry.id, entry.sex])), [initialEntries]);
   const classNameById = useMemo(() => new Map(weightClasses.map((option) => [option.id, option.name])), [weightClasses]);
   const divisionNameById = useMemo(() => new Map(divisions.map((option) => [option.id, option.name])), [divisions]);
+  const teamNameById = useMemo(() => new Map(teams.map((option) => [option.id, option.name])), [teams]);
 
   // Track each channel's subscribe status so the board can show a live/reconnecting/offline pill. All
   // three multiplex over one websocket, so they rise and fall together, but aggregating all three is
@@ -189,7 +194,9 @@ export function useBoardState({
   useEntriesSubscription(
     competitionId,
     (payload) =>
-      setEntries((current) => applyEntryChange(current, payload, nameById, sexById, classNameById, divisionNameById)),
+      setEntries((current) =>
+        applyEntryChange(current, payload, nameById, sexById, classNameById, divisionNameById, teamNameById),
+      ),
     { onStatusChange: (status) => trackStatus('entries', status) },
   );
   useFlightsSubscription(competitionId, (payload) => setFlights((current) => applyFlightChange(current, payload)), {

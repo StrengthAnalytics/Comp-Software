@@ -8,6 +8,9 @@ import { usePersistentString } from '@/lib/use-persistent-string';
 // and a flip function, mirroring useState's tuple shape.
 export function usePersistentToggle(key: string, defaultOn = true): readonly [boolean, () => void] {
   const [pref, setPref] = usePersistentString(key, defaultOn ? 'on' : 'off');
-  const on = pref !== 'off';
+  // Resolve against the default so a corrupt/stale stored value (anything that is neither 'on' nor
+  // 'off') falls back to the default rather than silently reading as ON: an on-by-default toggle is on
+  // unless explicitly 'off', an off-by-default toggle is off unless explicitly 'on'.
+  const on = defaultOn ? pref !== 'off' : pref === 'on';
   return [on, () => setPref(on ? 'off' : 'on')];
 }

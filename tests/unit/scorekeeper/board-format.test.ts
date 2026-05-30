@@ -10,6 +10,7 @@ function makeEntry(overrides: Partial<BoardEntry> = {}): BoardEntry {
     flightId: 'f1',
     lotNumber: 1,
     teamLift: null,
+    teamName: null,
     bodyweightKg: 80,
     weightClassName: '83',
     divisionName: 'Open',

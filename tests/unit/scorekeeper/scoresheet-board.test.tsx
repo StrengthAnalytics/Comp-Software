@@ -40,6 +40,7 @@ const entry: BoardEntry = {
   flightId: 'flight-1',
   lotNumber: 1,
   teamLift: null,
+  teamName: null,
   bodyweightKg: 80,
   weightClassName: null,
   divisionName: null,
@@ -50,11 +51,17 @@ const entry: BoardEntry = {
   benchSpotting: null,
 };
 
-function renderBoard() {
+type BoardOverrides = {
+  isTeamCompetition?: boolean;
+  teams?: { id: string; name: string }[];
+  entries?: BoardEntry[];
+};
+
+function renderBoard(overrides: BoardOverrides = {}) {
   return render(
     <ScoresheetBoard
       competitionId={COMP_ID}
-      isTeamCompetition={false}
+      isTeamCompetition={overrides.isTeamCompetition ?? false}
       kitType="classic"
       lifts={{ squat: true, bench: true, deadlift: true }}
       platforms={platforms}
@@ -62,7 +69,8 @@ function renderBoard() {
       flights={flights}
       weightClasses={[]}
       divisions={[]}
-      entries={[entry]}
+      teams={overrides.teams ?? []}
+      entries={overrides.entries ?? [entry]}
       attempts={[]}
     />,
   );
@@ -292,5 +300,35 @@ describe('ScoresheetBoard offline resilience', () => {
     // On reconnect the deferred reconcile runs so the board converges to server truth.
     setOnline(true);
     await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+  });
+});
+
+// Opens the Options dropdown so its toggle rows are in the DOM.
+function openOptions() {
+  fireEvent.click(screen.getByRole('button', { name: /Options/ }));
+}
+
+describe('ScoresheetBoard column options', () => {
+  it('offers a Team column (and renders the team name) only for team competitions', () => {
+    const teamEntry: BoardEntry = { ...entry, teamLift: 'squat', teamName: 'Iron Vikings' };
+    renderBoard({ isTeamCompetition: true, teams: [{ id: 'team-1', name: 'Iron Vikings' }], entries: [teamEntry] });
+
+    // The team name shows by default (the toggle defaults on for team comps).
+    expect(screen.getByText('Iron Vikings')).toBeInTheDocument();
+    // The Team column header is present in the scoresheet.
+    expect(screen.getByRole('columnheader', { name: 'Team' })).toBeInTheDocument();
+    openOptions();
+    // And the Team toggle is offered in the Options dropdown (a checkbox row).
+    expect(screen.getByRole('checkbox', { name: 'Team' })).toBeInTheDocument();
+    // No Sub-total option in a team comp (each member contests a single lift).
+    expect(screen.queryByText('Sub-total (S+B)')).not.toBeInTheDocument();
+  });
+
+  it('does not offer a Team column for an individual competition', () => {
+    renderBoard({ isTeamCompetition: false });
+    openOptions();
+    expect(screen.queryByText('Team')).not.toBeInTheDocument();
+    // Sub-total IS offered for an individual full-power comp.
+    expect(screen.getByText('Sub-total (S+B)')).toBeInTheDocument();
   });
 });

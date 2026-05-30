@@ -59,6 +59,7 @@ type ScoresheetBoardProps = {
   flights: BoardFlight[];
   weightClasses: NamedOption[];
   divisions: NamedOption[];
+  teams: NamedOption[];
   entries: BoardEntry[];
   attempts: BoardAttempt[];
 };
@@ -221,6 +222,7 @@ export function ScoresheetBoard({
   flights: initialFlights,
   weightClasses,
   divisions,
+  teams,
   entries: initialEntries,
   attempts: initialAttempts,
 }: ScoresheetBoardProps) {
@@ -231,6 +233,7 @@ export function ScoresheetBoard({
     initialFlights,
     weightClasses,
     divisions,
+    teams,
   });
   const [error, setError] = useState<string | null>(null);
   // Default to the full-window view: the admin chrome caps content at max-w-6xl minus the comp-nav
@@ -241,6 +244,7 @@ export function ScoresheetBoard({
   // scorer and a mirrored display — can show different cuts of the same comp). The lifter and attempt
   // columns are always shown; everything else is optional. The structural columns default on (the full
   // sheet); the sub-total and IPF GL columns are extras, so they default off.
+  const [teamPref, toggleTeam] = usePersistentToggle('scoresheet:col:team');
   const [showLot, toggleLot] = usePersistentToggle('scoresheet:col:lot');
   const [showBw, toggleBw] = usePersistentToggle('scoresheet:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('scoresheet:col:class');
@@ -295,10 +299,17 @@ export function ScoresheetBoard({
     [lifts],
   );
 
-  // The sub-total (best squat + best bench) only means anything when both lifts are contested, so the
-  // option is offered only then and the column is shown after the bench's Best column.
-  const canSubTotal = columnLifts.includes('squat') && columnLifts.includes('bench');
+  // The sub-total (best squat + best bench) only means anything when both lifts are contested by the
+  // same lifter, so the option is offered only then and the column is shown after the bench's Best
+  // column. Excluded for team comps, where each member contests a single assigned lift — a squat-only
+  // member has no bench to combine, so an "S+B" column would just relabel their one lift.
+  const canSubTotal =
+    !isTeamCompetition && columnLifts.includes('squat') && columnLifts.includes('bench');
   const showSubTotal = canSubTotal && subTotalPref;
+
+  // The team column only applies to team comps (the lifter's team sits right after their name); the
+  // toggle is offered only then and defaults on.
+  const showTeam = isTeamCompetition && teamPref;
 
   const views = useMemo(
     () => buildPlatformViews({ platforms, sessions, flights, entries, attempts }),
@@ -672,6 +683,9 @@ export function ScoresheetBoard({
           </div>
           <BoardOptions
             toggles={[
+              ...(isTeamCompetition
+                ? [{ id: 'team', label: 'Team', checked: showTeam, onToggle: toggleTeam }]
+                : []),
               { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
               { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
               { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
@@ -710,6 +724,7 @@ export function ScoresheetBoard({
               kitType={kitType}
               striped={striped}
               showGl={showGl}
+              showTeam={showTeam}
               showLot={showLot}
               showBw={showBw}
               showClass={showClass}
@@ -743,6 +758,7 @@ function PlatformPanel({
   kitType,
   striped,
   showGl,
+  showTeam,
   showLot,
   showBw,
   showClass,
@@ -762,6 +778,7 @@ function PlatformPanel({
   kitType: KitType;
   striped: boolean;
   showGl: boolean;
+  showTeam: boolean;
   showLot: boolean;
   showBw: boolean;
   showClass: boolean;
@@ -825,6 +842,11 @@ function PlatformPanel({
                 <th scope="col" className={`sticky left-0 z-30 min-w-[11rem] border-l-[1.5px] text-left ${HEAD}`}>
                   Lifter
                 </th>
+                {showTeam ? (
+                  <th scope="col" className={`w-32 text-left ${HEAD}`}>
+                    Team
+                  </th>
+                ) : null}
                 {showLot ? (
                   <th scope="col" className={`w-12 text-center ${HEAD}`}>
                     Lot
@@ -887,6 +909,9 @@ function PlatformPanel({
                     <span className="font-medium text-neutral-900">{entry.lifterName}</span>
                     <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                   </td>
+                  {showTeam ? (
+                    <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.teamName ?? '—'}</td>
+                  ) : null}
                   {showLot ? (
                     <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.lotNumber ?? '—'}</td>
                   ) : null}
