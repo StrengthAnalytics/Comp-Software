@@ -41,15 +41,41 @@ describe('setAttemptWeightSchema', () => {
 });
 
 describe('setAttemptResultSchema', () => {
-  it('accepts each valid result', () => {
+  it('accepts each valid result keyed by the attempt natural key', () => {
     for (const result of ['pending', 'good_lift', 'no_lift', 'not_taken', 'withdrawn'] as const) {
-      expect(setAttemptResultSchema.safeParse({ competitionId: uuid, attemptId: uuid, result }).success).toBe(true);
+      expect(
+        setAttemptResultSchema.safeParse({
+          competitionId: uuid,
+          entryId: uuid,
+          lift: 'squat',
+          attemptNumber: 1,
+          result,
+        }).success,
+      ).toBe(true);
     }
   });
 
   it('rejects an unknown result', () => {
     expect(
-      setAttemptResultSchema.safeParse({ competitionId: uuid, attemptId: uuid, result: 'bogus' }).success,
+      setAttemptResultSchema.safeParse({
+        competitionId: uuid,
+        entryId: uuid,
+        lift: 'squat',
+        attemptNumber: 1,
+        result: 'bogus',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an attempt number outside 1–3', () => {
+    expect(
+      setAttemptResultSchema.safeParse({
+        competitionId: uuid,
+        entryId: uuid,
+        lift: 'bench',
+        attemptNumber: 4,
+        result: 'good_lift',
+      }).success,
     ).toBe(false);
   });
 });

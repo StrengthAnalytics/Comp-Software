@@ -2,7 +2,7 @@
 
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { Database } from '@/types/database.types';
-import { usePostgresChanges, type PostgresEvent } from '@/lib/realtime/use-postgres-changes';
+import { usePostgresChanges, type ChannelStatus, type PostgresEvent } from '@/lib/realtime/use-postgres-changes';
 
 type EntryRow = Database['public']['Tables']['entries']['Row'];
 
@@ -11,7 +11,7 @@ type EntryRow = Database['public']['Tables']['entries']['Row'];
 export function useEntriesSubscription(
   competitionId: string,
   onChange: (payload: RealtimePostgresChangesPayload<EntryRow>) => void,
-  options?: { enabled?: boolean; event?: PostgresEvent },
+  options?: { enabled?: boolean; event?: PostgresEvent; onStatusChange?: (status: ChannelStatus) => void },
 ): void {
   usePostgresChanges<EntryRow>({
     table: 'entries',
@@ -19,5 +19,6 @@ export function useEntriesSubscription(
     event: options?.event,
     enabled: (options?.enabled ?? true) && competitionId.length > 0,
     onChange,
+    onStatusChange: options?.onStatusChange,
   });
 }

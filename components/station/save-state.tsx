@@ -1,7 +1,11 @@
 'use client';
 
-import { createContext, useEffect, useState } from 'react';
+import { createContext } from 'react';
 import type { ActionResult } from '@/types/action-result';
+
+// Browser connectivity hook now lives in lib so the realtime layer can share it; re-exported here so
+// the station screens (weigh-in, rack-heights) keep importing it from their save-state module.
+export { useOnline } from '@/lib/use-online';
 
 // Shared autosave / connectivity plumbing for the "station" capture screens — the head-table screens
 // where an operator edits one lifter at a time and every field saves in the background (weigh-in, and
@@ -32,26 +36,6 @@ export type SaveContextValue = {
 // Carries connectivity and the row→page save reporting channel to every row without prop-drilling.
 // Default is the inert no-op used when a row renders outside a provider (it never does in practice).
 export const SaveContext = createContext<SaveContextValue>({ online: true, report: () => {} });
-
-// Tracks browser connectivity so the page can show an online/offline indicator and hold autosaves
-// while offline. navigator.onLine flips on the online/offline events; optimistic true on first paint
-// so server and client markup agree (navigator is undefined during SSR). If the page is opened while
-// already offline the indicator shows green for one render until the mount effect corrects it — purely
-// cosmetic, since the mount effect runs long before the autosave debounce could fire a save.
-export function useOnline(): boolean {
-  const [online, setOnline] = useState(true);
-  useEffect(() => {
-    const update = () => setOnline(globalThis.navigator.onLine);
-    update();
-    globalThis.addEventListener('online', update);
-    globalThis.addEventListener('offline', update);
-    return () => {
-      globalThis.removeEventListener('online', update);
-      globalThis.removeEventListener('offline', update);
-    };
-  }, []);
-  return online;
-}
 
 export function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {

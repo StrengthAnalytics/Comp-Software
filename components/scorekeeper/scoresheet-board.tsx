@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Database } from '@/types/database.types';
 import {
   ATTEMPTS_PER_LIFT,
@@ -24,6 +24,8 @@ import {
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
+import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
+import { loadOutbox, saveOutbox, type PendingOp, type RackPatch } from '@/lib/scorekeeper/outbox';
 import type {
   BoardAttempt,
   BoardEntry,
@@ -35,8 +37,10 @@ import type {
 import { setAttemptResultAction, setAttemptWeightAction } from '@/actions/attempts';
 import { updateEntryRackSettingsAction } from '@/actions/entries';
 import { OptionalSelectField } from '@/components/optional-select-field';
+import { SAVE_RETRY_MS } from '@/components/station/save-state';
 import { parseOptionalNumber } from '@/lib/number-input';
 import { usePersistentString } from '@/lib/use-persistent-string';
+import { useOnline } from '@/lib/use-online';
 import type { ActionResult } from '@/types/action-result';
 
 type LiftType = Database['public']['Enums']['lift_type'];
@@ -91,15 +95,6 @@ function liftHasRack(lift: LiftType): lift is 'squat' | 'bench' {
   return lift === 'squat' || lift === 'bench';
 }
 
-// A single lift's rack edit, applied optimistically to the entry and sent to updateEntryRackSettingsAction.
-type RackPatch =
-  | { lift: 'squat'; rackHeightSquat: number | null; squatRackSetting: SquatRackSetting | null }
-  | {
-      lift: 'bench';
-      rackHeightBench: number | null;
-      benchSafetyHeight: number | null;
-      benchSpotting: BenchSpotting | null;
-    };
 
 function rackText(entry: BoardEntry, lift: LiftType): string {
   if (lift === 'squat') {
@@ -277,7 +272,7 @@ export function ScoresheetBoard({
   entries: initialEntries,
   attempts: initialAttempts,
 }: ScoresheetBoardProps) {
-  const { attempts, setAttempts, entries, setEntries, flights } = useBoardState({
+  const { attempts, setAttempts, entries, setEntries, flights, connection } = useBoardState({
     competitionId,
     initialAttempts,
     initialEntries,
@@ -296,7 +291,22 @@ export function ScoresheetBoard({
   const striped = stripingPref !== 'off';
   const [glPref, setGlPref] = usePersistentString('scoresheet:gl', 'off');
   const showGl = glPref === 'on';
-  const [, startTransition] = useTransition();
+
+  // Browser connectivity, for gating and flushing the offline outbox. (The realtime channel health in
+  // `connection` drives the indicator colour; this boolean is the HTTP-availability signal the server
+  // actions need.)
+  const online = useOnline();
+  // The offline outbox: edits made while the action can't reach the server are held here and replayed
+  // on reconnect, so the run screen — the source of truth every other screen reads — never loses an
+  // operator's input and never blanks on a failed save. The Map (cell+field → latest op) is the source
+  // of truth and is mutated in place inside async flushes; pendingCount mirrors its size for rendering.
+  const pendingOpsRef = useRef<Map<string, PendingOp>>(new Map());
+  const [pendingCount, setPendingCount] = useState(0);
+  const flushingRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The flush is recreated each render (closing over the latest state setters); a ref lets the effects
+  // and handlers call the current one without re-subscribing, mirroring the realtime callback pattern.
+  const flushRef = useRef<() => void>(() => {});
 
   // Esc leaves the expanded view.
   useEffect(() => {
@@ -322,8 +332,227 @@ export function ScoresheetBoard({
     [platforms, sessions, flights, entries, attempts],
   );
 
+  // Mirror the outbox to localStorage so edits queued in this session survive a page reload — e.g. the
+  // operator reloads, or the tab is reopened, while still offline — and reach the database when the
+  // connection returns rather than being lost with the in-memory queue.
+  function persistOutbox() {
+    saveOutbox(competitionId, pendingOpsRef.current);
+  }
+
+  // Queue (or supersede) one outbox op and kick a flush. The optimistic state has already been applied
+  // by the caller; this only schedules and persists the write.
+  function enqueue(key: string, op: PendingOp) {
+    pendingOpsRef.current.set(key, op);
+    setPendingCount(pendingOpsRef.current.size);
+    persistOutbox();
+    flushRef.current();
+  }
+
+  function dropPending(key: string) {
+    pendingOpsRef.current.delete(key);
+    setPendingCount(pendingOpsRef.current.size);
+    persistOutbox();
+  }
+
+  // Sends one op to its server action and reconciles local state on success (adopting the real id for a
+  // freshly-created attempt). Returns the action result; throws only on a transport failure (offline /
+  // server unreachable), which the flush loop catches.
+  async function sendOp(op: PendingOp): Promise<ActionResult<unknown>> {
+    if (op.kind === 'weight') {
+      const result = await setAttemptWeightAction({
+        competitionId,
+        entryId: op.entryId,
+        lift: op.lift,
+        attemptNumber: op.attemptNumber,
+        weightKg: op.weightKg,
+      });
+      if (result.status === 'ok') {
+        const key = attemptKey(op.entryId, op.lift, op.attemptNumber);
+        setAttempts((current) => {
+          const existing = current.get(key);
+          if (!existing) {
+            return current;
+          }
+          const next = new Map(current);
+          next.set(key, { ...existing, id: result.data.id });
+          return next;
+        });
+      }
+      return result;
+    }
+    if (op.kind === 'result') {
+      return setAttemptResultAction({
+        competitionId,
+        entryId: op.entryId,
+        lift: op.lift,
+        attemptNumber: op.attemptNumber,
+        result: op.result,
+      });
+    }
+    // RackPatch is exactly the action payload minus the ids, so it spreads straight in.
+    return updateEntryRackSettingsAction({ entryId: op.entryId, competitionId, ...op.patch });
+  }
+
+  function scheduleRetry() {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+    }
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      flushRef.current();
+    }, SAVE_RETRY_MS);
+  }
+
+  // Drains the outbox: weights first, then racks, then results, so an attempt created offline exists
+  // before its result is replayed. A transport failure (still offline / server down) stops the drain
+  // and leaves the rest queued; a deterministic rejection (e.g. the progression guard) drops that op
+  // and surfaces the message, leaving the operator's typed value on screen to fix. One flush runs at a
+  // time; ops that arrive mid-flush are picked up by a follow-up drain, and a transient failure
+  // schedules a retry so a passing blip self-heals.
+  async function flush() {
+    if (flushingRef.current) {
+      return;
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return;
+    }
+    if (pendingOpsRef.current.size === 0) {
+      return;
+    }
+    flushingRef.current = true;
+    let removedAny = false;
+    let transportFailed = false;
+    try {
+      const queued = [...pendingOpsRef.current.entries()];
+      const ordered = [
+        ...queued.filter(([, op]) => op.kind === 'weight'),
+        ...queued.filter(([, op]) => op.kind === 'rack'),
+        ...queued.filter(([, op]) => op.kind === 'result'),
+      ];
+      for (const [key, op] of ordered) {
+        let result: ActionResult<unknown>;
+        try {
+          result = await sendOp(op);
+        } catch {
+          // Transport failure: keep this and the remaining ops queued for the next flush/retry.
+          transportFailed = true;
+          break;
+        }
+        dropPending(key);
+        removedAny = true;
+        if (result.status === 'error') {
+          setError(readError(result));
+        }
+      }
+    } finally {
+      flushingRef.current = false;
+    }
+
+    const onlineNow = typeof navigator === 'undefined' || navigator.onLine;
+    if (onlineNow && pendingOpsRef.current.size > 0) {
+      if (removedAny) {
+        // Ops arrived while we were flushing — drain them too.
+        void flush();
+      } else if (transportFailed) {
+        scheduleRetry();
+      }
+    }
+  }
+  flushRef.current = () => void flush();
+
+  // Replay the outbox as soon as the browser reports it is back online.
+  useEffect(() => {
+    if (online) {
+      flushRef.current();
+    }
+  }, [online]);
+  // Tear down the retry timer on unmount.
+  useEffect(
+    () => () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  // On mount, restore any edits a previous session queued but couldn't sync (e.g. the page was reloaded
+  // while offline). The ops are replayed into local state so the board shows the operator's un-synced
+  // work — not just the server snapshot, which doesn't have it yet — and then flushed (immediately if
+  // online, else on reconnect). Runs once; guarded so React StrictMode's double-mount can't double-apply.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) {
+      return;
+    }
+    hydratedRef.current = true;
+    const stored = loadOutbox(competitionId);
+    if (stored.size === 0) {
+      return;
+    }
+    pendingOpsRef.current = stored;
+    setPendingCount(stored.size);
+    const ops = [...stored.values()];
+    setAttempts((current) => {
+      const next = new Map(current);
+      // Weights first so a result replayed below lands on an attempt that exists in local state.
+      for (const op of ops) {
+        if (op.kind !== 'weight') {
+          continue;
+        }
+        const key = attemptKey(op.entryId, op.lift, op.attemptNumber);
+        const prev = next.get(key);
+        next.set(key, {
+          id: prev?.id ?? `${TEMP_ID_PREFIX}${key}`,
+          entryId: op.entryId,
+          lift: op.lift,
+          attemptNumber: op.attemptNumber,
+          weightKg: op.weightKg,
+          result: prev?.result ?? 'pending',
+          decidedAt: prev?.decidedAt ?? null,
+        });
+      }
+      for (const op of ops) {
+        if (op.kind !== 'result') {
+          continue;
+        }
+        const key = attemptKey(op.entryId, op.lift, op.attemptNumber);
+        const existing = next.get(key);
+        if (!existing) {
+          continue;
+        }
+        const decidedAt = op.result === 'good_lift' || op.result === 'no_lift' ? new Date().toISOString() : null;
+        next.set(key, { ...existing, result: op.result, decidedAt });
+      }
+      return next;
+    });
+    setEntries((current) =>
+      current.map((row) => {
+        let updated = row;
+        for (const op of ops) {
+          if (op.kind !== 'rack' || op.entryId !== row.id) {
+            continue;
+          }
+          updated =
+            op.patch.lift === 'squat'
+              ? { ...updated, rackHeightSquat: op.patch.rackHeightSquat, squatRackSetting: op.patch.squatRackSetting }
+              : {
+                  ...updated,
+                  rackHeightBench: op.patch.rackHeightBench,
+                  benchSafetyHeight: op.patch.benchSafetyHeight,
+                  benchSpotting: op.patch.benchSpotting,
+                };
+        }
+        return updated;
+      }),
+    );
+    flushRef.current();
+  }, [competitionId]);
+
   // Sets (or creates) an attempt's weight, optimistically. The existing result is preserved so a
-  // weight correction keeps a recorded good/no lift; the server enforces the progression guard.
+  // weight correction keeps a recorded good/no lift; the server enforces the progression guard. The
+  // write goes through the outbox, so it persists immediately when online and is held + replayed when
+  // not — the screen never blanks on a failed save.
   function setWeight(entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) {
     const key = attemptKey(entry.id, lift, attemptNumber);
     const previous = attempts.get(key);
@@ -331,7 +560,7 @@ export function ScoresheetBoard({
     setAttempts((current) => {
       const next = new Map(current);
       next.set(key, {
-        id: previous?.id ?? `temp:${key}`,
+        id: previous?.id ?? `${TEMP_ID_PREFIX}${key}`,
         entryId: entry.id,
         lift,
         attemptNumber,
@@ -341,39 +570,11 @@ export function ScoresheetBoard({
       });
       return next;
     });
-    startTransition(async () => {
-      const result = await setAttemptWeightAction({ competitionId, entryId: entry.id, lift, attemptNumber, weightKg });
-      if (result.status === 'error') {
-        setAttempts((current) => {
-          const next = new Map(current);
-          if (previous) {
-            next.set(key, previous);
-          } else {
-            next.delete(key);
-          }
-          return next;
-        });
-        setError(readError(result));
-        return;
-      }
-      // Adopt the real id so a follow-up result targets the persisted row.
-      setAttempts((current) => {
-        const existing = current.get(key);
-        if (!existing) {
-          return current;
-        }
-        const next = new Map(current);
-        next.set(key, { ...existing, id: result.data.id });
-        return next;
-      });
-    });
+    enqueue(`w:${key}`, { kind: 'weight', entryId: entry.id, lift, attemptNumber, weightKg });
   }
 
-  // Updates a lifter's rack settings for one lift, optimistically. The rack columns live on the entry,
-  // so this edits local entries state first, then persists; the entries subscription reconciles on
-  // success (and on other devices). On failure the previous entry is restored and a toast shown.
+  // Updates a lifter's rack settings for one lift, optimistically (the rack columns live on the entry).
   function setRackSettings(entry: BoardEntry, patch: RackPatch) {
-    const previous = entry;
     setError(null);
     setEntries((current) =>
       current.map((row) => {
@@ -390,15 +591,7 @@ export function ScoresheetBoard({
             };
       }),
     );
-    startTransition(async () => {
-      // RackPatch is exactly the action payload minus the ids, so it spreads straight in — no per-lift
-      // branch needed here (the optimistic merge above still branches, to map onto BoardEntry's fields).
-      const result = await updateEntryRackSettingsAction({ entryId: entry.id, competitionId, ...patch });
-      if (result.status === 'error') {
-        setEntries((current) => current.map((row) => (row.id === previous.id ? previous : row)));
-        setError(readError(result));
-      }
-    });
+    enqueue(`k:${entry.id}:${patch.lift}`, { kind: 'rack', entryId: entry.id, patch });
   }
 
   function setResult(attempt: BoardAttempt, result: AttemptResult) {
@@ -417,30 +610,31 @@ export function ScoresheetBoard({
       next.set(key, { ...existing, result, decidedAt });
       return next;
     });
-    startTransition(async () => {
-      const outcome = await setAttemptResultAction({ competitionId, attemptId: attempt.id, result });
-      if (outcome.status === 'error') {
-        setAttempts((current) => {
-          const existing = current.get(key);
-          if (!existing) {
-            return current;
-          }
-          const next = new Map(current);
-          next.set(key, { ...existing, result: attempt.result, decidedAt: attempt.decidedAt });
-          return next;
-        });
-        setError(readError(outcome));
-      }
+    enqueue(`r:${key}`, {
+      kind: 'result',
+      entryId: attempt.entryId,
+      lift: attempt.lift,
+      attemptNumber: attempt.attemptNumber,
+      result,
     });
   }
 
   const hasRoster = views.some((view) => view.roster.length > 0);
+  const connectionIndicator = computeConnectionIndicator(connection, pendingCount);
 
   return (
     <div className={expanded ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
       <div className="mb-3 flex items-center justify-between gap-3">
         {expanded ? <h2 className="text-lg font-semibold text-neutral-900">Scoresheet</h2> : <span />}
         <div className="flex items-center gap-2">
+          <div
+            role="status"
+            aria-live="polite"
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${connectionIndicator.box}`}
+          >
+            <span className={`h-2 w-2 rounded-full ${connectionIndicator.dot} ${connectionIndicator.pulse ? 'animate-pulse' : ''}`} />
+            {connectionIndicator.text}
+          </div>
           <BoardOptions
             toggles={[
               {
@@ -944,33 +1138,31 @@ function AttemptCell({
         </button>
       )}
       {declaredAttempt ? (
+        // Result is keyed by the attempt's natural key, not its server id, so ✓ / ✗ work even on an
+        // attempt created offline (no id yet) — the result is queued and synced on reconnect.
         <div className="flex justify-center gap-1.5">
-          {/* Disabled until the optimistic weight write returns a real id — otherwise a result write
-              would be sent with the temp placeholder id and rejected. */}
           <button
             type="button"
-            disabled={declaredAttempt.id.startsWith(TEMP_ID_PREFIX)}
             aria-label={`Good lift for ${entry.lifterName}`}
             aria-pressed={declaredAttempt.result === 'good_lift'}
             onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'good_lift' ? 'pending' : 'good_lift')}
             className={
               declaredAttempt.result === 'good_lift'
-                ? 'rounded bg-green-600 px-3 py-1 text-sm font-bold text-white disabled:opacity-50'
-                : 'rounded border border-green-500 px-3 py-1 text-sm font-bold text-green-700 hover:bg-green-50 disabled:opacity-50'
+                ? 'rounded bg-green-600 px-3 py-1 text-sm font-bold text-white'
+                : 'rounded border border-green-500 px-3 py-1 text-sm font-bold text-green-700 hover:bg-green-50'
             }
           >
             ✓
           </button>
           <button
             type="button"
-            disabled={declaredAttempt.id.startsWith(TEMP_ID_PREFIX)}
             aria-label={`No lift for ${entry.lifterName}`}
             aria-pressed={declaredAttempt.result === 'no_lift'}
             onClick={() => onSetResult(declaredAttempt, declaredAttempt.result === 'no_lift' ? 'pending' : 'no_lift')}
             className={
               declaredAttempt.result === 'no_lift'
-                ? 'rounded bg-red-600 px-3 py-1 text-sm font-bold text-white disabled:opacity-50'
-                : 'rounded border border-red-500 px-3 py-1 text-sm font-bold text-red-700 hover:bg-red-50 disabled:opacity-50'
+                ? 'rounded bg-red-600 px-3 py-1 text-sm font-bold text-white'
+                : 'rounded border border-red-500 px-3 py-1 text-sm font-bold text-red-700 hover:bg-red-50'
             }
           >
             ✗

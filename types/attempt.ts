@@ -26,11 +26,15 @@ export const setAttemptWeightSchema = z.object({
 });
 export type SetAttemptWeightInput = z.infer<typeof setAttemptWeightSchema>;
 
-// Recording (or overturning) an attempt's result. Any result is accepted so an operator can correct
-// a call — including back to 'pending' to reopen it.
+// Recording (or overturning) an attempt's result. Keyed by the attempt's natural key (entry + lift +
+// attempt number) rather than its database id, so an attempt created offline — which has no server id
+// yet — can still have a result recorded and synced on reconnect. Any result is accepted so an
+// operator can correct a call, including back to 'pending' to reopen it.
 export const setAttemptResultSchema = z.object({
   competitionId: z.uuid(),
-  attemptId: z.uuid(),
+  entryId: z.uuid(),
+  lift: z.enum(LIFT_VALUES),
+  attemptNumber: z.number().int().min(1).max(ATTEMPTS_PER_LIFT),
   result: z.enum(ATTEMPT_RESULT_VALUES),
 });
 export type SetAttemptResultInput = z.infer<typeof setAttemptResultSchema>;

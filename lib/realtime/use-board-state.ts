@@ -7,6 +7,9 @@ import type { Sex } from '@/lib/scoring/ipf-gl';
 import { useAttemptsSubscription } from '@/lib/realtime/use-attempts-subscription';
 import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
 import { useFlightsSubscription } from '@/lib/realtime/use-flights-subscription';
+import type { ChannelStatus } from '@/lib/realtime/use-postgres-changes';
+import { deriveConnectionState, type ConnectionState } from '@/lib/realtime/connection-status';
+import { useOnline } from '@/lib/use-online';
 import type { BoardAttempt, BoardEntry, BoardFlight, NamedOption } from '@/lib/scorekeeper/board-types';
 
 type AttemptRow = Database['public']['Tables']['attempts']['Row'];
@@ -126,7 +129,13 @@ export type BoardState = {
   entries: BoardEntry[];
   setEntries: Dispatch<SetStateAction<BoardEntry[]>>;
   flights: BoardFlight[];
+  // Live-update connection health, combining browser connectivity with the realtime channels' status.
+  // Surfaced so a screen can show a live/reconnecting/offline indicator.
+  connection: ConnectionState;
 };
+
+// The three board subscriptions whose channel status feeds the connection indicator.
+type BoardChannel = 'attempts' | 'entries' | 'flights';
 
 // Shared live board state for the run screen and the loading-crew display: seeds attempts/entries/
 // flights from the server snapshot, reconciles realtime changes (scoped to the competition), and
@@ -160,11 +169,32 @@ export function useBoardState({
   const classNameById = useMemo(() => new Map(weightClasses.map((option) => [option.id, option.name])), [weightClasses]);
   const divisionNameById = useMemo(() => new Map(divisions.map((option) => [option.id, option.name])), [divisions]);
 
-  useAttemptsSubscription(competitionId, (payload) => setAttempts((current) => applyAttemptChange(current, payload)));
-  useEntriesSubscription(competitionId, (payload) =>
-    setEntries((current) => applyEntryChange(current, payload, nameById, sexById, classNameById, divisionNameById)),
+  // Track each channel's subscribe status so the board can show a live/reconnecting/offline pill. All
+  // three multiplex over one websocket, so they rise and fall together, but aggregating all three is
+  // robust if one channel errors on its own. The setter no-ops when the status is unchanged so a
+  // repeated callback doesn't re-render.
+  const [channelStatuses, setChannelStatuses] = useState<Partial<Record<BoardChannel, ChannelStatus>>>({});
+  const trackStatus = (channel: BoardChannel, status: ChannelStatus) =>
+    setChannelStatuses((current) => (current[channel] === status ? current : { ...current, [channel]: status }));
+  const online = useOnline();
+  const connection = deriveConnectionState(online, [
+    channelStatuses.attempts,
+    channelStatuses.entries,
+    channelStatuses.flights,
+  ]);
+
+  useAttemptsSubscription(competitionId, (payload) => setAttempts((current) => applyAttemptChange(current, payload)), {
+    onStatusChange: (status) => trackStatus('attempts', status),
+  });
+  useEntriesSubscription(
+    competitionId,
+    (payload) =>
+      setEntries((current) => applyEntryChange(current, payload, nameById, sexById, classNameById, divisionNameById)),
+    { onStatusChange: (status) => trackStatus('entries', status) },
   );
-  useFlightsSubscription(competitionId, (payload) => setFlights((current) => applyFlightChange(current, payload)));
+  useFlightsSubscription(competitionId, (payload) => setFlights((current) => applyFlightChange(current, payload)), {
+    onStatusChange: (status) => trackStatus('flights', status),
+  });
 
   // Re-seed from the server when fresh props arrive (e.g. a manual refresh after a realtime gap), so
   // reloading the page recovers correct state rather than keeping a stale local copy. Props only change
@@ -177,5 +207,5 @@ export function useBoardState({
   useEffect(() => setEntries(initialEntries), [initialEntries]);
   useEffect(() => setFlights(initialFlights), [initialFlights]);
 
-  return { attempts, setAttempts, entries, setEntries, flights };
+  return { attempts, setAttempts, entries, setEntries, flights, connection };
 }
