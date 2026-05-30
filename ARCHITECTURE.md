@@ -10,7 +10,7 @@ Four front-end surfaces share one backend.
 
 - **Admin** (`/(admin)`): staff interfaces with full chrome. Auth required. Admins set up comps, run flights, and manage declarations. Gated server-side via `requireAdmin()` and at the database via RLS.
 - **Display** (`/(display)`): full-screen venue display screens (e.g. the loading-crew display and the warm-up board), admin-gated like Admin via the same `requireAdminPage()` gate, but with no chrome — the display owns the whole viewport, so no nav/header sits behind its full-screen overlay. Read-only, real-time.
-- **Overlay** (`/(overlay)`): OBS browser sources. Transparent background, fixed pixel dimensions (typically 1920×1080 or sub-regions). No chrome, no navigation. Run on the admin's machine using the admin session — no separate overlay auth. Each overlay subscribes to real-time and renders one piece of data.
+- **Overlay** (`/(overlay)`): OBS browser sources. Transparent background, fixed pixel dimensions (typically 1920×1080 or sub-regions). No chrome, no navigation. An OBS Browser Source renders the page's alpha natively, so transparency needs no chroma key. Each overlay subscribes to real-time and renders one piece of data. Read anonymously via the public-comp RLS policies (like the public live views), not the admin session — an OBS Browser Source is a headless browser with its own cookie jar and does not inherit the operator's admin session, so an admin-gated overlay would render empty. See the ADR in section 7.
 - **Public** (`/(public)`): comp landing pages, a public **live scoreboard** (planned, at `/[comp]/live`) for venue TVs and social shares, final results, and the **public warm-up board** (`/[comp]/live/warm-up`) — a sign-in-free copy of the Display warm-up board for sharing with lifters/spectators. Read-only, no auth gate; anon reads are scoped by RLS to publicly-visible comps and lifter names come from the PII-free `public_lifters` view.
 
 Backend services:
@@ -85,7 +85,7 @@ Which screens subscribe to which tables.
 | `/(admin)/[comp]/rack-heights` | entries, flights | `competition_id` |
 | `/(admin)/[comp]/flights` | flights, entries | `competition_id` |
 | `/(overlay)/[comp]/scoreboard` | attempts, entries | `competition_id` + current session |
-| `/(overlay)/[comp]/lifter` | attempts, entries | `competition_id` + current attempt |
+| `/(overlay)/[comp]/lifter` | attempts, entries, flights | `competition_id` (anon, RLS-gated to public comps; current lifter derived per platform via `?platform`) |
 | `/(overlay)/[comp]/attempt` | attempts, referee_decisions | current `attempt_id` |
 | `/(overlay)/[comp]/weight-class` | attempts, entries | `competition_id` + visible weight class |
 | `/(public)/[comp]/live` | attempts, entries | `competition_id` |
@@ -160,9 +160,11 @@ No direct Supabase writes from the client. Every mutation passes through a serve
 
 Original model assumed multi-organisation use with a per-comp role matrix (`comp_roles`, `requireRole`). In practice this is a single-gym tool with 1-2 admins, so the matrix added complexity without value at this scale. Replaced with an `ADMIN_EMAILS` allowlist checked by `requireAdmin()` plus anonymous public read of published comps. Revisit only if multi-tenant becomes a real requirement.
 
-### Overlays on the admin session, no separate overlay auth
+### Overlays read anonymously via public-comp RLS, no separate overlay auth
 
-Overlays run in OBS on the admin's own machine, which already holds an admin session. That removes the need for a per-comp overlay key or signed URL: the overlay browser sources read the same data the admin can, through the existing session. Revisit if overlays ever need to run on an untrusted machine.
+Overlays run in OBS as Browser Sources. A Browser Source is a headless Chromium instance with its **own** cookie jar — it does not share the operator's logged-in browser session, so it cannot rely on the admin session even though it runs on the admin's machine. Rather than reintroduce a per-comp overlay key or signed URL (the original `overlay_key` was removed — see "Simplified from role-based permissions…"), overlays read **anonymously through the same publicly-visible-comp RLS policies the public live views use**: every table read is scoped by `is_comp_public()` / `lifter_in_public_comp()`, and lifter names come from the PII-free `public_lifters` view. This works in the headless Browser Source with zero auth setup, at the cost that overlays only show data once the comp is `published`/`active`/`completed` (acceptable — overlays are a broadcast tool, used during a live, public meet). Revisit (e.g. a signed overlay URL) only if an overlay ever needs to show a non-public comp.
+
+(Earlier design ran overlays on the admin session on the assumption the Browser Source would inherit it; it does not, hence the move to anon public reads above.)
 
 ### Competition setup stays editable at any status
 

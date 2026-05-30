@@ -5,13 +5,9 @@ import type { Database } from '@/types/database.types';
 import { ATTEMPTS_PER_LIFT, LIFT_LABELS, type Lifts } from '@/lib/constants';
 import { bestGoodLift } from '@/lib/attempts/best-lift';
 import { ipfGlPoints, type KitType } from '@/lib/scoring/ipf-gl';
-import {
-  compareRunningOrder,
-  selectLiveSession,
-  selectPlatformPositions,
-  type RunningOrderFields,
-} from '@/lib/attempts/running-order';
+import { compareRunningOrder } from '@/lib/attempts/running-order';
 import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
+import { buildPlatformLiveView, type PlatformLiveRow } from '@/lib/scorekeeper/platform-live-view';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import { BoardOptions, type BoardOptionToggle } from '@/components/scorekeeper/board-options';
@@ -25,10 +21,6 @@ import type {
 } from '@/lib/scorekeeper/board-types';
 
 type LiftType = Database['public']['Enums']['lift_type'];
-type AttemptResult = Database['public']['Enums']['attempt_result'];
-
-// Synthetic platform id for sessions with no platform assigned (mirrors the page's grouping).
-const UNASSIGNED_PLATFORM_ID = 'none';
 
 // Attempt numbers 1..3 (CLAUDE.md: three attempts per lift), derived so the literal lives once.
 const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => index + 1);
@@ -61,15 +53,6 @@ type WarmUpDisplayProps = {
   teams: NamedOption[];
   entries: BoardEntry[];
   attempts: BoardAttempt[];
-};
-
-// An attempt placed in a session's running order, carrying the lifter/flight it belongs to.
-type LiveRow = RunningOrderFields & {
-  entryId: string;
-  result: AttemptResult;
-  flightId: string;
-  flightName: string;
-  lifterName: string;
 };
 
 // One of the three framed lifters (on platform / on deck / in the hole).
@@ -366,8 +349,9 @@ export function WarmUpDisplay({
 }
 
 // Pure derivation of the live session's roster, the three framed lifters and the round header for the
-// selected platform. Mirrors the run screen's per-platform build and the loading display's header, both
-// composed from the shared running-order helpers so the three screens never disagree.
+// selected platform. The live-session/positions core is shared with the lifter overlay via
+// buildPlatformLiveView (so the two never disagree on who is on the platform); this adds the warm-up
+// board's roster ordering, up-next cards and round header on top.
 function buildView({
   platformId,
   sessions,
@@ -383,10 +367,6 @@ function buildView({
   attempts: Map<string, BoardAttempt>;
   isTeamCompetition: boolean;
 }): WarmUpView {
-  const flightById = new Map(flights.map((flight) => [flight.id, flight]));
-  const sessionById = new Map(sessions.map((session) => [session.id, session]));
-  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
-
   const empty: WarmUpView = {
     sessionName: null,
     header: null,
@@ -395,80 +375,26 @@ function buildView({
     roster: [],
   };
 
-  // Roster comes from session/flight structure, not attempts, so a flight of weighed-in lifters shows
-  // before any attempt is declared.
-  const rosterBySession = new Map<string, { entry: BoardEntry; flight: BoardFlight }[]>();
-  for (const entry of entries) {
-    const flight = entry.flightId ? flightById.get(entry.flightId) : undefined;
-    const session = flight ? sessionById.get(flight.sessionId) : undefined;
-    if (!flight || !session || (session.platformId ?? UNASSIGNED_PLATFORM_ID) !== platformId) {
-      continue;
-    }
-    const list = rosterBySession.get(session.id) ?? [];
-    list.push({ entry, flight });
-    rosterBySession.set(session.id, list);
-  }
-
-  // Only sessions with rostered lifters can be live (mirrors the run screen): an empty earlier session
-  // is never "finished" and would otherwise be picked as live, freezing the board on it.
-  const platformSessions = sessions
-    .filter(
-      (session) =>
-        (session.platformId ?? UNASSIGNED_PLATFORM_ID) === platformId && (rosterBySession.get(session.id)?.length ?? 0) > 0,
-    )
-    .toSorted((a, b) => a.sortOrder - b.sortOrder);
-  if (platformSessions.length === 0) {
-    return empty;
-  }
-  const platformSessionIds = new Set(platformSessions.map((session) => session.id));
-
-  // Attempt rows joined to their session, for running-order positions and per-session counts.
-  const rowsBySession = new Map<string, LiveRow[]>();
-  const attemptCountBySession = new Map<string, number>();
-  const pendingCountBySession = new Map<string, number>();
-  for (const attempt of attempts.values()) {
-    const entry = entryById.get(attempt.entryId);
-    const flight = entry?.flightId ? flightById.get(entry.flightId) : undefined;
-    const session = flight ? sessionById.get(flight.sessionId) : undefined;
-    if (!entry || !flight || !session || !platformSessionIds.has(session.id)) {
-      continue;
-    }
-    const list = rowsBySession.get(session.id) ?? [];
-    list.push({
-      entryId: attempt.entryId,
-      lift: attempt.lift,
-      attemptNumber: attempt.attemptNumber,
-      weightKg: attempt.weightKg,
-      lotNumber: entry.lotNumber,
-      flightSortOrder: flight.sortOrder,
-      flightId: flight.id,
-      flightName: flight.name,
-      lifterName: entry.lifterName,
-      result: attempt.result,
-    });
-    rowsBySession.set(session.id, list);
-    attemptCountBySession.set(session.id, (attemptCountBySession.get(session.id) ?? 0) + 1);
-    if (attempt.result === 'pending' && attempt.weightKg !== null) {
-      pendingCountBySession.set(session.id, (pendingCountBySession.get(session.id) ?? 0) + 1);
-    }
-  }
-
-  const liveSession = selectLiveSession(platformSessions, attemptCountBySession, pendingCountBySession);
+  const { liveSession, rosterItems, liveRows, positions } = buildPlatformLiveView({
+    platformId,
+    sessions,
+    flights,
+    entries,
+    attempts: attempts.values(),
+  });
   if (!liveSession) {
     return empty;
   }
-  const liveRows = rowsBySession.get(liveSession.id) ?? [];
-  const positions = selectPlatformPositions(liveRows);
 
   // A team comp groups by lift across the whole session (each member contests one assigned lift)
   // instead of by the flight's single current lift; otherwise order by the round in progress.
-  const roster = orderRosterForSession(rosterBySession.get(liveSession.id) ?? [], liveRows, isTeamCompetition);
+  const roster = orderRosterForSession(rosterItems, liveRows, isTeamCompetition);
 
-  const toCard = (row: LiveRow | null): PositionCardData =>
+  const toCard = (row: PlatformLiveRow | null): PositionCardData =>
     row
       ? {
-          lifterName: row.lifterName,
-          flightName: row.flightName,
+          lifterName: row.entry.lifterName,
+          flightName: row.flight.name,
           lift: row.lift,
           attemptNumber: row.attemptNumber,
           weightKg: row.weightKg,
@@ -485,7 +411,7 @@ function buildView({
     const group = liveRows
       .filter(
         (row) =>
-          row.flightId === onPlatform.flightId &&
+          row.flight.id === onPlatform.flight.id &&
           row.lift === onPlatform.lift &&
           row.attemptNumber === onPlatform.attemptNumber &&
           row.weightKg !== null,
@@ -493,7 +419,7 @@ function buildView({
       .toSorted(compareRunningOrder);
     const position = group.findIndex((row) => row.entryId === onPlatform.entryId) + 1;
     header = {
-      flightName: onPlatform.flightName,
+      flightName: onPlatform.flight.name,
       lift: onPlatform.lift,
       round: onPlatform.attemptNumber,
       position,

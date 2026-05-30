@@ -1,5 +1,23 @@
 @import "tailwindcss";
 
+/* Overlay lower-third entrance. Registering --animate-* in @theme makes Tailwind v4 generate the
+   matching `animate-overlay-rise` utility; the OBS lifter overlay keys its card on the on-platform
+   attempt so each new lifter slides up fresh. */
+@theme {
+  --animate-overlay-rise: overlay-rise 0.4s ease-out;
+
+  @keyframes overlay-rise {
+    from {
+      opacity: 0;
+      transform: translateY(1.5rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
 /* Backup print sheets (the weigh-in and rack-heights screens): when printing, drop the app chrome from
    the flow entirely (display:none, not just hidden) so it leaves no trailing blank pages, and show
    only the sheet. Scoped with :has so every other page still prints normally; the sheet is portalled
