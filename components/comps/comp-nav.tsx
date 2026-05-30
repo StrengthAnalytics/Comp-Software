@@ -31,7 +31,7 @@ export function CompNav({ slug, compId, compName, isTeamCompetition }: CompNavPr
     // The warm-up board is a full-screen, per-platform venue screen (read-only run scoresheet) — its own tab too.
     { label: 'Warm-up board', href: `/${slug}/warm-up`, newTab: true },
     // The public, sign-in-free warm-up board — same screen, shareable to lifters/spectators. Own tab.
-    { label: 'Warm-up (public)', href: `/${slug}/live`, newTab: true },
+    { label: 'Warm-up (public)', href: `/${slug}/live/warm-up`, newTab: true },
     ...(isTeamCompetition
       ? [
           { label: 'Teams', href: `/${slug}/teams` },
