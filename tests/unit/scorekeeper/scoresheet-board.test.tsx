@@ -263,4 +263,34 @@ describe('ScoresheetBoard offline resilience', () => {
     expect(weightAction).toHaveBeenCalledTimes(1);
     expect(resultAction).not.toHaveBeenCalled();
   });
+
+  it('defers a rejection reconcile while offline and runs it on reconnect', async () => {
+    renderBoard(); // online
+
+    // Hold the save open so we can drop the connection before its rejection lands.
+    let rejectWith!: (result: { status: 'error'; message: string }) => void;
+    weightAction.mockReturnValueOnce(
+      new Promise<{ status: 'error'; message: string }>((resolve) => {
+        rejectWith = resolve;
+      }),
+    );
+
+    enterSquatOpener('100');
+    await waitFor(() => expect(weightAction).toHaveBeenCalledTimes(1));
+
+    // Connection drops while the save is in flight.
+    setOnline(false);
+
+    // The save resolves with a deterministic rejection. The reconcile (a full re-pull) must NOT fire
+    // while offline — a router.refresh offline would no-op and waste the deferred reconcile.
+    await act(async () => {
+      rejectWith({ status: 'error', message: 'After a good lift, the next attempt must be heavier than 105 kg.' });
+    });
+    expect(refreshMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/must be heavier than 105 kg/)).toBeInTheDocument();
+
+    // On reconnect the deferred reconcile runs so the board converges to server truth.
+    setOnline(true);
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+  });
 });
