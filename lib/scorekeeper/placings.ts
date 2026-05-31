@@ -1,4 +1,5 @@
 import type { Sex } from '@/lib/scoring/ipf-gl';
+import { compareValues, nullsLast } from '@/lib/ordering';
 
 // Live individual placings for the run/warm-up boards: each lifter's place within their placement
 // category, computed twice — once on the total achieved so far ("current") and once on the projected
@@ -45,11 +46,13 @@ function placeWithin(
       if (byTotal !== 0) {
         return byTotal;
       }
-      const byBodyweight = (a.bodyweightKg ?? Infinity) - (b.bodyweightKg ?? Infinity);
+      // nullsLast/compareValues keep the comparison NaN-safe when two entries are both unweighed or
+      // both lot-less (Infinity − Infinity would be NaN, an invalid comparator result).
+      const byBodyweight = compareValues(nullsLast(a.bodyweightKg), nullsLast(b.bodyweightKg));
       if (byBodyweight !== 0) {
         return byBodyweight;
       }
-      return (a.lotNumber ?? Infinity) - (b.lotNumber ?? Infinity);
+      return compareValues(nullsLast(a.lotNumber), nullsLast(b.lotNumber));
     });
 
   const places: [string, number][] = [];
