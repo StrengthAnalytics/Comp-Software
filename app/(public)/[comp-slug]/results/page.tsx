@@ -56,11 +56,12 @@ export default async function ResultsPage({ params }: { params: Promise<{ 'comp-
       .select('id, lifter_id, team_id, team_lift, bodyweight_kg')
       .eq('competition_id', comp.id)
       .not('team_id', 'is', null),
+    // All attempts (not just good lifts): the actual total reads the good lifts, the predicted total
+    // also needs the declared-but-unjudged attempts that are still in play.
     supabase
       .from('attempts')
       .select('id, entry_id, lift, attempt_number, weight_kg, result, decided_at')
-      .eq('competition_id', comp.id)
-      .eq('result', 'good_lift'),
+      .eq('competition_id', comp.id),
   ]);
 
   // Names and gender come from the PII-free public_lifters view so the page works for anon visitors.
@@ -93,7 +94,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ 'comp-
       };
     });
 
-  const initialBestAttempts: BoardAttempt[] = (attemptRows ?? []).map((row) => ({
+  const initialAttempts: BoardAttempt[] = (attemptRows ?? []).map((row) => ({
     id: row.id,
     entryId: row.entry_id,
     lift: row.lift,
@@ -109,6 +110,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ 'comp-
         <h1 className="text-3xl font-semibold tracking-tight">{comp.name}</h1>
         <p className="mt-1 text-base text-neutral-600">
           Team standings — the sum of each team&rsquo;s three IPF GL points, taken from each member&rsquo;s best lift.
+          Amber shows the projected total if the current attempts are made.
         </p>
       </div>
 
@@ -117,7 +119,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ 'comp-
         kitType={comp.kit_type}
         teams={teams}
         initialMembers={initialMembers}
-        initialBestAttempts={initialBestAttempts}
+        initialAttempts={initialAttempts}
       />
     </main>
   );

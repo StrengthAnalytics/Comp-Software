@@ -11,6 +11,9 @@ export type StandingMemberInput = {
   sex: Sex;
   bodyweightKg: number; // 0 when not weighed in
   bestLiftKg: number; // 0 when the member has no good lift
+  // Heaviest in-play lift (best good lift, or a declared-but-unjudged attempt), for the projected
+  // total. 0 when nothing is in play. Equals bestLiftKg when the member has no pending heavier attempt.
+  predictedBestLiftKg: number;
 };
 
 export type StandingTeamInput = {
@@ -24,12 +27,18 @@ export type StandingMember = {
   lifterName: string;
   bestLiftKg: number;
   points: number;
+  // The member's projected contribution if they make their declared attempts.
+  predictedBestLiftKg: number;
+  predictedPoints: number;
 };
 
 export type TeamStanding = {
   teamId: string;
   name: string;
   total: number;
+  // The team's projected total if every member makes their currently-declared attempts. Always ≥
+  // total. The list stays ranked by the actual total; predicted is shown alongside as guidance.
+  predictedTotal: number;
   rank: number;
   members: StandingMember[];
 };
@@ -44,10 +53,18 @@ export function computeTeamStandings(teams: StandingTeamInput[], kitType: KitTyp
         lifterName: member.lifterName,
         bestLiftKg: member.bestLiftKg,
         points: ipfGlPoints({ sex: member.sex, kitType, bodyweightKg: member.bodyweightKg, liftedKg: member.bestLiftKg }),
+        predictedBestLiftKg: member.predictedBestLiftKg,
+        predictedPoints: ipfGlPoints({
+          sex: member.sex,
+          kitType,
+          bodyweightKg: member.bodyweightKg,
+          liftedKg: member.predictedBestLiftKg,
+        }),
       }))
       .toSorted((a, b) => TEAM_LIFTS.indexOf(a.lift) - TEAM_LIFTS.indexOf(b.lift));
     // teamGlScore owns the team-GL sum and its rounding, so the public standings, the run screen and
-    // the overlays can never aggregate or round a team's score differently.
+    // the overlays can never aggregate or round a team's score differently. The actual total uses each
+    // member's best good lift; the predicted total uses their best in-play lift instead.
     const total = teamGlScore(
       team.members.map((member) => ({
         sex: member.sex,
@@ -56,7 +73,15 @@ export function computeTeamStandings(teams: StandingTeamInput[], kitType: KitTyp
         bestLiftKg: member.bestLiftKg,
       })),
     );
-    return { teamId: team.teamId, name: team.name, total, members };
+    const predictedTotal = teamGlScore(
+      team.members.map((member) => ({
+        sex: member.sex,
+        kitType,
+        bodyweightKg: member.bodyweightKg,
+        bestLiftKg: member.predictedBestLiftKg,
+      })),
+    );
+    return { teamId: team.teamId, name: team.name, total, predictedTotal, members };
   });
 
   const ordered = scored.toSorted((a, b) => b.total - a.total || a.name.localeCompare(b.name));
@@ -68,6 +93,6 @@ export function computeTeamStandings(teams: StandingTeamInput[], kitType: KitTyp
     const rank = previousTotal !== null && team.total === previousTotal ? previousRank : index + 1;
     previousTotal = team.total;
     previousRank = rank;
-    return { teamId: team.teamId, name: team.name, total: team.total, rank, members: team.members };
+    return { teamId: team.teamId, name: team.name, total: team.total, predictedTotal: team.predictedTotal, rank, members: team.members };
   });
 }

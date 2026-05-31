@@ -15,15 +15,15 @@ export function TeamStandingsLive({
   kitType,
   teams,
   initialMembers,
-  initialBestAttempts,
+  initialAttempts,
 }: {
   competitionId: string;
   kitType: KitType;
   teams: TeamSeed[];
   initialMembers: StandingMemberSeed[];
-  initialBestAttempts: BoardAttempt[];
+  initialAttempts: BoardAttempt[];
 }) {
-  const { standings, connection } = useTeamStandings({ competitionId, kitType, teams, initialMembers, initialBestAttempts });
+  const { standings, connection } = useTeamStandings({ competitionId, kitType, teams, initialMembers, initialAttempts });
   const indicator = computeConnectionIndicator(connection);
   const noResultsYet = standings.length > 0 && standings.every((team) => team.total === 0);
 
@@ -59,13 +59,30 @@ export function TeamStandingsLive({
               >
                 <span className="text-3xl font-bold tabular-nums text-neutral-400">{team.rank}</span>
                 <span className="min-w-0 truncate text-3xl font-semibold text-neutral-900">{team.name}</span>
-                <span className="text-right text-3xl font-bold tabular-nums text-neutral-900">{team.total.toFixed(2)}</span>
+                {/* Actual total, with the projected total (if every member makes their current
+                    attempt) beneath it in amber — only when the projection is higher than the score
+                    locked in so far. */}
+                <span className="flex flex-col items-end leading-none">
+                  <span className="text-3xl font-bold tabular-nums text-neutral-900">{team.total.toFixed(2)}</span>
+                  {team.predictedTotal > team.total ? (
+                    <span className="mt-1 text-base font-semibold tabular-nums text-amber-600">
+                      {team.predictedTotal.toFixed(2)} proj
+                    </span>
+                  ) : null}
+                </span>
                 {team.members.map((member) => (
                   <Fragment key={member.lift}>
                     <span className="text-xl font-medium text-neutral-500">{LIFT_LABELS[member.lift]}</span>
                     <span className="min-w-0 truncate text-xl text-neutral-800">{member.lifterName}</span>
-                    <span className="text-right text-xl tabular-nums text-neutral-600">
-                      {member.bestLiftKg > 0 ? `${member.bestLiftKg} kg` : '—'} · {member.points.toFixed(2)}
+                    <span className="flex flex-col items-end leading-tight">
+                      <span className="text-xl tabular-nums text-neutral-600">
+                        {member.bestLiftKg > 0 ? `${member.bestLiftKg} kg` : '—'} · {member.points.toFixed(2)}
+                      </span>
+                      {member.predictedBestLiftKg > member.bestLiftKg ? (
+                        <span className="text-sm tabular-nums text-amber-600">
+                          {member.predictedBestLiftKg} kg · {member.predictedPoints.toFixed(2)}
+                        </span>
+                      ) : null}
                     </span>
                   </Fragment>
                 ))}
