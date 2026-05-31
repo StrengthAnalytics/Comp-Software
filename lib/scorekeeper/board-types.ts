@@ -19,9 +19,12 @@ export type BoardEntry = {
   flightId: string | null;
   lotNumber: number | null;
   teamLift: LiftType | null;
+  teamId: string | null;
   teamName: string | null;
   bodyweightKg: number | null;
+  weightClassId: string | null;
   weightClassName: string | null;
+  divisionId: string | null;
   divisionName: string | null;
   rackHeightSquat: number | null;
   squatRackSetting: SquatRackSetting | null;

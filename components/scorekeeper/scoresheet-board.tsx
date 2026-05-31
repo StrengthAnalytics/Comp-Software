@@ -23,7 +23,9 @@ import {
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
 import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
-import { bestLiftFor, computeEntryScore } from '@/lib/scorekeeper/entry-score';
+import { bestLiftFor, computeEntryScore, computePredictedScore, type PredictedScore } from '@/lib/scorekeeper/entry-score';
+import { computePlacings, type PlaceableEntry } from '@/lib/scorekeeper/placings';
+import { computeTeamPoints, type TeamPoints } from '@/lib/scorekeeper/team-points';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
 import { loadOutbox, saveOutbox, type PendingOp, type RackPatch } from '@/lib/scorekeeper/outbox';
@@ -252,6 +254,14 @@ export function ScoresheetBoard({
   const [showTotal, toggleTotal] = usePersistentToggle('scoresheet:col:total');
   const [subTotalPref, toggleSubTotal] = usePersistentToggle('scoresheet:col:subtotal', false);
   const [showGl, toggleGl] = usePersistentToggle('scoresheet:gl', false);
+  // Standings columns — current/predicted place and the predicted total/GL (individual comps), or the
+  // team's actual/predicted points (team comps). All extras, so they default off.
+  const [curPlacePref, toggleCurPlace] = usePersistentToggle('scoresheet:col:curplace', false);
+  const [predPlacePref, togglePredPlace] = usePersistentToggle('scoresheet:col:predplace', false);
+  const [predTotalPref, togglePredTotal] = usePersistentToggle('scoresheet:col:predtotal', false);
+  const [predGlPref, togglePredGl] = usePersistentToggle('scoresheet:col:predgl', false);
+  const [teamActualPref, toggleTeamActual] = usePersistentToggle('scoresheet:col:teamactual', false);
+  const [teamPredPref, toggleTeamPred] = usePersistentToggle('scoresheet:col:teampred', false);
   const [striped, toggleStriping] = usePersistentToggle('scoresheet:striping');
 
   // Browser connectivity, for gating and flushing the offline outbox. (The realtime channel health in
@@ -313,6 +323,64 @@ export function ScoresheetBoard({
     () => buildPlatformViews({ platforms, sessions, flights, entries, attempts, isTeamCompetition }),
     [platforms, sessions, flights, entries, attempts, isTeamCompetition],
   );
+
+  // The place/predicted columns apply to individual comps (a team comp has no individual placing); the
+  // team-points columns apply only to a team comp. Each is gated on its toggle so the comp-wide work
+  // below only runs when something needs it.
+  const showCurPlace = !isTeamCompetition && curPlacePref;
+  const showPredPlace = !isTeamCompetition && predPlacePref;
+  const showPredTotal = !isTeamCompetition && predTotalPref;
+  const showPredGl = !isTeamCompetition && predGlPref;
+  const showTeamActual = isTeamCompetition && teamActualPref;
+  const showTeamPred = isTeamCompetition && teamPredPref;
+
+  // Each individual lifter's running total and projected score, computed comp-wide (across every
+  // flight/session, not just the platform on screen) so the places below rank the whole field. Built
+  // once and reused by the predicted columns; empty unless one of those columns is on.
+  const individualScores = useMemo(() => {
+    const map = new Map<string, { currentTotal: number; predicted: PredictedScore }>();
+    if (isTeamCompetition || (!showCurPlace && !showPredPlace && !showPredTotal && !showPredGl)) {
+      return map;
+    }
+    for (const entry of entries) {
+      map.set(entry.id, {
+        currentTotal: computeEntryScore(attempts, entry, columnLifts, kitType, false).total,
+        predicted: computePredictedScore(attempts, entry, columnLifts, kitType, false),
+      });
+    }
+    return map;
+  }, [entries, attempts, columnLifts, kitType, isTeamCompetition, showCurPlace, showPredPlace, showPredTotal, showPredGl]);
+
+  // Current and predicted place per entry, within (weight class × division × sex). Empty unless a
+  // place column is on.
+  const placings = useMemo(() => {
+    if (!showCurPlace && !showPredPlace) {
+      return { currentPlaceById: new Map<string, number>(), predictedPlaceById: new Map<string, number>() };
+    }
+    const placeable: PlaceableEntry[] = entries.map((entry) => {
+      const score = individualScores.get(entry.id);
+      return {
+        id: entry.id,
+        weightClassId: entry.weightClassId,
+        divisionId: entry.divisionId,
+        sex: entry.sex,
+        bodyweightKg: entry.bodyweightKg,
+        lotNumber: entry.lotNumber,
+        currentTotal: score?.currentTotal ?? 0,
+        predictedTotal: score?.predicted.predictedTotal ?? 0,
+      };
+    });
+    return computePlacings(placeable);
+  }, [entries, individualScores, showCurPlace, showPredPlace]);
+
+  // Each team's actual and predicted GL points, keyed by team id. Empty unless a team-points column is
+  // on (only a team comp shows them).
+  const teamPoints = useMemo(() => {
+    if (!showTeamActual && !showTeamPred) {
+      return new Map<string, TeamPoints>();
+    }
+    return computeTeamPoints(attempts, entries, kitType);
+  }, [attempts, entries, kitType, showTeamActual, showTeamPred]);
 
   // Mirror the outbox to localStorage so edits queued in this session survive a page reload — e.g. the
   // operator reloads, or the tab is reopened, while still offline — and reach the database when the
@@ -695,6 +763,17 @@ export function ScoresheetBoard({
                 : []),
               { id: 'total', label: 'Total', checked: showTotal, onToggle: toggleTotal },
               { id: 'gl', label: 'IPF GL points', checked: showGl, onToggle: toggleGl },
+              ...(isTeamCompetition
+                ? [
+                    { id: 'teamactual', label: 'Team points', checked: showTeamActual, onToggle: toggleTeamActual },
+                    { id: 'teampred', label: 'Predicted team points', checked: showTeamPred, onToggle: toggleTeamPred },
+                  ]
+                : [
+                    { id: 'curplace', label: 'Current place', checked: showCurPlace, onToggle: toggleCurPlace },
+                    { id: 'predplace', label: 'Predicted place', checked: showPredPlace, onToggle: togglePredPlace },
+                    { id: 'predtotal', label: 'Predicted total', checked: showPredTotal, onToggle: togglePredTotal },
+                    { id: 'predgl', label: 'Predicted GL points', checked: showPredGl, onToggle: togglePredGl },
+                  ]),
               { id: 'striping', label: 'Row striping', checked: striped, onToggle: toggleStriping },
             ]}
           />
@@ -731,6 +810,16 @@ export function ScoresheetBoard({
               showBest={showBest}
               showTotal={showTotal}
               showSubTotal={showSubTotal}
+              showCurPlace={showCurPlace}
+              showPredPlace={showPredPlace}
+              showPredTotal={showPredTotal}
+              showPredGl={showPredGl}
+              showTeamActual={showTeamActual}
+              showTeamPred={showTeamPred}
+              currentPlaceById={placings.currentPlaceById}
+              predictedPlaceById={placings.predictedPlaceById}
+              predictedScoreById={individualScores}
+              teamPointsById={teamPoints}
               onSetWeight={setWeight}
               onSetResult={setResult}
               onSetRack={setRackSettings}
@@ -765,6 +854,16 @@ function PlatformPanel({
   showBest,
   showTotal,
   showSubTotal,
+  showCurPlace,
+  showPredPlace,
+  showPredTotal,
+  showPredGl,
+  showTeamActual,
+  showTeamPred,
+  currentPlaceById,
+  predictedPlaceById,
+  predictedScoreById,
+  teamPointsById,
   onSetWeight,
   onSetResult,
   onSetRack,
@@ -785,6 +884,16 @@ function PlatformPanel({
   showBest: boolean;
   showTotal: boolean;
   showSubTotal: boolean;
+  showCurPlace: boolean;
+  showPredPlace: boolean;
+  showPredTotal: boolean;
+  showPredGl: boolean;
+  showTeamActual: boolean;
+  showTeamPred: boolean;
+  currentPlaceById: Map<string, number>;
+  predictedPlaceById: Map<string, number>;
+  predictedScoreById: Map<string, { currentTotal: number; predicted: PredictedScore }>;
+  teamPointsById: Map<string, TeamPoints>;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
   onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
@@ -873,6 +982,36 @@ function PlatformPanel({
                     IPF GL
                   </th>
                 ) : null}
+                {showCurPlace ? (
+                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                    Place
+                  </th>
+                ) : null}
+                {showPredPlace ? (
+                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                    Pred place
+                  </th>
+                ) : null}
+                {showPredTotal ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    Pred total
+                  </th>
+                ) : null}
+                {showPredGl ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    Pred GL
+                  </th>
+                ) : null}
+                {showTeamActual ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    Team pts
+                  </th>
+                ) : null}
+                {showTeamPred ? (
+                  <th scope="col" className={`w-24 text-center ${HEAD}`}>
+                    Pred team pts
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -884,6 +1023,12 @@ function PlatformPanel({
                     ? computeEntryScore(attempts, entry, columnLifts, kitType, isTeamCompetition)
                     : { total: 0, glPoints: 0 };
                 const subTotal = showSubTotal ? bestForLift(entry.id, 'squat') + bestForLift(entry.id, 'bench') : 0;
+                // Standings lookups; the maps are empty (so these are undefined → a dash) unless the
+                // matching column is on.
+                const predicted = predictedScoreById.get(entry.id)?.predicted;
+                const currentPlace = currentPlaceById.get(entry.id);
+                const predictedPlace = predictedPlaceById.get(entry.id);
+                const teamPts = entry.teamId ? teamPointsById.get(entry.teamId) : undefined;
                 // Band alternate rows when striping is on. The transparent cells show the row tint;
                 // the sticky first column needs its own opaque background, so it carries the same
                 // band (and stays white otherwise, to mask content scrolling beneath it).
@@ -943,6 +1088,36 @@ function PlatformPanel({
                   {showGl ? (
                     <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
                       {gl > 0 ? gl.toFixed(2) : '—'}
+                    </td>
+                  ) : null}
+                  {showCurPlace ? (
+                    <td className={`text-center font-semibold tabular-nums text-neutral-900 ${CELL}`}>
+                      {currentPlace ?? '—'}
+                    </td>
+                  ) : null}
+                  {showPredPlace ? (
+                    <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>
+                      {predictedPlace ?? '—'}
+                    </td>
+                  ) : null}
+                  {showPredTotal ? (
+                    <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
+                      {predicted && predicted.predictedTotal > 0 ? predicted.predictedTotal : '—'}
+                    </td>
+                  ) : null}
+                  {showPredGl ? (
+                    <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
+                      {predicted && predicted.predictedGlPoints > 0 ? predicted.predictedGlPoints.toFixed(2) : '—'}
+                    </td>
+                  ) : null}
+                  {showTeamActual ? (
+                    <td className={`text-center font-semibold tabular-nums text-neutral-900 ${CELL}`}>
+                      {teamPts && teamPts.actual > 0 ? teamPts.actual.toFixed(2) : '—'}
+                    </td>
+                  ) : null}
+                  {showTeamPred ? (
+                    <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
+                      {teamPts && teamPts.predicted > 0 ? teamPts.predicted.toFixed(2) : '—'}
                     </td>
                   ) : null}
                 </tr>

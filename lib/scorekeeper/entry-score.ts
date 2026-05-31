@@ -25,6 +25,64 @@ export function bestLiftFor(
   );
 }
 
+// The best *predicted* lift (kg) for one entry + lift: the heaviest attempt that is either already a
+// good lift or still in play — pending with a declared weight (not yet judged). A missed (no_lift),
+// not-taken or withdrawn attempt is ignored, and an undeclared one has no weight, so this is "the
+// heaviest the lifter is currently set to make in this lift if they get what's loaded/declared". 0
+// when nothing is in play. This is the projection GoodLift/LiftingCast show: a declared-but-untaken
+// third deadlift counts here until it is judged, then it either becomes the (good) best or drops out.
+export function predictedBestLiftFor(
+  attempts: ReadonlyMap<string, BoardAttempt>,
+  entryId: string,
+  lift: LiftType,
+): number {
+  let best = 0;
+  for (const attemptNumber of ATTEMPT_NUMBERS) {
+    const attempt = attempts.get(attemptKey(entryId, lift, attemptNumber));
+    if (!attempt || attempt.weightKg === null) {
+      continue;
+    }
+    const inPlay = attempt.result === 'good_lift' || attempt.result === 'pending';
+    if (inPlay && attempt.weightKg > best) {
+      best = attempt.weightKg;
+    }
+  }
+  return best;
+}
+
+export type PredictedScore = {
+  // Sum of each contributing lift's predicted best — the projected final total if the lifter makes
+  // their currently-declared attempts. 0 when any contributing lift has nothing in play, since a
+  // lifter who can no longer make a lift (bombed, with no pending attempt) cannot total.
+  predictedTotal: number;
+  // IPF GL points from the predicted total and the weigh-in bodyweight; 0 with no predicted total or
+  // before weigh-in. Full-power coefficients via the comp's kit type, matching computeEntryScore.
+  predictedGlPoints: number;
+};
+
+// The entry's *predicted* score — projected total and IPF GL — from the in-play attempts (good lifts
+// plus declared-but-unjudged attempts). Mirrors computeEntryScore but on the prediction: the total is
+// only counted once every contributing lift has a value in play (a bombed lift with nothing pending
+// means no predicted total), so the predicted standings only rank lifters still on course to total.
+export function computePredictedScore(
+  attempts: ReadonlyMap<string, BoardAttempt>,
+  entry: BoardEntry,
+  columnLifts: readonly LiftType[],
+  kitType: KitType,
+  isTeamCompetition: boolean,
+): PredictedScore {
+  const lifts = contributingLifts(entry, columnLifts, isTeamCompetition);
+  const predictedBests = lifts.map((lift) => predictedBestLiftFor(attempts, entry.id, lift));
+  // Every contributing lift must have something in play to project a total.
+  const totals = predictedBests.every((best) => best > 0) ? predictedBests : [];
+  const predictedTotal = totals.reduce((sum, best) => sum + best, 0);
+  const predictedGlPoints =
+    predictedTotal > 0
+      ? ipfGlPoints({ sex: entry.sex, kitType, bodyweightKg: entry.bodyweightKg ?? 0, liftedKg: predictedTotal })
+      : 0;
+  return { predictedTotal, predictedGlPoints };
+}
+
 // The lifts that count toward an entry's total: in a team comp each member contests only their one
 // assigned lift, so just that; otherwise every contested lift of the comp.
 export function contributingLifts(
