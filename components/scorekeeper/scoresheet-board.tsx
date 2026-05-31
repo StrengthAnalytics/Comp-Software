@@ -25,7 +25,8 @@ import {
 import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { bestLiftFor, computeEntryScore, computePredictedScore, type PredictedScore } from '@/lib/scorekeeper/entry-score';
 import { computePlacings, type PlaceableEntry } from '@/lib/scorekeeper/placings';
-import { computeTeamPoints, type TeamPoints } from '@/lib/scorekeeper/team-points';
+import { computeBoardTeamStandings } from '@/lib/scorekeeper/team-board-standings';
+import type { TeamStanding } from '@/lib/scoring/team-standings';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { computeConnectionIndicator } from '@/lib/realtime/connection-status';
 import { loadOutbox, saveOutbox, type PendingOp, type RackPatch } from '@/lib/scorekeeper/outbox';
@@ -324,11 +325,12 @@ export function ScoresheetBoard({
     [platforms, sessions, flights, entries, attempts, isTeamCompetition],
   );
 
-  // The place/predicted columns apply to individual comps (a team comp has no individual placing); the
-  // team-points columns apply only to a team comp. Each is gated on its toggle so the comp-wide work
-  // below only runs when something needs it.
-  const showCurPlace = !isTeamCompetition && curPlacePref;
-  const showPredPlace = !isTeamCompetition && predPlacePref;
+  // Place columns apply to both comp types — but in a team comp the place is the lifter's team's
+  // place, not an individual one. The predicted total/GL columns are individual-only; the team-points
+  // columns are team-only. Each is gated on its toggle so the comp-wide work below only runs when
+  // something needs it.
+  const showCurPlace = curPlacePref;
+  const showPredPlace = predPlacePref;
   const showPredTotal = !isTeamCompetition && predTotalPref;
   const showPredGl = !isTeamCompetition && predGlPref;
   const showTeamActual = isTeamCompetition && teamActualPref;
@@ -336,7 +338,7 @@ export function ScoresheetBoard({
 
   // Each individual lifter's running total and projected score, computed comp-wide (across every
   // flight/session, not just the platform on screen) so the places below rank the whole field. Built
-  // once and reused by the predicted columns; empty unless one of those columns is on.
+  // once and reused by the predicted columns; empty for a team comp or unless one of those columns is on.
   const individualScores = useMemo(() => {
     const map = new Map<string, { currentTotal: number; predicted: PredictedScore }>();
     if (isTeamCompetition || (!showCurPlace && !showPredPlace && !showPredTotal && !showPredGl)) {
@@ -351,10 +353,10 @@ export function ScoresheetBoard({
     return map;
   }, [entries, attempts, columnLifts, kitType, isTeamCompetition, showCurPlace, showPredPlace, showPredTotal, showPredGl]);
 
-  // Current and predicted place per entry, within (weight class × division × sex). Empty unless a
-  // place column is on.
+  // Individual current/predicted place per entry, within (weight class × division × sex). Empty for a
+  // team comp (which ranks teams, not lifters) or unless a place column is on.
   const placings = useMemo(() => {
-    if (!showCurPlace && !showPredPlace) {
+    if (isTeamCompetition || (!showCurPlace && !showPredPlace)) {
       return { currentPlaceById: new Map<string, number>(), predictedPlaceById: new Map<string, number>() };
     }
     const placeable: PlaceableEntry[] = entries.map((entry) => {
@@ -371,16 +373,16 @@ export function ScoresheetBoard({
       };
     });
     return computePlacings(placeable);
-  }, [entries, individualScores, showCurPlace, showPredPlace]);
+  }, [entries, individualScores, isTeamCompetition, showCurPlace, showPredPlace]);
 
-  // Each team's actual and predicted GL points, keyed by team id. Empty unless a team-points column is
-  // on (only a team comp shows them).
-  const teamPoints = useMemo(() => {
-    if (!showTeamActual && !showTeamPred) {
-      return new Map<string, TeamPoints>();
+  // Full team standings (actual + predicted points and ranks) keyed by team id, via the shared scorer
+  // the public results page uses. Empty for an individual comp or unless a team column is on.
+  const teamStandings = useMemo(() => {
+    if (!isTeamCompetition || (!showCurPlace && !showPredPlace && !showTeamActual && !showTeamPred)) {
+      return new Map<string, TeamStanding>();
     }
-    return computeTeamPoints(attempts, entries, kitType);
-  }, [attempts, entries, kitType, showTeamActual, showTeamPred]);
+    return computeBoardTeamStandings(attempts, entries, kitType);
+  }, [attempts, entries, kitType, isTeamCompetition, showCurPlace, showPredPlace, showTeamActual, showTeamPred]);
 
   // Mirror the outbox to localStorage so edits queued in this session survive a page reload — e.g. the
   // operator reloads, or the tab is reopened, while still offline — and reach the database when the
@@ -763,14 +765,16 @@ export function ScoresheetBoard({
                 : []),
               { id: 'total', label: 'Total', checked: showTotal, onToggle: toggleTotal },
               { id: 'gl', label: 'IPF GL points', checked: showGl, onToggle: toggleGl },
+              // Place columns show in both comp types (team place in a team comp); the points/total
+              // columns are comp-specific.
+              { id: 'curplace', label: 'Current place', checked: showCurPlace, onToggle: toggleCurPlace },
+              { id: 'predplace', label: 'Predicted place', checked: showPredPlace, onToggle: togglePredPlace },
               ...(isTeamCompetition
                 ? [
                     { id: 'teamactual', label: 'Team points', checked: showTeamActual, onToggle: toggleTeamActual },
                     { id: 'teampred', label: 'Predicted team points', checked: showTeamPred, onToggle: toggleTeamPred },
                   ]
                 : [
-                    { id: 'curplace', label: 'Current place', checked: showCurPlace, onToggle: toggleCurPlace },
-                    { id: 'predplace', label: 'Predicted place', checked: showPredPlace, onToggle: togglePredPlace },
                     { id: 'predtotal', label: 'Predicted total', checked: showPredTotal, onToggle: togglePredTotal },
                     { id: 'predgl', label: 'Predicted GL points', checked: showPredGl, onToggle: togglePredGl },
                   ]),
@@ -819,7 +823,7 @@ export function ScoresheetBoard({
               currentPlaceById={placings.currentPlaceById}
               predictedPlaceById={placings.predictedPlaceById}
               predictedScoreById={individualScores}
-              teamPointsById={teamPoints}
+              teamStandingsById={teamStandings}
               onSetWeight={setWeight}
               onSetResult={setResult}
               onSetRack={setRackSettings}
@@ -863,7 +867,7 @@ function PlatformPanel({
   currentPlaceById,
   predictedPlaceById,
   predictedScoreById,
-  teamPointsById,
+  teamStandingsById,
   onSetWeight,
   onSetResult,
   onSetRack,
@@ -893,7 +897,7 @@ function PlatformPanel({
   currentPlaceById: Map<string, number>;
   predictedPlaceById: Map<string, number>;
   predictedScoreById: Map<string, { currentTotal: number; predicted: PredictedScore }>;
-  teamPointsById: Map<string, TeamPoints>;
+  teamStandingsById: Map<string, TeamStanding>;
   onSetWeight: (entry: BoardEntry, lift: LiftType, attemptNumber: number, weightKg: number) => void;
   onSetResult: (attempt: BoardAttempt, result: AttemptResult) => void;
   onSetRack: (entry: BoardEntry, patch: RackPatch) => void;
@@ -1024,11 +1028,16 @@ function PlatformPanel({
                     : { total: 0, glPoints: 0 };
                 const subTotal = showSubTotal ? bestForLift(entry.id, 'squat') + bestForLift(entry.id, 'bench') : 0;
                 // Standings lookups; the maps are empty (so these are undefined → a dash) unless the
-                // matching column is on.
+                // matching column is on. In a team comp the place is the lifter's team's place (ranked
+                // against the other teams), not an individual one.
                 const predicted = predictedScoreById.get(entry.id)?.predicted;
-                const currentPlace = currentPlaceById.get(entry.id);
-                const predictedPlace = predictedPlaceById.get(entry.id);
-                const teamPts = entry.teamId ? teamPointsById.get(entry.teamId) : undefined;
+                const teamStanding = entry.teamId ? teamStandingsById.get(entry.teamId) : undefined;
+                const currentPlace = isTeamCompetition
+                  ? (teamStanding && teamStanding.total > 0 ? teamStanding.rank : undefined)
+                  : currentPlaceById.get(entry.id);
+                const predictedPlace = isTeamCompetition
+                  ? (teamStanding && teamStanding.predictedTotal > 0 ? teamStanding.predictedRank : undefined)
+                  : predictedPlaceById.get(entry.id);
                 // Band alternate rows when striping is on. The transparent cells show the row tint;
                 // the sticky first column needs its own opaque background, so it carries the same
                 // band (and stays white otherwise, to mask content scrolling beneath it).
@@ -1112,12 +1121,12 @@ function PlatformPanel({
                   ) : null}
                   {showTeamActual ? (
                     <td className={`text-center font-semibold tabular-nums text-neutral-900 ${CELL}`}>
-                      {teamPts && teamPts.actual > 0 ? teamPts.actual.toFixed(2) : '—'}
+                      {teamStanding && teamStanding.total > 0 ? teamStanding.total.toFixed(2) : '—'}
                     </td>
                   ) : null}
                   {showTeamPred ? (
                     <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
-                      {teamPts && teamPts.predicted > 0 ? teamPts.predicted.toFixed(2) : '—'}
+                      {teamStanding && teamStanding.predictedTotal > 0 ? teamStanding.predictedTotal.toFixed(2) : '—'}
                     </td>
                   ) : null}
                 </tr>

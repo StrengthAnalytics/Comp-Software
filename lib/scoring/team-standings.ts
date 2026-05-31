@@ -40,6 +40,9 @@ export type TeamStanding = {
   // total. The list stays ranked by the actual total; predicted is shown alongside as guidance.
   predictedTotal: number;
   rank: number;
+  // The team's rank by predicted total (ties share, next skips), so a surface can show where a team
+  // would place if the current attempts are made. Independent of the actual-total `rank`.
+  predictedRank: number;
   members: StandingMember[];
 };
 
@@ -86,6 +89,19 @@ export function computeTeamStandings(teams: StandingTeamInput[], kitType: KitTyp
 
   const ordered = scored.toSorted((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
+  // Rank by predicted total too (same standard-competition ranking), so a team's projected place can
+  // be shown independently of where it sits on the actual total.
+  const predictedRankById = new Map<string, number>();
+  const predictedOrder = scored.toSorted((a, b) => b.predictedTotal - a.predictedTotal || a.name.localeCompare(b.name));
+  let previousPredictedTotal: number | null = null;
+  let previousPredictedRank = 0;
+  for (const [index, team] of predictedOrder.entries()) {
+    const rank = previousPredictedTotal !== null && team.predictedTotal === previousPredictedTotal ? previousPredictedRank : index + 1;
+    previousPredictedTotal = team.predictedTotal;
+    previousPredictedRank = rank;
+    predictedRankById.set(team.teamId, rank);
+  }
+
   // Standard competition ranking: equal totals share a rank, and the next rank skips accordingly.
   let previousTotal: number | null = null;
   let previousRank = 0;
@@ -93,6 +109,14 @@ export function computeTeamStandings(teams: StandingTeamInput[], kitType: KitTyp
     const rank = previousTotal !== null && team.total === previousTotal ? previousRank : index + 1;
     previousTotal = team.total;
     previousRank = rank;
-    return { teamId: team.teamId, name: team.name, total: team.total, predictedTotal: team.predictedTotal, rank, members: team.members };
+    return {
+      teamId: team.teamId,
+      name: team.name,
+      total: team.total,
+      predictedTotal: team.predictedTotal,
+      rank,
+      predictedRank: predictedRankById.get(team.teamId) ?? rank,
+      members: team.members,
+    };
   });
 }

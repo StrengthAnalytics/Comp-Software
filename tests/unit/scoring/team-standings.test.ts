@@ -78,6 +78,11 @@ describe('computeTeamStandings', () => {
     expect(alpha?.predictedTotal).toBeGreaterThan(alpha?.total ?? 0);
     expect(alpha?.predictedTotal).toBeGreaterThan(bravo?.predictedTotal ?? 0);
     expect(alpha?.members[0].predictedPoints).toBeGreaterThan(alpha?.members[0].points ?? 0);
+    // The list stays ranked by the actual total, but the predicted rank flips Alpha ahead.
+    expect(bravo?.rank).toBe(1);
+    expect(alpha?.rank).toBe(2);
+    expect(alpha?.predictedRank).toBe(1);
+    expect(bravo?.predictedRank).toBe(2);
   });
 
   it('matches the predicted total to the actual total when nothing extra is in play', () => {
