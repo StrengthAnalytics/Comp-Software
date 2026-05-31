@@ -46,15 +46,16 @@ export function TeamStandingsLive({
       ) : (
         <>
           {noResultsYet ? <p className="text-base text-neutral-500">No successful lifts recorded yet.</p> : null}
-          {/* Each team is one tight 3-column grid — rank/lift in col 1, team/lifter name in col 2,
-              total/contribution in col 3 — so the name sits right next to the numbers (no wide central
-              gap) and the figures line up in a column. Larger type + a narrow page (see results/page)
+          {/* Each team is one tight grid with a FIXED first column (rank / lift label) and a 1fr name
+              column, so the slack lands in the numbers column instead of being split into the rank
+              column — that keeps every card's name column starting at the same x (names line up down
+              the page) and the totals right-aligned. Larger type + a narrow page (see results/page)
               makes it read as a compact OBS-overlay scoreboard; ~8 teams fit a 1080-tall source. */}
           <ol className="space-y-1.5">
             {standings.map((team) => (
               <li
                 key={team.teamId}
-                className="grid grid-cols-[auto_minmax(0,max-content)_auto] items-baseline gap-x-6 gap-y-0.5 rounded-lg border border-neutral-200 bg-white px-5 py-2 leading-tight"
+                className="grid grid-cols-[6rem_1fr_auto] items-baseline gap-x-3 gap-y-0.5 rounded-lg border border-neutral-200 bg-white px-5 py-2 leading-tight"
               >
                 <span className="text-3xl font-bold tabular-nums text-neutral-400">{team.rank}</span>
                 <span className="min-w-0 truncate text-3xl font-semibold text-neutral-900">{team.name}</span>
