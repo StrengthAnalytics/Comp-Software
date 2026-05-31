@@ -1,5 +1,5 @@
-import { ipfGlPoints, type KitType, type Sex } from '@/lib/scoring/ipf-gl';
-import type { TeamLift } from '@/types/team';
+import { ipfGlPoints, teamGlScore, type KitType, type Sex } from '@/lib/scoring/ipf-gl';
+import { TEAM_LIFTS, type TeamLift } from '@/types/team';
 
 // Team standings for a team competition: each member's best lift becomes IPF GL points, the three
 // add up to the team total, and teams rank by that total. Pure — the page gathers the data (best
@@ -34,19 +34,28 @@ export type TeamStanding = {
   members: StandingMember[];
 };
 
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
 export function computeTeamStandings(teams: StandingTeamInput[], kitType: KitType): TeamStanding[] {
   const scored = teams.map((team) => {
-    const members: StandingMember[] = team.members.map((member) => ({
-      lift: member.lift,
-      lifterName: member.lifterName,
-      bestLiftKg: member.bestLiftKg,
-      points: ipfGlPoints({ sex: member.sex, kitType, bodyweightKg: member.bodyweightKg, liftedKg: member.bestLiftKg }),
-    }));
-    const total = round2(members.reduce((sum, member) => sum + member.points, 0));
+    // Members read top-to-bottom in lift order — squat, then bench, then deadlift — regardless of the
+    // order the caller gathered them in.
+    const members: StandingMember[] = team.members
+      .map((member) => ({
+        lift: member.lift,
+        lifterName: member.lifterName,
+        bestLiftKg: member.bestLiftKg,
+        points: ipfGlPoints({ sex: member.sex, kitType, bodyweightKg: member.bodyweightKg, liftedKg: member.bestLiftKg }),
+      }))
+      .toSorted((a, b) => TEAM_LIFTS.indexOf(a.lift) - TEAM_LIFTS.indexOf(b.lift));
+    // teamGlScore owns the team-GL sum and its rounding, so the public standings, the run screen and
+    // the overlays can never aggregate or round a team's score differently.
+    const total = teamGlScore(
+      team.members.map((member) => ({
+        sex: member.sex,
+        kitType,
+        bodyweightKg: member.bodyweightKg,
+        bestLiftKg: member.bestLiftKg,
+      })),
+    );
     return { teamId: team.teamId, name: team.name, total, members };
   });
 

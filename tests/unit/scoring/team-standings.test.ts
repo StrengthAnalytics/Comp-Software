@@ -41,6 +41,20 @@ describe('computeTeamStandings', () => {
     expect(standing.total).toBe(0);
   });
 
+  it('orders members squat, bench then deadlift regardless of input order', () => {
+    const [standing] = computeTeamStandings(
+      [
+        {
+          teamId: 'a',
+          name: 'Alpha',
+          members: [maleMember('deadlift', 300), maleMember('squat', 250), maleMember('bench', 150)],
+        },
+      ],
+      'classic',
+    );
+    expect(standing.members.map((member) => member.lift)).toEqual(['squat', 'bench', 'deadlift']);
+  });
+
   it('lets tied teams share a rank and skips the next', () => {
     const teams: StandingTeamInput[] = [
       { teamId: 'a', name: 'Alpha', members: [maleMember('squat', 550)] },

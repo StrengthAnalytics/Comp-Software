@@ -89,6 +89,7 @@ Which screens subscribe to which tables.
 | `/(overlay)/[comp]/attempt` | attempts, referee_decisions | current `attempt_id` |
 | `/(overlay)/[comp]/weight-class` | attempts, entries | `competition_id` + visible weight class |
 | `/(public)/[comp]/live` | attempts, entries | `competition_id` |
+| `/(public)/[comp]/results` | attempts, entries | `competition_id` (team comps only; anon, RLS-gated to public comps; teams have no channel — a rename/new team appears on next load) |
 
 Subscription hooks live in `/lib/realtime` as typed wrappers (`useAttemptsSubscription`, `useEntriesSubscription`, `useFlightsSubscription`, etc.). Components never subscribe inline.
 
