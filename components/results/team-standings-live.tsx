@@ -60,12 +60,12 @@ export function TeamStandingsLive({
                 <span className="text-3xl font-bold tabular-nums text-neutral-400">{team.rank}</span>
                 <span className="min-w-0 truncate text-3xl font-semibold text-neutral-900">{team.name}</span>
                 {/* Actual total, with the projected total (if every member makes their current
-                    attempt) beneath it in amber — only when the projection is higher than the score
-                    locked in so far. */}
-                <span className="flex flex-col items-end leading-none">
-                  <span className="text-3xl font-bold tabular-nums text-neutral-900">{team.total.toFixed(2)}</span>
+                    attempt) inline beside it in amber — only when the projection is higher than the
+                    score locked in so far. */}
+                <span className="text-right text-3xl font-bold tabular-nums text-neutral-900">
+                  {team.total.toFixed(2)}
                   {team.predictedTotal > team.total ? (
-                    <span className="mt-1 text-base font-semibold tabular-nums text-amber-600">
+                    <span className="ml-2 text-base font-semibold text-amber-600">
                       {team.predictedTotal.toFixed(2)} proj
                     </span>
                   ) : null}
@@ -74,15 +74,8 @@ export function TeamStandingsLive({
                   <Fragment key={member.lift}>
                     <span className="text-xl font-medium text-neutral-500">{LIFT_LABELS[member.lift]}</span>
                     <span className="min-w-0 truncate text-xl text-neutral-800">{member.lifterName}</span>
-                    <span className="flex flex-col items-end leading-tight">
-                      <span className="text-xl tabular-nums text-neutral-600">
-                        {member.bestLiftKg > 0 ? `${member.bestLiftKg} kg` : '—'} · {member.points.toFixed(2)}
-                      </span>
-                      {member.predictedBestLiftKg > member.bestLiftKg ? (
-                        <span className="text-sm tabular-nums text-amber-600">
-                          {member.predictedBestLiftKg} kg · {member.predictedPoints.toFixed(2)}
-                        </span>
-                      ) : null}
+                    <span className="text-right text-xl tabular-nums text-neutral-600">
+                      {member.bestLiftKg > 0 ? `${member.bestLiftKg} kg` : '—'} · {member.points.toFixed(2)}
                     </span>
                   </Fragment>
                 ))}
