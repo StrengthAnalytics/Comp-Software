@@ -104,10 +104,10 @@ export default async function ResultsPage({ params }: { params: Promise<{ 'comp-
   }));
 
   return (
-    <main className="mx-auto max-w-4xl space-y-6 p-6">
+    <main className="mx-auto max-w-2xl space-y-4 p-5">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{comp.name}</h1>
-        <p className="mt-1 text-sm text-neutral-600">
+        <h1 className="text-3xl font-semibold tracking-tight">{comp.name}</h1>
+        <p className="mt-1 text-base text-neutral-600">
           Team standings — the sum of each team&rsquo;s three IPF GL points, taken from each member&rsquo;s best lift.
         </p>
       </div>
