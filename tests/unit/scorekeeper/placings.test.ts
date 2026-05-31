@@ -80,10 +80,20 @@ describe('computePlacings', () => {
     expect(currentPlaceById.get('heavy')).toBe(2);
   });
 
+  it('sorts a lifter with no recorded bodyweight or lot last among equal totals', () => {
+    const { currentPlaceById } = computePlacings([
+      placeable({ id: 'weighed', currentTotal: 600, bodyweightKg: 80, lotNumber: 2 }),
+      placeable({ id: 'unweighed', currentTotal: 600, bodyweightKg: null, lotNumber: null }),
+    ]);
+    expect(currentPlaceById.get('weighed')).toBe(1);
+    expect(currentPlaceById.get('unweighed')).toBe(2);
+  });
+
   it('shares a place on an equal total and bodyweight, then skips the next rank', () => {
     const { currentPlaceById } = computePlacings([
       placeable({ id: 'a', currentTotal: 600, bodyweightKg: 80, lotNumber: 1 }),
-      placeable({ id: 'b', currentTotal: 600, bodyweightKg: 80, lotNumber: 2 }),
+      // No lot number: sorts after a at equal total+bodyweight, but still shares the place.
+      placeable({ id: 'b', currentTotal: 600, bodyweightKg: 80, lotNumber: null }),
       placeable({ id: 'c', currentTotal: 550, bodyweightKg: 80, lotNumber: 3 }),
     ]);
     expect(currentPlaceById.get('a')).toBe(1);

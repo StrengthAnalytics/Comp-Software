@@ -84,14 +84,15 @@ export function computeTeamStandings(teams: StandingTeamInput[], kitType: KitTyp
         bestLiftKg: member.predictedBestLiftKg,
       })),
     );
-    return { teamId: team.teamId, name: team.name, total, predictedTotal, members };
+    // predictedRank is filled in below (every team is ranked), so the 0 placeholder never survives.
+    return { teamId: team.teamId, name: team.name, total, predictedTotal, members, predictedRank: 0 };
   });
 
   const ordered = scored.toSorted((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
   // Rank by predicted total too (same standard-competition ranking), so a team's projected place can
-  // be shown independently of where it sits on the actual total.
-  const predictedRankById = new Map<string, number>();
+  // be shown independently of where it sits on the actual total. Written onto the shared scored
+  // objects (toSorted keeps the same element references), so the actual-total pass below reads it.
   const predictedOrder = scored.toSorted((a, b) => b.predictedTotal - a.predictedTotal || a.name.localeCompare(b.name));
   let previousPredictedTotal: number | null = null;
   let previousPredictedRank = 0;
@@ -99,7 +100,7 @@ export function computeTeamStandings(teams: StandingTeamInput[], kitType: KitTyp
     const rank = previousPredictedTotal !== null && team.predictedTotal === previousPredictedTotal ? previousPredictedRank : index + 1;
     previousPredictedTotal = team.predictedTotal;
     previousPredictedRank = rank;
-    predictedRankById.set(team.teamId, rank);
+    team.predictedRank = rank;
   }
 
   // Standard competition ranking: equal totals share a rank, and the next rank skips accordingly.
@@ -115,7 +116,7 @@ export function computeTeamStandings(teams: StandingTeamInput[], kitType: KitTyp
       total: team.total,
       predictedTotal: team.predictedTotal,
       rank,
-      predictedRank: predictedRankById.get(team.teamId) ?? rank,
+      predictedRank: team.predictedRank,
       members: team.members,
     };
   });

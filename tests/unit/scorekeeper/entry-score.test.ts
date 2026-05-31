@@ -231,4 +231,18 @@ describe('computePredictedScore', () => {
 
     expect(score.predictedTotal).toBe(130);
   });
+
+  it('returns a projected total but zero predicted GL before weigh-in (no bodyweight)', () => {
+    const attempts = attemptsMap([
+      attempt({ id: 's1', lift: 'squat', attemptNumber: 1, weightKg: 200, result: 'pending' }),
+      attempt({ id: 'b1', lift: 'bench', attemptNumber: 1, weightKg: 120, result: 'pending' }),
+      attempt({ id: 'd1', lift: 'deadlift', attemptNumber: 1, weightKg: 230, result: 'pending' }),
+    ]);
+
+    const score = computePredictedScore(attempts, entry({ bodyweightKg: null }), ALL_LIFTS, 'classic', false);
+
+    expect(score.predictedTotal).toBe(550);
+    // ipfGlPoints returns 0 for a non-positive bodyweight (0 stands in for null).
+    expect(score.predictedGlPoints).toBe(0);
+  });
 });

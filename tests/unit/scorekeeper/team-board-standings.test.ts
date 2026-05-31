@@ -96,4 +96,17 @@ describe('computeBoardTeamStandings', () => {
     expect([...standings.keys()]).toEqual(['team-a']);
     expect(standings.get('team-a')?.members).toHaveLength(1);
   });
+
+  it('tolerates a missing team name and an unweighed member (no bodyweight)', () => {
+    const entries = [entry('m', 'team-a', '', 'squat', { teamName: null, bodyweightKg: null })];
+    const attempts = attemptsMap([
+      attempt({ entryId: 'm', lift: 'squat', attemptNumber: 1, weightKg: 200, result: 'good_lift' }),
+    ]);
+
+    const standings = computeBoardTeamStandings(attempts, entries, 'classic');
+    const team = standings.get('team-a');
+    expect(team?.name).toBe('');
+    // No bodyweight means ipfGlPoints scores 0, so the team has no points yet.
+    expect(team?.total).toBe(0);
+  });
 });
