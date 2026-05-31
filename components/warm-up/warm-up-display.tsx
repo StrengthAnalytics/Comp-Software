@@ -7,7 +7,10 @@ import type { KitType } from '@/lib/scoring/ipf-gl';
 import { compareRunningOrder } from '@/lib/attempts/running-order';
 import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { buildPlatformLiveView, type PlatformLiveRow } from '@/lib/scorekeeper/platform-live-view';
-import { bestLiftFor, computeEntryScore } from '@/lib/scorekeeper/entry-score';
+import { bestLiftFor, computeEntryScore, computePredictedScore, type PredictedScore } from '@/lib/scorekeeper/entry-score';
+import { computePlacings, type PlaceableEntry } from '@/lib/scorekeeper/placings';
+import { computeBoardTeamStandings } from '@/lib/scorekeeper/team-board-standings';
+import type { TeamStanding } from '@/lib/scoring/team-standings';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import { BoardOptions, type BoardOptionToggle } from '@/components/scorekeeper/board-options';
@@ -151,6 +154,14 @@ export function WarmUpDisplay({
   const [showTotal, toggleTotal] = usePersistentToggle('warmup:col:total');
   const [subTotalPref, toggleSubTotal] = usePersistentToggle('warmup:col:subtotal', false);
   const [showGl, toggleGl] = usePersistentToggle('warmup:col:gl', false);
+  // Standings columns — current/predicted place and the predicted total/GL (individual comps), or the
+  // team's actual/predicted points (team comps). All extras, so they default off.
+  const [curPlacePref, toggleCurPlace] = usePersistentToggle('warmup:col:curplace', false);
+  const [predPlacePref, togglePredPlace] = usePersistentToggle('warmup:col:predplace', false);
+  const [predTotalPref, togglePredTotal] = usePersistentToggle('warmup:col:predtotal', false);
+  const [predGlPref, togglePredGl] = usePersistentToggle('warmup:col:predgl', false);
+  const [teamActualPref, toggleTeamActual] = usePersistentToggle('warmup:col:teamactual', false);
+  const [teamPredPref, toggleTeamPred] = usePersistentToggle('warmup:col:teampred', false);
   const [striped, toggleStriping] = usePersistentToggle('warmup:striping');
 
   // The sub-total (best squat + best bench) only means anything when both lifts are contested by the
@@ -165,6 +176,65 @@ export function WarmUpDisplay({
   // toggle is offered only then and defaults on.
   const showTeam = isTeamCompetition && teamPref;
 
+  // Place columns apply to both comp types — but in a team comp the place is the lifter's team's
+  // place, not an individual one. The predicted total/GL columns are individual-only; the team-points
+  // columns are team-only. Each is gated on its toggle so the comp-wide work below only runs when
+  // something needs it.
+  const showCurPlace = curPlacePref;
+  const showPredPlace = predPlacePref;
+  const showPredTotal = !isTeamCompetition && predTotalPref;
+  const showPredGl = !isTeamCompetition && predGlPref;
+  const showTeamActual = isTeamCompetition && teamActualPref;
+  const showTeamPred = isTeamCompetition && teamPredPref;
+
+  // Each individual lifter's running total and projected score, computed comp-wide (the board only
+  // shows one platform, but places rank the whole field). Reused by the predicted columns; empty for a
+  // team comp or unless one of those columns is on.
+  const individualScores = useMemo(() => {
+    const map = new Map<string, { currentTotal: number; predicted: PredictedScore }>();
+    if (isTeamCompetition || (!showCurPlace && !showPredPlace && !showPredTotal && !showPredGl)) {
+      return map;
+    }
+    for (const entry of entries) {
+      map.set(entry.id, {
+        currentTotal: computeEntryScore(attempts, entry, columnLifts, kitType, false).total,
+        predicted: computePredictedScore(attempts, entry, columnLifts, kitType, false),
+      });
+    }
+    return map;
+  }, [entries, attempts, columnLifts, kitType, isTeamCompetition, showCurPlace, showPredPlace, showPredTotal, showPredGl]);
+
+  // Individual current/predicted place per entry, within (weight class × division × sex). Empty for a
+  // team comp (which ranks teams, not lifters) or unless a place column is on.
+  const placings = useMemo(() => {
+    if (isTeamCompetition || (!showCurPlace && !showPredPlace)) {
+      return { currentPlaceById: new Map<string, number>(), predictedPlaceById: new Map<string, number>() };
+    }
+    const placeable: PlaceableEntry[] = entries.map((entry) => {
+      const score = individualScores.get(entry.id);
+      return {
+        id: entry.id,
+        weightClassId: entry.weightClassId,
+        divisionId: entry.divisionId,
+        sex: entry.sex,
+        bodyweightKg: entry.bodyweightKg,
+        lotNumber: entry.lotNumber,
+        currentTotal: score?.currentTotal ?? 0,
+        predictedTotal: score?.predicted.predictedTotal ?? 0,
+      };
+    });
+    return computePlacings(placeable);
+  }, [entries, individualScores, isTeamCompetition, showCurPlace, showPredPlace]);
+
+  // Full team standings (actual + predicted points and ranks) keyed by team id, via the shared scorer
+  // the public results page uses. Empty for an individual comp or unless a team column is on.
+  const teamStandings = useMemo(() => {
+    if (!isTeamCompetition || (!showCurPlace && !showPredPlace && !showTeamActual && !showTeamPred)) {
+      return new Map<string, TeamStanding>();
+    }
+    return computeBoardTeamStandings(attempts, entries, kitType);
+  }, [attempts, entries, kitType, isTeamCompetition, showCurPlace, showPredPlace, showTeamActual, showTeamPred]);
+
   const columnToggles: BoardOptionToggle[] = [
     ...(isTeamCompetition ? [{ id: 'team', label: 'Team', checked: showTeam, onToggle: toggleTeam }] : []),
     { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
@@ -178,6 +248,19 @@ export function WarmUpDisplay({
       : []),
     { id: 'total', label: 'Total', checked: showTotal, onToggle: toggleTotal },
     { id: 'gl', label: 'IPF GL points', checked: showGl, onToggle: toggleGl },
+    // Place columns show in both comp types (team place in a team comp); the points/total columns are
+    // comp-specific.
+    { id: 'curplace', label: 'Current place', checked: showCurPlace, onToggle: toggleCurPlace },
+    { id: 'predplace', label: 'Predicted place', checked: showPredPlace, onToggle: togglePredPlace },
+    ...(isTeamCompetition
+      ? [
+          { id: 'teamactual', label: 'Team points', checked: showTeamActual, onToggle: toggleTeamActual },
+          { id: 'teampred', label: 'Predicted team points', checked: showTeamPred, onToggle: toggleTeamPred },
+        ]
+      : [
+          { id: 'predtotal', label: 'Predicted total', checked: showPredTotal, onToggle: togglePredTotal },
+          { id: 'predgl', label: 'Predicted GL points', checked: showPredGl, onToggle: togglePredGl },
+        ]),
     { id: 'striping', label: 'Row striping', checked: striped, onToggle: toggleStriping },
   ];
 
@@ -264,6 +347,36 @@ export function WarmUpDisplay({
                     IPF GL
                   </th>
                 ) : null}
+                {showCurPlace ? (
+                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                    Place
+                  </th>
+                ) : null}
+                {showPredPlace ? (
+                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                    Pred place
+                  </th>
+                ) : null}
+                {showPredTotal ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    Pred total
+                  </th>
+                ) : null}
+                {showPredGl ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    Pred GL
+                  </th>
+                ) : null}
+                {showTeamActual ? (
+                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                    Team pts
+                  </th>
+                ) : null}
+                {showTeamPred ? (
+                  <th scope="col" className={`w-24 text-center ${HEAD}`}>
+                    Pred team pts
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -275,6 +388,17 @@ export function WarmUpDisplay({
                     ? computeEntryScore(attempts, entry, columnLifts, kitType, isTeamCompetition)
                     : { total: 0, glPoints: 0 };
                 const subTotal = showSubTotal ? bestForLift(entry.id, 'squat') + bestForLift(entry.id, 'bench') : 0;
+                // Standings lookups; the maps are empty (so these are undefined → a dash) unless the
+                // matching column is on. In a team comp the place is the lifter's team's place (ranked
+                // against the other teams), not an individual one.
+                const predicted = individualScores.get(entry.id)?.predicted;
+                const teamStanding = entry.teamId ? teamStandings.get(entry.teamId) : undefined;
+                const currentPlace = isTeamCompetition
+                  ? (teamStanding && teamStanding.total > 0 ? teamStanding.rank : undefined)
+                  : placings.currentPlaceById.get(entry.id);
+                const predictedPlace = isTeamCompetition
+                  ? (teamStanding && teamStanding.predictedTotal > 0 ? teamStanding.predictedRank : undefined)
+                  : placings.predictedPlaceById.get(entry.id);
                 // Band alternate rows when striping is on. The transparent cells show the row tint; the
                 // sticky first column needs its own opaque background, so it carries the same band
                 // (white otherwise, to mask content scrolling beneath it).
@@ -333,6 +457,36 @@ export function WarmUpDisplay({
                     {showGl ? (
                       <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
                         {gl > 0 ? gl.toFixed(2) : '—'}
+                      </td>
+                    ) : null}
+                    {showCurPlace ? (
+                      <td className={`text-center font-bold tabular-nums text-neutral-900 ${CELL}`}>
+                        {currentPlace ?? '—'}
+                      </td>
+                    ) : null}
+                    {showPredPlace ? (
+                      <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>
+                        {predictedPlace ?? '—'}
+                      </td>
+                    ) : null}
+                    {showPredTotal ? (
+                      <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
+                        {predicted && predicted.predictedTotal > 0 ? predicted.predictedTotal : '—'}
+                      </td>
+                    ) : null}
+                    {showPredGl ? (
+                      <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
+                        {predicted && predicted.predictedGlPoints > 0 ? predicted.predictedGlPoints.toFixed(2) : '—'}
+                      </td>
+                    ) : null}
+                    {showTeamActual ? (
+                      <td className={`text-center font-bold tabular-nums text-neutral-900 ${CELL}`}>
+                        {teamStanding && teamStanding.total > 0 ? teamStanding.total.toFixed(2) : '—'}
+                      </td>
+                    ) : null}
+                    {showTeamPred ? (
+                      <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>
+                        {teamStanding && teamStanding.predictedTotal > 0 ? teamStanding.predictedTotal.toFixed(2) : '—'}
                       </td>
                     ) : null}
                   </tr>

@@ -15,15 +15,15 @@ export function TeamStandingsLive({
   kitType,
   teams,
   initialMembers,
-  initialBestAttempts,
+  initialAttempts,
 }: {
   competitionId: string;
   kitType: KitType;
   teams: TeamSeed[];
   initialMembers: StandingMemberSeed[];
-  initialBestAttempts: BoardAttempt[];
+  initialAttempts: BoardAttempt[];
 }) {
-  const { standings, connection } = useTeamStandings({ competitionId, kitType, teams, initialMembers, initialBestAttempts });
+  const { standings, connection } = useTeamStandings({ competitionId, kitType, teams, initialMembers, initialAttempts });
   const indicator = computeConnectionIndicator(connection);
   const noResultsYet = standings.length > 0 && standings.every((team) => team.total === 0);
 
@@ -59,7 +59,17 @@ export function TeamStandingsLive({
               >
                 <span className="text-3xl font-bold tabular-nums text-neutral-400">{team.rank}</span>
                 <span className="min-w-0 truncate text-3xl font-semibold text-neutral-900">{team.name}</span>
-                <span className="text-right text-3xl font-bold tabular-nums text-neutral-900">{team.total.toFixed(2)}</span>
+                {/* Actual total, with the projected total (if every member makes their current
+                    attempt) inline beside it in amber — only when the projection is higher than the
+                    score locked in so far. */}
+                <span className="text-right text-3xl font-bold tabular-nums text-neutral-900">
+                  {team.total.toFixed(2)}
+                  {team.predictedTotal > team.total ? (
+                    <span className="ml-2 text-base font-semibold text-amber-600">
+                      {team.predictedTotal.toFixed(2)} proj
+                    </span>
+                  ) : null}
+                </span>
                 {team.members.map((member) => (
                   <Fragment key={member.lift}>
                     <span className="text-xl font-medium text-neutral-500">{LIFT_LABELS[member.lift]}</span>

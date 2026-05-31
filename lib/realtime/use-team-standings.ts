@@ -9,6 +9,7 @@ import type { TeamLift } from '@/types/team';
 import { useAttemptsSubscription } from '@/lib/realtime/use-attempts-subscription';
 import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
 import { applyAttemptChange, attemptKey } from '@/lib/realtime/use-board-state';
+import { bestLiftFor, predictedBestLiftFor } from '@/lib/scorekeeper/entry-score';
 import type { BoardAttempt } from '@/lib/scorekeeper/board-types';
 import { deriveConnectionState, type ConnectionState } from '@/lib/realtime/connection-status';
 import type { ChannelStatus } from '@/lib/realtime/use-postgres-changes';
@@ -69,16 +70,16 @@ export function useTeamStandings({
   kitType,
   teams,
   initialMembers,
-  initialBestAttempts,
+  initialAttempts,
 }: {
   competitionId: string;
   kitType: KitType;
   teams: TeamSeed[];
   initialMembers: StandingMemberSeed[];
-  initialBestAttempts: BoardAttempt[];
+  initialAttempts: BoardAttempt[];
 }): { standings: TeamStanding[]; connection: ConnectionState } {
   const [attempts, setAttempts] = useState<Map<string, BoardAttempt>>(
-    () => new Map(initialBestAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
+    () => new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])),
   );
   const [members, setMembers] = useState<Map<string, StandingMemberSeed>>(
     () => new Map(initialMembers.map((member) => [member.entryId, member])),
@@ -106,24 +107,15 @@ export function useTeamStandings({
   // reload recovers correct state rather than keeping a stale local copy. Props only change on a server
   // re-render, never on a realtime-driven client re-render.
   useEffect(() => {
-    setAttempts(new Map(initialBestAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])));
-  }, [initialBestAttempts]);
+    setAttempts(new Map(initialAttempts.map((attempt) => [attemptKey(attempt.entryId, attempt.lift, attempt.attemptNumber), attempt])));
+  }, [initialAttempts]);
   useEffect(() => setMembers(new Map(initialMembers.map((member) => [member.entryId, member]))), [initialMembers]);
 
   const standings = useMemo(() => {
-    // Best successful lift per member, keyed by entry + lift, from the live attempts map. An attempt
-    // flipped away from good_lift (or reduced) drops out here on the next reconcile.
-    const bestByEntryLift = new Map<string, number>();
-    for (const attempt of attempts.values()) {
-      if (attempt.result !== 'good_lift' || attempt.weightKg === null) {
-        continue;
-      }
-      const key = `${attempt.entryId}|${attempt.lift}`;
-      if (attempt.weightKg > (bestByEntryLift.get(key) ?? 0)) {
-        bestByEntryLift.set(key, attempt.weightKg);
-      }
-    }
-
+    // Each member's best good lift (drives the actual total) and best in-play lift — a good lift or a
+    // declared-but-unjudged attempt (drives the predicted total) — read from the live attempts map via
+    // the shared helpers, so the public standings match the run/warm-up boards on every figure. An
+    // attempt flipped away from good_lift, or reduced, drops out on the next reconcile.
     const membersByTeam = new Map<string, StandingMemberInput[]>();
     for (const member of members.values()) {
       if (!member.teamId || !member.lift) {
@@ -135,7 +127,8 @@ export function useTeamStandings({
         lifterName: member.lifterName,
         sex: member.sex,
         bodyweightKg: member.bodyweightKg,
-        bestLiftKg: bestByEntryLift.get(`${member.entryId}|${member.lift}`) ?? 0,
+        bestLiftKg: bestLiftFor(attempts, member.entryId, member.lift),
+        predictedBestLiftKg: predictedBestLiftFor(attempts, member.entryId, member.lift),
       });
       membersByTeam.set(member.teamId, list);
     }
