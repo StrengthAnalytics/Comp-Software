@@ -32,14 +32,16 @@ type LiftType = Database['public']['Enums']['lift_type'];
 type EventType = Database['public']['Enums']['event_type'];
 
 // Mirrors a lifter's openers into their first attempt rows (attempt #1 = the opener). Attempts #2
-// and #3 are created later when declared at the platform. Idempotent: re-saving a weigh-in re-syncs
+// and #3 are created later when declared at the platform. Idempotent: re-saving an entry re-syncs
 // attempt #1 to the current opener. A platform-side correction to attempt #1 writes back to the
 // opener column (see setAttemptWeightAction), so the two stay in step and this re-sync never reverts
 // a correction. Only contested lifts are seeded — for a team member, just their assigned lift. A
-// failure here is logged but does not fail the weigh-in, which has already saved.
+// failure here is logged but does not fail the caller, whose entry write has already saved. Called
+// from both the weigh-in path and the entries-screen update, so an opener edited on either reaches the
+// run screen, which reads openers from the attempts it subscribes to rather than the entry row.
 async function seedOpenerAttempts(
   supabase: Client,
-  input: WeighInInput,
+  input: { competitionId: string; id: string; openerSquatKg: number | null; openerBenchKg: number | null; openerDeadliftKg: number | null },
   comp: { event_type: EventType; is_team_competition: boolean },
   teamLift: LiftType | null,
 ): Promise<void> {
@@ -183,7 +185,7 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
 
     const { data: entry, error: entryError } = await supabase
       .from('entries')
-      .select('competition_id, lifter_id')
+      .select('competition_id, lifter_id, team_lift')
       .eq('id', parsed.data.id)
       .maybeSingle();
 
@@ -234,6 +236,21 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
     if (error) {
       Sentry.captureException(error);
       return mapEntryWriteError(error);
+    }
+
+    // Mirror the openers into attempt #1, the same as the weigh-in path: the run screen reads openers
+    // from the attempts it subscribes to, so an opener edited here would otherwise never reach it.
+    // Best-effort — the entry has already saved; a seeding (or comp lookup) failure is logged, not
+    // surfaced.
+    const { data: comp, error: compError } = await supabase
+      .from('competitions')
+      .select('event_type, is_team_competition')
+      .eq('id', entry.competition_id)
+      .maybeSingle();
+    if (compError) {
+      Sentry.captureException(compError);
+    } else if (comp) {
+      await seedOpenerAttempts(supabase, parsed.data, comp, entry.team_lift);
     }
 
     return ok();
