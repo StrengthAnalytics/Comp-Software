@@ -1,8 +1,11 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createEntryAction, deleteEntryAction, updateEntryAction } from '@/actions/entries';
+import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
+import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
+import { reconcileForm, type EntryFormValues } from '@/lib/entries/form-sync';
 import {
   createLifterAction,
   searchLiftersAction,
@@ -90,6 +93,26 @@ function asGender(value: string): Gender {
 
 function fullName(lifter: { first_name: string; surname: string }): string {
   return formatLifterName(lifter.surname, lifter.first_name);
+}
+
+// Snapshot of an entry's editable fields in their controlled-input (string) form, so the card can
+// reconcile a fresh server snapshot against what's in the boxes (see reconcileForm).
+function entryToForm(entry: EntryWithLifter): EntryFormValues {
+  return {
+    weightClassId: entry.weight_class_id ?? '',
+    divisionId: entry.division_id ?? '',
+    lotNumber: numberToInput(entry.lot_number),
+    bodyweight: numberToInput(entry.bodyweight_kg),
+    openerSquat: numberToInput(entry.opener_squat_kg),
+    openerBench: numberToInput(entry.opener_bench_kg),
+    openerDeadlift: numberToInput(entry.opener_deadlift_kg),
+    rackSquat: numberToInput(entry.rack_height_squat),
+    squatSetting: entry.squat_rack_setting ?? '',
+    rackBench: numberToInput(entry.rack_height_bench),
+    benchSafety: numberToInput(entry.bench_safety_height),
+    benchSpotting: entry.bench_spotting ?? '',
+    status: entry.status,
+  };
 }
 
 function NumberField({
@@ -234,22 +257,62 @@ function EntryCard({
   weightClasses: WeightClassOption[];
 }) {
   const router = useRouter();
-  const [weightClassId, setWeightClassId] = useState(entry.weight_class_id ?? '');
-  const [divisionId, setDivisionId] = useState(entry.division_id ?? '');
-  const [lotNumber, setLotNumber] = useState(numberToInput(entry.lot_number));
-  const [bodyweight, setBodyweight] = useState(numberToInput(entry.bodyweight_kg));
-  const [openerSquat, setOpenerSquat] = useState(numberToInput(entry.opener_squat_kg));
-  const [openerBench, setOpenerBench] = useState(numberToInput(entry.opener_bench_kg));
-  const [openerDeadlift, setOpenerDeadlift] = useState(numberToInput(entry.opener_deadlift_kg));
-  const [rackSquat, setRackSquat] = useState(numberToInput(entry.rack_height_squat));
-  const [squatSetting, setSquatSetting] = useState<SquatRackSetting | ''>(entry.squat_rack_setting ?? '');
-  const [rackBench, setRackBench] = useState(numberToInput(entry.rack_height_bench));
-  const [benchSafety, setBenchSafety] = useState(numberToInput(entry.bench_safety_height));
-  const [benchSpotting, setBenchSpotting] = useState<BenchSpotting | ''>(entry.bench_spotting ?? '');
-  const [status, setStatus] = useState<EntryStatus>(entry.status);
+  const [form, setForm] = useState<EntryFormValues>(() => entryToForm(entry));
+  // The server snapshot the boxes were last seeded from, held in a ref so the reconcile effect can read
+  // it without re-running. Lets us tell the operator's unsaved edits apart from a change that landed
+  // from another screen.
+  const baselineRef = useRef<EntryFormValues>(form);
+  const formRef = useRef<EntryFormValues>(form);
+  formRef.current = form;
+  // A change that arrived from another screen (a run-screen opener correction, a weigh-in save) while
+  // this card had unsaved edits — surfaced so the operator can pull it in rather than overwrite it.
+  const [externalUpdate, setExternalUpdate] = useState<EntryFormValues | null>(null);
   const [editingLifter, setEditingLifter] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const update = useCallback(<K extends keyof EntryFormValues>(key: K, value: EntryFormValues[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
+  }, []);
+
+  // Reconcile a fresh server snapshot (re-pulled by the manager's router.refresh after a real-time
+  // entry change) into the form. The `entry` prop changes identity on every refresh, so the effect runs
+  // each time and reconcileForm decides whether anything actually changed. Refs/setters are stable, so
+  // `entry` is the only dependency.
+  useEffect(() => {
+    const incoming = entryToForm(entry);
+    const action = reconcileForm(incoming, formRef.current, baselineRef.current);
+    switch (action.type) {
+      case 'ignore': {
+        return;
+      }
+      case 'rebase': {
+        baselineRef.current = action.snapshot;
+        setExternalUpdate(null);
+        return;
+      }
+      case 'apply': {
+        baselineRef.current = action.snapshot;
+        setForm(action.snapshot);
+        setExternalUpdate(null);
+        return;
+      }
+      case 'flag': {
+        setExternalUpdate(action.snapshot);
+        return;
+      }
+    }
+  }, [entry]);
+
+  // Adopt the change that arrived elsewhere, discarding this card's unsaved edits.
+  function loadExternalUpdate() {
+    if (!externalUpdate) {
+      return;
+    }
+    baselineRef.current = externalUpdate;
+    setForm(externalUpdate);
+    setExternalUpdate(null);
+  }
 
   // A lifter only competes in weight classes for their own gender.
   const classOptions = weightClasses.filter((weightClass) => weightClass.gender === entry.lifter.gender);
@@ -260,19 +323,19 @@ function EntryCard({
       const result = await updateEntryAction({
         id: entry.id,
         competitionId,
-        weightClassId: weightClassId === '' ? null : weightClassId,
-        divisionId: divisionId === '' ? null : divisionId,
-        lotNumber: parseOptionalNumber(lotNumber),
-        bodyweightKg: parseOptionalNumber(bodyweight),
-        openerSquatKg: lifts.squat ? parseOptionalNumber(openerSquat) : null,
-        openerBenchKg: lifts.bench ? parseOptionalNumber(openerBench) : null,
-        openerDeadliftKg: lifts.deadlift ? parseOptionalNumber(openerDeadlift) : null,
-        rackHeightSquat: lifts.squat ? parseOptionalNumber(rackSquat) : null,
-        squatRackSetting: lifts.squat && squatSetting !== '' ? squatSetting : null,
-        rackHeightBench: lifts.bench ? parseOptionalNumber(rackBench) : null,
-        benchSafetyHeight: lifts.bench ? parseOptionalNumber(benchSafety) : null,
-        benchSpotting: lifts.bench && benchSpotting !== '' ? benchSpotting : null,
-        status,
+        weightClassId: form.weightClassId === '' ? null : form.weightClassId,
+        divisionId: form.divisionId === '' ? null : form.divisionId,
+        lotNumber: parseOptionalNumber(form.lotNumber),
+        bodyweightKg: parseOptionalNumber(form.bodyweight),
+        openerSquatKg: lifts.squat ? parseOptionalNumber(form.openerSquat) : null,
+        openerBenchKg: lifts.bench ? parseOptionalNumber(form.openerBench) : null,
+        openerDeadliftKg: lifts.deadlift ? parseOptionalNumber(form.openerDeadlift) : null,
+        rackHeightSquat: lifts.squat ? parseOptionalNumber(form.rackSquat) : null,
+        squatRackSetting: lifts.squat && form.squatSetting !== '' ? form.squatSetting : null,
+        rackHeightBench: lifts.bench ? parseOptionalNumber(form.rackBench) : null,
+        benchSafetyHeight: lifts.bench ? parseOptionalNumber(form.benchSafety) : null,
+        benchSpotting: lifts.bench && form.benchSpotting !== '' ? form.benchSpotting : null,
+        status: form.status,
       });
       if (result.status === 'error') {
         setError(readError(result));
@@ -331,8 +394,8 @@ function EntryCard({
         <label className="flex flex-col gap-1">
           <span className={LABEL_CLASS}>Weight class</span>
           <select
-            value={weightClassId}
-            onChange={(event) => setWeightClassId(event.target.value)}
+            value={form.weightClassId}
+            onChange={(event) => update('weightClassId', event.target.value)}
             className={INPUT_CLASS}
           >
             <option value="">—</option>
@@ -346,7 +409,11 @@ function EntryCard({
 
         <label className="flex flex-col gap-1">
           <span className={LABEL_CLASS}>Division</span>
-          <select value={divisionId} onChange={(event) => setDivisionId(event.target.value)} className={INPUT_CLASS}>
+          <select
+            value={form.divisionId}
+            onChange={(event) => update('divisionId', event.target.value)}
+            className={INPUT_CLASS}
+          >
             <option value="">—</option>
             {divisions.map((division) => (
               <option key={division.id} value={division.id}>
@@ -356,40 +423,77 @@ function EntryCard({
           </select>
         </label>
 
-        <NumberField label="Lot number" value={lotNumber} onChange={setLotNumber} step="1" />
-        <NumberField label="Bodyweight (kg)" value={bodyweight} onChange={setBodyweight} step="0.1" />
+        <NumberField label="Lot number" value={form.lotNumber} onChange={(value) => update('lotNumber', value)} step="1" />
+        <NumberField
+          label="Bodyweight (kg)"
+          value={form.bodyweight}
+          onChange={(value) => update('bodyweight', value)}
+          step="0.1"
+        />
 
         {lifts.squat ? (
-          <NumberField label="Opening squat (kg)" value={openerSquat} onChange={setOpenerSquat} step="0.5" />
+          <NumberField
+            label="Opening squat (kg)"
+            value={form.openerSquat}
+            onChange={(value) => update('openerSquat', value)}
+            step="0.5"
+          />
         ) : null}
         {lifts.bench ? (
-          <NumberField label="Opening bench (kg)" value={openerBench} onChange={setOpenerBench} step="0.5" />
+          <NumberField
+            label="Opening bench (kg)"
+            value={form.openerBench}
+            onChange={(value) => update('openerBench', value)}
+            step="0.5"
+          />
         ) : null}
         {lifts.deadlift ? (
-          <NumberField label="Opening deadlift (kg)" value={openerDeadlift} onChange={setOpenerDeadlift} step="0.5" />
+          <NumberField
+            label="Opening deadlift (kg)"
+            value={form.openerDeadlift}
+            onChange={(value) => update('openerDeadlift', value)}
+            step="0.5"
+          />
         ) : null}
 
         {lifts.squat ? (
-          <NumberField label="Squat rack height" value={rackSquat} onChange={setRackSquat} step="1" />
+          <NumberField
+            label="Squat rack height"
+            value={form.rackSquat}
+            onChange={(value) => update('rackSquat', value)}
+            step="1"
+          />
         ) : null}
         {lifts.squat ? (
           <OptionalSelectField
             label="Squat rack setting"
-            value={squatSetting}
-            onChange={setSquatSetting}
+            value={form.squatSetting}
+            onChange={(value) => update('squatSetting', value)}
             options={SQUAT_RACK_SETTINGS}
             labels={SQUAT_RACK_SETTING_LABELS}
           />
         ) : null}
-        {lifts.bench ? <NumberField label="Bench height" value={rackBench} onChange={setRackBench} step="1" /> : null}
         {lifts.bench ? (
-          <NumberField label="Bench safety height" value={benchSafety} onChange={setBenchSafety} step="1" />
+          <NumberField
+            label="Bench height"
+            value={form.rackBench}
+            onChange={(value) => update('rackBench', value)}
+            step="1"
+          />
+        ) : null}
+        {lifts.bench ? (
+          <NumberField
+            label="Bench safety height"
+            value={form.benchSafety}
+            onChange={(value) => update('benchSafety', value)}
+            step="1"
+          />
         ) : null}
         {lifts.bench ? (
           <OptionalSelectField
             label="Bench spotting"
-            value={benchSpotting}
-            onChange={setBenchSpotting}
+            value={form.benchSpotting}
+            onChange={(value) => update('benchSpotting', value)}
             options={BENCH_SPOTTINGS}
             labels={BENCH_SPOTTING_LABELS}
           />
@@ -398,10 +502,10 @@ function EntryCard({
         <label className="flex flex-col gap-1">
           <span className={LABEL_CLASS}>Status</span>
           <select
-            value={status}
+            value={form.status}
             onChange={(event) => {
               // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
-              setStatus(event.target.value as EntryStatus);
+              update('status', event.target.value as EntryStatus);
             }}
             className={INPUT_CLASS}
           >
@@ -413,6 +517,20 @@ function EntryCard({
           </select>
         </label>
       </div>
+
+      {externalUpdate ? (
+        <p
+          role="status"
+          className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+        >
+          This lifter was updated on another screen while you were editing. Saving will overwrite that
+          change.
+          <button type="button" onClick={loadExternalUpdate} className="font-medium underline">
+            Load their changes
+          </button>
+          <span className="text-amber-700">(discards your unsaved edits)</span>
+        </p>
+      ) : null}
 
       <div className="mt-4 flex items-center gap-3">
         <button type="button" onClick={save} disabled={pending} className={PRIMARY_BUTTON}>
@@ -739,6 +857,15 @@ export function EntriesManager({
 }) {
   const registeredLifterIds = new Set(entries.map((entry) => entry.lifter.id));
   const [query, setQuery] = useState('');
+
+  // Real-time: when an entry changes on another screen — a weigh-in save, or the head table correcting
+  // an opener (which writes back to the entry's opener column) — re-pull the server props so every card
+  // reconciles the change. A card with no unsaved edits adopts it; one mid-edit keeps the operator's
+  // edits and flags the incoming change (see EntryCard / reconcileForm). Coalesced into one refresh, and
+  // scoped to this competition (inherits RLS). New registrations and removals from elsewhere arrive the
+  // same way, re-running the server fetch that joins the lifter and re-sorts the list.
+  const scheduleRefresh = useDebouncedRefresh();
+  useEntriesSubscription(competitionId, scheduleRefresh);
 
   const normalizedQuery = query.trim().toLowerCase();
   const visibleEntries = useMemo(

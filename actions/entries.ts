@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
+import { canRecordMeetResults } from '@/lib/comps/meet-status';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
@@ -30,19 +31,31 @@ import type { Database } from '@/types/database.types';
 type Client = SupabaseClient<Database>;
 type LiftType = Database['public']['Enums']['lift_type'];
 type EventType = Database['public']['Enums']['event_type'];
+type CompStatus = Database['public']['Enums']['comp_status'];
 
 // Mirrors a lifter's openers into their first attempt rows (attempt #1 = the opener). Attempts #2
-// and #3 are created later when declared at the platform. Idempotent: re-saving a weigh-in re-syncs
+// and #3 are created later when declared at the platform. Idempotent: re-saving an entry re-syncs
 // attempt #1 to the current opener. A platform-side correction to attempt #1 writes back to the
 // opener column (see setAttemptWeightAction), so the two stay in step and this re-sync never reverts
 // a correction. Only contested lifts are seeded — for a team member, just their assigned lift. A
-// failure here is logged but does not fail the weigh-in, which has already saved.
+// failure here is logged but does not fail the caller, whose entry write has already saved. Called
+// from both the weigh-in path and the entries-screen update, so an opener edited on either reaches the
+// run screen, which reads openers from the attempts it subscribes to rather than the entry row.
+//
+// Attempt #1 is a meet-time row, so it is never seeded (or re-stamped) for a completed comp, whose
+// final record is locked — the same gate the attempt write actions use. The entry write itself stays
+// allowed at any status (setup edits, ARCHITECTURE.md §7), so the caller still saves; only this mirror
+// is skipped. Gating here keeps both call paths consistent without each repeating the check.
 async function seedOpenerAttempts(
   supabase: Client,
-  input: WeighInInput,
-  comp: { event_type: EventType; is_team_competition: boolean },
+  input: { competitionId: string; id: string; openerSquatKg: number | null; openerBenchKg: number | null; openerDeadliftKg: number | null },
+  comp: { event_type: EventType; is_team_competition: boolean; status: CompStatus },
   teamLift: LiftType | null,
 ): Promise<void> {
+  if (!canRecordMeetResults(comp.status)) {
+    return;
+  }
+
   const openerByLift: Record<LiftType, number | null> = {
     squat: input.openerSquatKg,
     bench: input.openerBenchKg,
@@ -183,7 +196,7 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
 
     const { data: entry, error: entryError } = await supabase
       .from('entries')
-      .select('competition_id, lifter_id')
+      .select('competition_id, lifter_id, team_lift')
       .eq('id', parsed.data.id)
       .maybeSingle();
 
@@ -236,6 +249,28 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
       return mapEntryWriteError(error);
     }
 
+    // Mirror the openers into attempt #1, the same as the weigh-in path: the run screen reads openers
+    // from the attempts it subscribes to, so an opener edited here would otherwise never reach it.
+    // Only worth the comp lookup + upsert when an opener is actually set — a lot/class/division-only
+    // edit has nothing to seed (seedOpenerAttempts only upserts non-null contested openers). Best-effort
+    // — the entry has already saved; a seeding (or comp lookup) failure is logged, not surfaced.
+    const hasOpener =
+      parsed.data.openerSquatKg !== null ||
+      parsed.data.openerBenchKg !== null ||
+      parsed.data.openerDeadliftKg !== null;
+    if (hasOpener) {
+      const { data: comp, error: compError } = await supabase
+        .from('competitions')
+        .select('event_type, is_team_competition, status')
+        .eq('id', entry.competition_id)
+        .maybeSingle();
+      if (compError) {
+        Sentry.captureException(compError);
+      } else if (comp) {
+        await seedOpenerAttempts(supabase, parsed.data, comp, entry.team_lift);
+      }
+    }
+
     return ok();
   });
 }
@@ -279,7 +314,7 @@ export async function weighInAction(input: WeighInInput): Promise<ActionResult> 
 
     const { data: comp, error: compError } = await supabase
       .from('competitions')
-      .select('event_type, is_team_competition')
+      .select('event_type, is_team_competition, status')
       .eq('id', entry.competition_id)
       .maybeSingle();
     if (compError) {
@@ -670,7 +705,7 @@ export async function bulkImportEntriesAction(input: {
 
     const { data: comp, error: compError } = await supabase
       .from('competitions')
-      .select('id, event_type')
+      .select('id, event_type, is_team_competition, status')
       .eq('id', parsedInput.data.competitionId)
       .maybeSingle();
     if (compError) {
@@ -810,19 +845,23 @@ export async function bulkImportEntriesAction(input: {
 
       lifterIdByName.set(nameKey, lifterId);
 
-      const { error: entryError } = await supabase.from('entries').insert({
-        competition_id: comp.id,
-        lifter_id: lifterId,
-        weight_class_id: weightClassId,
-        division_id: divisionId,
-        lot_number: row.lot,
-        bodyweight_kg: row.bodyweight,
-        opener_squat_kg: row.openerSquat,
-        opener_bench_kg: row.openerBench,
-        opener_deadlift_kg: row.openerDeadlift,
-      });
-      if (entryError) {
-        if (isUniqueViolation(entryError)) {
+      const { data: created, error: entryError } = await supabase
+        .from('entries')
+        .insert({
+          competition_id: comp.id,
+          lifter_id: lifterId,
+          weight_class_id: weightClassId,
+          division_id: divisionId,
+          lot_number: row.lot,
+          bodyweight_kg: row.bodyweight,
+          opener_squat_kg: row.openerSquat,
+          opener_bench_kg: row.openerBench,
+          opener_deadlift_kg: row.openerDeadlift,
+        })
+        .select('id')
+        .single();
+      if (entryError || !created) {
+        if (entryError && isUniqueViolation(entryError)) {
           record(row.line, name, 'error', 'Lot number already taken in this competition.');
         } else {
           Sentry.captureException(entryError);
@@ -830,6 +869,24 @@ export async function bulkImportEntriesAction(input: {
         }
         continue;
       }
+
+      // Mirror the imported openers into attempt #1, the same as the weigh-in and entries-screen paths,
+      // so an imported lifter shows their opener on the run screen without waiting for a weigh-in save.
+      // Best-effort and gated on comp status inside the helper; team assignment isn't known at import,
+      // so teamLift is null and every contested lift seeds (a weigh-in later narrows a team member to
+      // their assigned lift).
+      await seedOpenerAttempts(
+        supabase,
+        {
+          competitionId: comp.id,
+          id: created.id,
+          openerSquatKg: row.openerSquat,
+          openerBenchKg: row.openerBench,
+          openerDeadliftKg: row.openerDeadlift,
+        },
+        comp,
+        null,
+      );
 
       registeredLifterIds.add(lifterId);
       record(row.line, name, status, warnings.length > 0 ? warnings.join(' ') : null);
