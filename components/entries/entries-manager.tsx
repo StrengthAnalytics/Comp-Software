@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { useRouter } from 'next/navigation';
 import { createEntryAction, deleteEntryAction, updateEntryAction } from '@/actions/entries';
 import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
+import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { reconcileForm, type EntryFormValues } from '@/lib/entries/form-sync';
 import {
   createLifterAction,
@@ -113,10 +114,6 @@ function entryToForm(entry: EntryWithLifter): EntryFormValues {
     status: entry.status,
   };
 }
-
-// Coalesce a burst of real-time entry changes (another screen working through the roster, or a run of
-// opener corrections at the head table) into a single server re-pull, matching the rack-heights screen.
-const REALTIME_REFRESH_DEBOUNCE_MS = 500;
 
 function NumberField({
   label,
@@ -867,22 +864,7 @@ export function EntriesManager({
   // edits and flags the incoming change (see EntryCard / reconcileForm). Coalesced into one refresh, and
   // scoped to this competition (inherits RLS). New registrations and removals from elsewhere arrive the
   // same way, re-running the server fetch that joins the lifter and re-sorts the list.
-  const router = useRouter();
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleRefresh = useCallback(() => {
-    if (refreshTimerRef.current) {
-      clearTimeout(refreshTimerRef.current);
-    }
-    refreshTimerRef.current = setTimeout(() => router.refresh(), REALTIME_REFRESH_DEBOUNCE_MS);
-  }, [router]);
-  useEffect(
-    () => () => {
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
-      }
-    },
-    [],
-  );
+  const scheduleRefresh = useDebouncedRefresh();
   useEntriesSubscription(competitionId, scheduleRefresh);
 
   const normalizedQuery = query.trim().toLowerCase();

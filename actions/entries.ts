@@ -705,7 +705,7 @@ export async function bulkImportEntriesAction(input: {
 
     const { data: comp, error: compError } = await supabase
       .from('competitions')
-      .select('id, event_type')
+      .select('id, event_type, is_team_competition, status')
       .eq('id', parsedInput.data.competitionId)
       .maybeSingle();
     if (compError) {
@@ -845,19 +845,23 @@ export async function bulkImportEntriesAction(input: {
 
       lifterIdByName.set(nameKey, lifterId);
 
-      const { error: entryError } = await supabase.from('entries').insert({
-        competition_id: comp.id,
-        lifter_id: lifterId,
-        weight_class_id: weightClassId,
-        division_id: divisionId,
-        lot_number: row.lot,
-        bodyweight_kg: row.bodyweight,
-        opener_squat_kg: row.openerSquat,
-        opener_bench_kg: row.openerBench,
-        opener_deadlift_kg: row.openerDeadlift,
-      });
-      if (entryError) {
-        if (isUniqueViolation(entryError)) {
+      const { data: created, error: entryError } = await supabase
+        .from('entries')
+        .insert({
+          competition_id: comp.id,
+          lifter_id: lifterId,
+          weight_class_id: weightClassId,
+          division_id: divisionId,
+          lot_number: row.lot,
+          bodyweight_kg: row.bodyweight,
+          opener_squat_kg: row.openerSquat,
+          opener_bench_kg: row.openerBench,
+          opener_deadlift_kg: row.openerDeadlift,
+        })
+        .select('id')
+        .single();
+      if (entryError || !created) {
+        if (entryError && isUniqueViolation(entryError)) {
           record(row.line, name, 'error', 'Lot number already taken in this competition.');
         } else {
           Sentry.captureException(entryError);
@@ -865,6 +869,24 @@ export async function bulkImportEntriesAction(input: {
         }
         continue;
       }
+
+      // Mirror the imported openers into attempt #1, the same as the weigh-in and entries-screen paths,
+      // so an imported lifter shows their opener on the run screen without waiting for a weigh-in save.
+      // Best-effort and gated on comp status inside the helper; team assignment isn't known at import,
+      // so teamLift is null and every contested lift seeds (a weigh-in later narrows a team member to
+      // their assigned lift).
+      await seedOpenerAttempts(
+        supabase,
+        {
+          competitionId: comp.id,
+          id: created.id,
+          openerSquatKg: row.openerSquat,
+          openerBenchKg: row.openerBench,
+          openerDeadliftKg: row.openerDeadlift,
+        },
+        comp,
+        null,
+      );
 
       registeredLifterIds.add(lifterId);
       record(row.line, name, status, warnings.length > 0 ? warnings.join(' ') : null);
