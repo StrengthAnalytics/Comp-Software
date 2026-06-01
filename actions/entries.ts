@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
+import { canRecordMeetResults } from '@/lib/comps/meet-status';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
@@ -30,6 +31,7 @@ import type { Database } from '@/types/database.types';
 type Client = SupabaseClient<Database>;
 type LiftType = Database['public']['Enums']['lift_type'];
 type EventType = Database['public']['Enums']['event_type'];
+type CompStatus = Database['public']['Enums']['comp_status'];
 
 // Mirrors a lifter's openers into their first attempt rows (attempt #1 = the opener). Attempts #2
 // and #3 are created later when declared at the platform. Idempotent: re-saving an entry re-syncs
@@ -39,12 +41,21 @@ type EventType = Database['public']['Enums']['event_type'];
 // failure here is logged but does not fail the caller, whose entry write has already saved. Called
 // from both the weigh-in path and the entries-screen update, so an opener edited on either reaches the
 // run screen, which reads openers from the attempts it subscribes to rather than the entry row.
+//
+// Attempt #1 is a meet-time row, so it is never seeded (or re-stamped) for a completed comp, whose
+// final record is locked — the same gate the attempt write actions use. The entry write itself stays
+// allowed at any status (setup edits, ARCHITECTURE.md §7), so the caller still saves; only this mirror
+// is skipped. Gating here keeps both call paths consistent without each repeating the check.
 async function seedOpenerAttempts(
   supabase: Client,
   input: { competitionId: string; id: string; openerSquatKg: number | null; openerBenchKg: number | null; openerDeadliftKg: number | null },
-  comp: { event_type: EventType; is_team_competition: boolean },
+  comp: { event_type: EventType; is_team_competition: boolean; status: CompStatus },
   teamLift: LiftType | null,
 ): Promise<void> {
+  if (!canRecordMeetResults(comp.status)) {
+    return;
+  }
+
   const openerByLift: Record<LiftType, number | null> = {
     squat: input.openerSquatKg,
     bench: input.openerBenchKg,
@@ -240,17 +251,24 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
 
     // Mirror the openers into attempt #1, the same as the weigh-in path: the run screen reads openers
     // from the attempts it subscribes to, so an opener edited here would otherwise never reach it.
-    // Best-effort — the entry has already saved; a seeding (or comp lookup) failure is logged, not
-    // surfaced.
-    const { data: comp, error: compError } = await supabase
-      .from('competitions')
-      .select('event_type, is_team_competition')
-      .eq('id', entry.competition_id)
-      .maybeSingle();
-    if (compError) {
-      Sentry.captureException(compError);
-    } else if (comp) {
-      await seedOpenerAttempts(supabase, parsed.data, comp, entry.team_lift);
+    // Only worth the comp lookup + upsert when an opener is actually set — a lot/class/division-only
+    // edit has nothing to seed (seedOpenerAttempts only upserts non-null contested openers). Best-effort
+    // — the entry has already saved; a seeding (or comp lookup) failure is logged, not surfaced.
+    const hasOpener =
+      parsed.data.openerSquatKg !== null ||
+      parsed.data.openerBenchKg !== null ||
+      parsed.data.openerDeadliftKg !== null;
+    if (hasOpener) {
+      const { data: comp, error: compError } = await supabase
+        .from('competitions')
+        .select('event_type, is_team_competition, status')
+        .eq('id', entry.competition_id)
+        .maybeSingle();
+      if (compError) {
+        Sentry.captureException(compError);
+      } else if (comp) {
+        await seedOpenerAttempts(supabase, parsed.data, comp, entry.team_lift);
+      }
     }
 
     return ok();
@@ -296,7 +314,7 @@ export async function weighInAction(input: WeighInInput): Promise<ActionResult> 
 
     const { data: comp, error: compError } = await supabase
       .from('competitions')
-      .select('event_type, is_team_competition')
+      .select('event_type, is_team_competition, status')
       .eq('id', entry.competition_id)
       .maybeSingle();
     if (compError) {
