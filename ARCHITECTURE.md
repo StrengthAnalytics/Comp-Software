@@ -70,6 +70,8 @@ There is no permissions matrix or `requireRole` API in the codebase — `require
 
 Enforcement: RLS grants every write to any authenticated session, and `requireAdmin()` in server actions is the real gate. This holds only because public sign-ups are disabled, so admins are the sole session holders (see section 5 and the ADR in section 7). Anon reads are gated by the `is_comp_public()` RLS predicate. Lifter PII (date of birth, IPF member ID) is never exposed to anon: the public reads the `public_lifters` view, which omits those columns and is scoped to lifters who appear in a publicly visible comp (`lifter_in_public_comp()`).
 
+One deliberate exception to the "anon reads are scoped by `is_comp_public()`" rule: the `records` table (UK regional/national records) is **app-global reference data, not tied to any competition**, so its anon read policy is **unconditional** (`using (true)`). It is the only anon-readable table not gated on comp visibility. Writes still follow the standard model (authenticated + `requireAdmin()`). See the ADR in section 7.
+
 ---
 
 ## 4. Real-time subscription map
@@ -182,3 +184,9 @@ A competition can opt into a team format (`is_team_competition`, full power only
 Members are modelled as ordinary `entries` tagged with `team_id` + `team_lift` (one member per lift per team, enforced by a partial unique index plus a check that the two columns are set together), rather than a separate membership table. This lets the existing registration, flight and attempt paths reuse the entry unchanged; deleting a team unassigns its members via `ON DELETE SET NULL` instead of removing their registrations. On the sessions & flights screen, team comps assign whole teams to a flight at once (every member's entry moves together) rather than placing individual lifters.
 
 GL uses the full-power (3-lift) coefficients for all three roles. The IPF publishes GL coefficients only for full powerlifting and for bench-only — there is no official single-squat or single-deadlift set — so scoring every role on the full-power coefficients keeps the three contributions on one comparable scale. This is a deliberate house rule for the format, not an official IPF score.
+
+### UK records: an app-global table, not competition-scoped
+
+The regional/national records browser (replacing the in-code JSON file of `StrengthAnalytics/BPRecords`) stores its data in a `records` table that is the first and only **app-global** table — it hangs off no `competition_id`, has no foreign keys to any competition table, and is never affected by a comp's lifecycle. A UK record is a standing reference value owned by no meet.
+
+Two consequences follow. First, its **anon read policy is unconditional** (`using (true)`) rather than gated on `is_comp_public()`: records are public reference data that should always render, regardless of whether any comp is published. This is the single documented exception in section 3. Second, the record holder's `name` is **free text**, not a foreign key to `lifters`, mirroring the source dataset and keeping the records feature fully independent of the registration data — so a records change can never touch, and is never touched by, the competition software. The record vocabulary (`record_lift`, `record_equipment` enums; weight-class/age-category/region constants) is likewise kept separate from the comp vocabulary for the same isolation reason. The natural key `(region, gender, weight_class, age_category, lift, equipment)` is unique, so one row is authoritative per category and bulk import is an upsert.

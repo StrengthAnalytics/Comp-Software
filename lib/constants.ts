@@ -5,6 +5,8 @@ type EventType = Database['public']['Enums']['event_type'];
 type CompStatus = Database['public']['Enums']['comp_status'];
 type EntryStatus = Database['public']['Enums']['entry_status'];
 type LiftType = Database['public']['Enums']['lift_type'];
+type RecordLift = Database['public']['Enums']['record_lift'];
+type RecordEquipment = Database['public']['Enums']['record_equipment'];
 
 export type Gender = 'male' | 'female';
 
@@ -162,4 +164,79 @@ export const DEFAULT_WEIGHT_CLASSES: readonly WeightClassSeed[] = [
   { name: '-76 kg', gender: 'female', lower_kg: 69, upper_kg: 76 },
   { name: '-84 kg', gender: 'female', lower_kg: 76, upper_kg: 84 },
   { name: '84 kg+', gender: 'female', lower_kg: 84, upper_kg: null },
+];
+
+// UK records vocabulary -------------------------------------------------------------------------
+//
+// Standalone, app-global reference data (the regional/national records browser). These categories
+// are deliberately separate from the competition vocabulary above: records use the British
+// Powerlifting record nomenclature (bench_press / total as record lifts, M1-M4 master classes,
+// 'M'/'F' gender) and the source dataset (StrengthAnalytics/BPRecords), not the comp enums. Keeping
+// them apart means a change to the comp model can never silently alter the records dataset.
+
+// Record gender is stored as 'M'/'F' to match the source data and the admins' Google Sheet exports.
+export const RECORD_GENDERS = ['M', 'F'] as const;
+export type RecordGender = (typeof RECORD_GENDERS)[number];
+
+export const RECORD_GENDER_LABELS: Record<RecordGender, string> = {
+  M: 'Male',
+  F: 'Female',
+};
+
+// The five record lifts (note these differ from the comp lift_type: the bench is named bench_press,
+// and there are bench_press_ac (assisted/competition) and total disciplines).
+export const RECORD_LIFT_LABELS: Record<RecordLift, string> = {
+  squat: 'Squat',
+  bench_press: 'Bench Press',
+  bench_press_ac: 'Bench Press A/C',
+  deadlift: 'Deadlift',
+  total: 'Total',
+};
+
+export const RECORD_EQUIPMENT_LABELS: Record<RecordEquipment, string> = {
+  equipped: 'Equipped',
+  unequipped: 'Unequipped',
+};
+
+export const RECORD_LIFTS = Object.keys(RECORD_LIFT_LABELS) as RecordLift[];
+export const RECORD_EQUIPMENTS = Object.keys(RECORD_EQUIPMENT_LABELS) as RecordEquipment[];
+
+// Record age categories, in age order (British Powerlifting record nomenclature: M1-M4, not the
+// comp's "Masters 1-4" division labels).
+export const RECORD_AGE_CATEGORIES: readonly string[] = [
+  'Sub-Junior',
+  'Junior',
+  'Open',
+  'M1',
+  'M2',
+  'M3',
+  'M4',
+];
+
+// IPF/BP bodyweight categories used for records, per gender (includes the youth-only lightest class).
+// Stored as free text on the row; these drive the UI dropdowns and import-preview warnings rather
+// than being a hard DB constraint, so a legitimate historical class is never rejected outright.
+export const RECORD_WEIGHT_CLASSES: Record<RecordGender, readonly string[]> = {
+  M: ['53kg', '59kg', '66kg', '74kg', '83kg', '93kg', '105kg', '120kg', '120+kg'],
+  F: ['43kg', '47kg', '52kg', '57kg', '63kg', '69kg', '76kg', '84kg', '84+kg'],
+};
+
+// Suggested regions for the admin dropdown. The `region` column is free text (the tier — British /
+// home nation / sub-national — is implied by the value), so this list is a convenience only and an
+// operator can enter any region not listed here.
+export const SUGGESTED_RECORD_REGIONS: readonly string[] = [
+  'British',
+  'England',
+  'Scotland',
+  'Wales',
+  'Northern Ireland',
+  'North East',
+  'North West',
+  'Yorkshire',
+  'East Midlands',
+  'West Midlands',
+  'East',
+  'London',
+  'South East',
+  'South West',
 ];
