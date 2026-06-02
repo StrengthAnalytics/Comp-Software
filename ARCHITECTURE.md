@@ -48,7 +48,7 @@ erDiagram
 ### Table summaries
 
 - **competitions**: the meet. Slug, name, federation, kit_type (classic/equipped), event_type (full_power/bench_only/deadlift_only), date range, status (draft/published/active/completed), is_team_competition (team-format flag, full power only).
-- **divisions**: age categories per comp (Open, Junior, Sub-junior, Masters 1-4).
+- **divisions**: age categories per comp. The seed defaults follow British Powerlifting (U16, U18, U23, Open, M1-M6); each comp owns its own set.
 - **weight_classes**: bodyweight categories per comp with gender, lower_kg, upper_kg.
 - **platforms**: physical lifting platforms (one per comp normally, two for bigger meets).
 - **sessions**: a chunk of lifting tied to a date, time, and platform.
@@ -59,6 +59,7 @@ erDiagram
 - **attempts**: up to 9 per entry (3 squats, 3 benches, 3 deadlifts). Weight in kg, declared timestamp, decided timestamp (`decided_at`, set when a good/no lift is recorded — anchors the run screen's 60-second next-attempt countdown across devices), result (pending/good_lift/no_lift/not_taken/withdrawn).
 - **referee_decisions**: exactly 3 per attempt (left/head/right positions). Decision (white/red) plus reasons array for no-lifts.
 - **profiles**: extends `auth.users` with display_name.
+- **records**: UK regional/national powerlifting records — **app-global reference data, not tied to any competition** (no `competition_id`, no foreign keys). Region (free text — the British/home-nation/sub-national tier is implied by the value), record holder name (free text), gender ('M'/'F'), weight_class, age_category, lift (`record_lift` enum: squat/bench_press/bench_press_ac/deadlift/total), equipment (`record_equipment` enum), weight_kg, date_set, notes. Case-insensitively unique on (region, gender, weight_class, age_category, lift, equipment) via `citext`. Admin-managed (`/records/manage`); always anon-readable (the public browser at `/records`). See the ADR in section 7.
 
 ---
 
@@ -189,4 +190,4 @@ GL uses the full-power (3-lift) coefficients for all three roles. The IPF publis
 
 The regional/national records browser (replacing the in-code JSON file of `StrengthAnalytics/BPRecords`) stores its data in a `records` table that is the first and only **app-global** table — it hangs off no `competition_id`, has no foreign keys to any competition table, and is never affected by a comp's lifecycle. A UK record is a standing reference value owned by no meet.
 
-Two consequences follow. First, its **anon read policy is unconditional** (`using (true)`) rather than gated on `is_comp_public()`: records are public reference data that should always render, regardless of whether any comp is published. This is the single documented exception in section 3. Second, the record holder's `name` is **free text**, not a foreign key to `lifters`, mirroring the source dataset and keeping the records feature fully independent of the registration data — so a records change can never touch, and is never touched by, the competition software. The record vocabulary (`record_lift`, `record_equipment` enums; weight-class/age-category/region constants) is likewise kept separate from the comp vocabulary for the same isolation reason. The natural key `(region, gender, weight_class, age_category, lift, equipment)` is unique, so one row is authoritative per category and bulk import is an upsert.
+Two consequences follow. First, its **anon read policy is unconditional** (`using (true)`) rather than gated on `is_comp_public()`: records are public reference data that should always render, regardless of whether any comp is published. This is the single documented exception in section 3. Second, the record holder's `name` is **free text**, not a foreign key to `lifters`, mirroring the source dataset and keeping the records feature fully independent of the registration data — so a records change can never touch, and is never touched by, the competition software. The record vocabulary (`record_lift`, `record_equipment` enums; weight-class/age-category/region constants) is likewise kept separate from the comp vocabulary for the same isolation reason — though the record weight-class list is *derived* from the comp's seeded `DEFAULT_WEIGHT_CLASSES` so the two can't drift. The natural key `(region, gender, weight_class, age_category, lift, equipment)` is unique and **case-insensitive** (the three free-text columns are `citext`), so one row is authoritative per category regardless of capitalisation and bulk import is an upsert on that key.
