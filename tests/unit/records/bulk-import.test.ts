@@ -77,6 +77,18 @@ describe('parseRecordsImport', () => {
     expect(rows[4].errors).toContain('Invalid date set.');
   });
 
+  it('normalises a shorthand weight class and does not warn when it matches a seeded class', () => {
+    const text = tsv([
+      ['England', 'Shorthand', '83kg', 'M', 'Squat', 'Open', '300', '2024-01-15', 'Unequipped'],
+      ['England', 'Super', '120+kg', 'M', 'Total', 'Open', '900', '2024-01-15', 'Unequipped'],
+    ]);
+    const rows = parseRecordsImport(text);
+    expect(rows[0].weightClass).toBe('-83 kg');
+    expect(rows[0].warnings).toEqual([]);
+    expect(rows[1].weightClass).toBe('120 kg+');
+    expect(rows[1].warnings).toEqual([]);
+  });
+
   it('warns (without blocking) on an unusual weight class or age category', () => {
     const text = tsv([
       ['England', 'Odd Class', '999kg', 'M', 'Squat', 'Veteran', '300', '2024-01-15', 'Unequipped'],
@@ -84,7 +96,7 @@ describe('parseRecordsImport', () => {
     const [row] = parseRecordsImport(text);
     expect(row.errors).toEqual([]);
     expect(row.warnings).toEqual([
-      'Unusual weight class "999kg" for male.',
+      'Unusual weight class "-999 kg" for male.',
       'Unusual age category "Veteran".',
     ]);
   });

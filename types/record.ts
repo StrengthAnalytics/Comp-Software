@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { RECORD_EQUIPMENTS, RECORD_GENDERS, RECORD_LIFTS } from '@/lib/constants';
+import { normalizeRecordWeightClass } from '@/lib/records/weight-class';
 import { roundToOneDecimal } from '@/lib/number-input';
 
 // Blank string → null, so the optional date clears cleanly when the operator empties the field.
@@ -32,11 +33,14 @@ export const recordInputSchema = z.object({
   region: z.string().trim().min(1, 'Region is required.').max(80, 'Region is too long.'),
   name: z.string().trim().min(1, 'Name is required.').max(120, 'Name is too long.'),
   gender: z.enum(RECORD_GENDERS),
+  // Normalised to the seeded format ("83kg" → "-83 kg") so a class entered in shorthand still matches
+  // the canonical list and is stored consistently.
   weightClass: z
     .string()
     .trim()
     .min(1, 'Weight class is required.')
-    .max(20, 'Weight class is too long.'),
+    .max(20, 'Weight class is too long.')
+    .transform(normalizeRecordWeightClass),
   ageCategory: z
     .string()
     .trim()

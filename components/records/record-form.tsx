@@ -188,7 +188,7 @@ export function RecordForm({
             value={weightClass}
             onChange={(event) => setWeightClass(event.target.value)}
             className={INPUT_CLASS}
-            placeholder="e.g. 83kg"
+            placeholder="e.g. -83 kg (or 83kg)"
           />
           <datalist id="record-weight-class-options">
             {RECORD_WEIGHT_CLASSES[gender].map((option) => (

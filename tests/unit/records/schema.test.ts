@@ -34,6 +34,14 @@ describe('recordInputSchema', () => {
     }
   });
 
+  it('normalises a shorthand weight class to the seeded format', () => {
+    const result = recordInputSchema.safeParse({ ...base, weightClass: '83kg' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.weightClass).toBe('-83 kg');
+    }
+  });
+
   it('rounds the weight to one decimal place', () => {
     const result = recordInputSchema.safeParse({ ...base, weightKg: 280.44 });
     expect(result.success).toBe(true);

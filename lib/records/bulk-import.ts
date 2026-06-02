@@ -5,6 +5,7 @@ import {
   type RecordGender,
   type RecordLift,
 } from '@/lib/constants';
+import { normalizeRecordWeightClass } from '@/lib/records/weight-class';
 import { roundToOneDecimal } from '@/lib/number-input';
 
 // Bulk records entry via copy-paste: the admin keeps records in a Google Sheet (the same nine
@@ -189,7 +190,9 @@ export function parseRecordsImport(text: string): ParsedRecordRow[] {
       errors.push('Name is required.');
     }
 
-    const weightClass = cellAt(cells, 2).trim();
+    // Normalise to the seeded format up front so the stored value and the "unusual class" warning
+    // below both use the canonical form ("83kg" → "-83 kg").
+    const weightClass = normalizeRecordWeightClass(cellAt(cells, 2));
     if (weightClass === '') {
       errors.push('Weight class is required.');
     }
