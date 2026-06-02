@@ -40,6 +40,7 @@ This project is developed online-only against the hosted Supabase dev project an
 /app
   /(admin)                      ← auth-gated staff routes, full chrome
     /comps                      ← comp list, comp setup
+    /records                    ← UK regional/national records management (app-global, not comp-scoped)
     /[comp-slug]
       /entries                  ← lifter registration, inline weigh-in editing
       /weigh-in                 ← day-of weigh-in by session (bodyweight, openers, rack settings)
