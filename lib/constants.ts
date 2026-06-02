@@ -184,13 +184,14 @@ export const RECORD_GENDER_LABELS: Record<RecordGender, string> = {
 };
 
 // The five record lifts (note these differ from the comp lift_type: the bench is named bench_press,
-// and there are bench_press_ac (assisted/competition) and total disciplines).
+// and there are bench_press_ac — "Bench Press (A/C)", the assisted/adaptive class — and total
+// disciplines). Order here drives the dropdown order on the records screens.
 export const RECORD_LIFT_LABELS: Record<RecordLift, string> = {
   squat: 'Squat',
   bench_press: 'Bench Press',
-  bench_press_ac: 'Bench Press A/C',
   deadlift: 'Deadlift',
   total: 'Total',
+  bench_press_ac: 'Bench Press (A/C)',
 };
 
 export const RECORD_EQUIPMENT_LABELS: Record<RecordEquipment, string> = {
@@ -201,42 +202,50 @@ export const RECORD_EQUIPMENT_LABELS: Record<RecordEquipment, string> = {
 export const RECORD_LIFTS = Object.keys(RECORD_LIFT_LABELS) as RecordLift[];
 export const RECORD_EQUIPMENTS = Object.keys(RECORD_EQUIPMENT_LABELS) as RecordEquipment[];
 
-// Record age categories, in age order (British Powerlifting record nomenclature: M1-M4, not the
-// comp's "Masters 1-4" division labels).
+// Record age categories, in age order (British Powerlifting record nomenclature).
 export const RECORD_AGE_CATEGORIES: readonly string[] = [
-  'Sub-Junior',
-  'Junior',
+  'U16',
+  'U18',
+  'U23',
   'Open',
   'M1',
   'M2',
   'M3',
   'M4',
+  'M5',
+  'M6',
 ];
 
-// IPF/BP bodyweight categories used for records, per gender (includes the youth-only lightest class).
-// Stored as free text on the row; these drive the UI dropdowns and import-preview warnings rather
-// than being a hard DB constraint, so a legitimate historical class is never rejected outright.
+// Records use the same bodyweight categories as the comp's seeded IPF classes, derived from
+// DEFAULT_WEIGHT_CLASSES so the two can never drift. Stored as free text on the row; this list drives
+// the UI dropdowns and the import-preview "unusual class" warning rather than being a hard DB
+// constraint, so a non-standard class is flagged but never rejected outright.
 export const RECORD_WEIGHT_CLASSES: Record<RecordGender, readonly string[]> = {
-  M: ['53kg', '59kg', '66kg', '74kg', '83kg', '93kg', '105kg', '120kg', '120+kg'],
-  F: ['43kg', '47kg', '52kg', '57kg', '63kg', '69kg', '76kg', '84kg', '84+kg'],
+  M: DEFAULT_WEIGHT_CLASSES.filter((weightClass) => weightClass.gender === 'male').map(
+    (weightClass) => weightClass.name,
+  ),
+  F: DEFAULT_WEIGHT_CLASSES.filter((weightClass) => weightClass.gender === 'female').map(
+    (weightClass) => weightClass.name,
+  ),
 };
 
-// Suggested regions for the admin dropdown. The `region` column is free text (the tier — British /
-// home nation / sub-national — is implied by the value), so this list is a convenience only and an
-// operator can enter any region not listed here.
+// Regions for the admin dropdown, in British Powerlifting order. The `region` column is free text
+// (the tier — British / home nation / sub-national — is implied by the value), so this is a
+// suggestion list and an operator can still enter a region not listed here.
 export const SUGGESTED_RECORD_REGIONS: readonly string[] = [
-  'British',
   'England',
-  'Scotland',
   'Wales',
+  'Scotland',
+  'British',
+  'British Universities',
   'Northern Ireland',
-  'North East',
+  'Yorkshire & North East',
   'North West',
-  'Yorkshire',
+  'North Midlands',
   'East Midlands',
   'West Midlands',
-  'East',
-  'London',
-  'South East',
+  'Greater London',
   'South West',
+  'South Midlands',
+  'South East',
 ];

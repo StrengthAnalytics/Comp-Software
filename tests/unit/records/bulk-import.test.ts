@@ -17,8 +17,8 @@ describe('parseRecordsImport', () => {
   it('parses a valid tab-separated block and normalises the enum columns', () => {
     const text = tsv([
       header.split('\t'),
-      ['England', 'John Smith', '83kg', 'M', 'Squat', 'Open', '280.5', '2024-01-15', 'Unequipped'],
-      ['Scotland', 'Emma Wilson', '63kg', 'Female', 'Deadlift', 'Open', '195', '2023-11-20', 'Equipped'],
+      ['England', 'John Smith', '-83 kg', 'M', 'Squat', 'Open', '280.5', '2024-01-15', 'Unequipped'],
+      ['Scotland', 'Emma Wilson', '-63 kg', 'Female', 'Deadlift', 'Open', '195', '2023-11-20', 'Equipped'],
     ]);
 
     const rows = parseRecordsImport(text);
@@ -27,7 +27,7 @@ describe('parseRecordsImport', () => {
     expect(rows[0]).toMatchObject({
       region: 'England',
       name: 'John Smith',
-      weightClass: '83kg',
+      weightClass: '-83 kg',
       gender: 'M',
       lift: 'squat',
       ageCategory: 'Open',
@@ -50,12 +50,15 @@ describe('parseRecordsImport', () => {
     const text = tsv([
       ['Wales', 'Bench Specialist', '105kg', 'm', 'Bench Press A/C', 'M1', '185', '2024-02-10', 'Raw'],
       ['Wales', 'Classic Lifter', '105kg', 'M', 'bench_press', 'Open', '180', '', 'Classic'],
+      ['Wales', 'Parenthesised', '105kg', 'M', 'Bench Press (A/C)', 'Open', '175', '', 'Equipped'],
     ]);
     const rows = parseRecordsImport(text);
     expect(rows[0]).toMatchObject({ gender: 'M', lift: 'bench_press_ac', equipment: 'unequipped' });
     expect(rows[1]).toMatchObject({ lift: 'bench_press', equipment: 'unequipped', dateSet: null });
+    expect(rows[2]).toMatchObject({ lift: 'bench_press_ac', equipment: 'equipped' });
     expect(rows[0].errors).toEqual([]);
     expect(rows[1].errors).toEqual([]);
+    expect(rows[2].errors).toEqual([]);
   });
 
   it('flags blocking errors for missing and unrecognised values', () => {

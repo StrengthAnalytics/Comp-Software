@@ -123,7 +123,7 @@ export function RecordsBulkImport() {
           </button>
         </div>
         <p className="text-xs text-neutral-500">
-          Gender accepts M/F or Male/Female. Lift accepts Squat, Bench Press, Bench Press A/C, Deadlift, Total.
+          Gender accepts M/F or Male/Female. Lift accepts Squat, Bench Press, Deadlift, Total, Bench Press (A/C).
           Equipment accepts Equipped/Unequipped (or Raw/Classic). Dates accept YYYY-MM-DD or DD/MM/YYYY.
         </p>
       </div>

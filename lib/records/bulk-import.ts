@@ -73,8 +73,14 @@ function normalizeGender(raw: string): RecordGender | null {
 }
 
 function normalizeLift(raw: string): RecordLift | null {
-  // Collapse separators/spaces so "Bench Press", "bench_press" and "bench press" all match.
-  const value = raw.trim().toLowerCase().replaceAll(/[\s_]+/g, ' ');
+  // Collapse separators/parentheses so "Bench Press", "bench_press", "Bench Press (A/C)" and
+  // "bench press a/c" all match.
+  const value = raw
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[()]/g, '')
+    .replaceAll(/[\s_]+/g, ' ')
+    .trim();
   switch (value) {
     case 'squat': {
       return 'squat';
@@ -295,7 +301,7 @@ export type RecordExportRow = {
 const LIFT_EXPORT: Record<RecordLift, string> = {
   squat: 'Squat',
   bench_press: 'Bench Press',
-  bench_press_ac: 'Bench Press A/C',
+  bench_press_ac: 'Bench Press (A/C)',
   deadlift: 'Deadlift',
   total: 'Total',
 };
