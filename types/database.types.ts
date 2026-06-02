@@ -440,6 +440,54 @@ export type Database = {
         };
         Relationships: [];
       };
+      records: {
+        Row: {
+          id: string;
+          region: string;
+          name: string;
+          gender: string;
+          weight_class: string;
+          age_category: string;
+          lift: Database['public']['Enums']['record_lift'];
+          equipment: Database['public']['Enums']['record_equipment'];
+          weight_kg: number;
+          date_set: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          region: string;
+          name: string;
+          gender: string;
+          weight_class: string;
+          age_category: string;
+          lift: Database['public']['Enums']['record_lift'];
+          equipment: Database['public']['Enums']['record_equipment'];
+          weight_kg: number;
+          date_set?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          region?: string;
+          name?: string;
+          gender?: string;
+          weight_class?: string;
+          age_category?: string;
+          lift?: Database['public']['Enums']['record_lift'];
+          equipment?: Database['public']['Enums']['record_equipment'];
+          weight_kg?: number;
+          date_set?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       // Public-safe lifter projection (no DOB, no IPF member ID). Columns are nullable to match
@@ -472,6 +520,8 @@ export type Database = {
       event_type: 'full_power' | 'bench_only' | 'deadlift_only';
       kit_type: 'classic' | 'equipped';
       lift_type: 'squat' | 'bench' | 'deadlift';
+      record_equipment: 'equipped' | 'unequipped';
+      record_lift: 'squat' | 'bench_press' | 'bench_press_ac' | 'deadlift' | 'total';
       ref_decision: 'white' | 'red';
       ref_position: 'left' | 'head' | 'right';
       squat_rack_setting: 'in' | 'out' | 'left_in' | 'right_in';

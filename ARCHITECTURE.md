@@ -11,7 +11,7 @@ Four front-end surfaces share one backend.
 - **Admin** (`/(admin)`): staff interfaces with full chrome. Auth required. Admins set up comps, run flights, and manage declarations. Gated server-side via `requireAdmin()` and at the database via RLS.
 - **Display** (`/(display)`): full-screen venue display screens (e.g. the loading-crew display and the warm-up board), admin-gated like Admin via the same `requireAdminPage()` gate, but with no chrome — the display owns the whole viewport, so no nav/header sits behind its full-screen overlay. Read-only, real-time.
 - **Overlay** (`/(overlay)`): OBS browser sources. Transparent background, fixed pixel dimensions (typically 1920×1080 or sub-regions). No chrome, no navigation. An OBS Browser Source renders the page's alpha natively, so transparency needs no chroma key. Each overlay subscribes to real-time and renders one piece of data. Read anonymously via the public-comp RLS policies (like the public live views), not the admin session — an OBS Browser Source is a headless browser with its own cookie jar and does not inherit the operator's admin session, so an admin-gated overlay would render empty. See the ADR in section 7.
-- **Public** (`/(public)`): comp landing pages, a public **live scoreboard** (planned, at `/[comp]/live`) for venue TVs and social shares, final results, and the **public warm-up board** (`/[comp]/live/warm-up`) — a sign-in-free copy of the Display warm-up board for sharing with lifters/spectators. Read-only, no auth gate; anon reads are scoped by RLS to publicly-visible comps and lifter names come from the PII-free `public_lifters` view.
+- **Public** (`/(public)`): comp landing pages, a public **live scoreboard** (planned, at `/[comp]/live`) for venue TVs and social shares, final results, the **public warm-up board** (`/[comp]/live/warm-up`) — a sign-in-free copy of the Display warm-up board for sharing with lifters/spectators — and the **UK records browser** (`/records`), an app-global, sign-in-free table of regional/national records (not tied to any comp). Read-only, no auth gate; comp-scoped anon reads are gated by RLS to publicly-visible comps with lifter names from the PII-free `public_lifters` view, while the records browser reads the always-public `records` table (see §3 and the ADR in §7).
 
 Backend services:
 
@@ -48,7 +48,7 @@ erDiagram
 ### Table summaries
 
 - **competitions**: the meet. Slug, name, federation, kit_type (classic/equipped), event_type (full_power/bench_only/deadlift_only), date range, status (draft/published/active/completed), is_team_competition (team-format flag, full power only).
-- **divisions**: age categories per comp (Open, Junior, Sub-junior, Masters 1-4).
+- **divisions**: age categories per comp. The seed defaults follow British Powerlifting (U16, U18, U23, Open, M1-M6); each comp owns its own set.
 - **weight_classes**: bodyweight categories per comp with gender, lower_kg, upper_kg.
 - **platforms**: physical lifting platforms (one per comp normally, two for bigger meets).
 - **sessions**: a chunk of lifting tied to a date, time, and platform.
@@ -59,6 +59,7 @@ erDiagram
 - **attempts**: up to 9 per entry (3 squats, 3 benches, 3 deadlifts). Weight in kg, declared timestamp, decided timestamp (`decided_at`, set when a good/no lift is recorded — anchors the run screen's 60-second next-attempt countdown across devices), result (pending/good_lift/no_lift/not_taken/withdrawn).
 - **referee_decisions**: exactly 3 per attempt (left/head/right positions). Decision (white/red) plus reasons array for no-lifts.
 - **profiles**: extends `auth.users` with display_name.
+- **records**: UK regional/national powerlifting records — **app-global reference data, not tied to any competition** (no `competition_id`, no foreign keys). Region (free text — the British/home-nation/sub-national tier is implied by the value), record holder name (free text), gender ('M'/'F'), weight_class, age_category, lift (`record_lift` enum: squat/bench_press/bench_press_ac/deadlift/total), equipment (`record_equipment` enum), weight_kg, date_set, notes. Case-insensitively unique on (region, gender, weight_class, age_category, lift, equipment) via `citext`. Admin-managed (`/records/manage`); always anon-readable (the public browser at `/records`). See the ADR in section 7.
 
 ---
 
@@ -69,6 +70,8 @@ Admins (email in `ADMIN_EMAILS`) can do everything. Anon can read data belonging
 There is no permissions matrix or `requireRole` API in the codebase — `requireAdmin()` against `ADMIN_EMAILS` (`lib/auth/admin.ts`) plus the RLS predicates are the whole model.
 
 Enforcement: RLS grants every write to any authenticated session, and `requireAdmin()` in server actions is the real gate. This holds only because public sign-ups are disabled, so admins are the sole session holders (see section 5 and the ADR in section 7). Anon reads are gated by the `is_comp_public()` RLS predicate. Lifter PII (date of birth, IPF member ID) is never exposed to anon: the public reads the `public_lifters` view, which omits those columns and is scoped to lifters who appear in a publicly visible comp (`lifter_in_public_comp()`).
+
+One deliberate exception to the "anon reads are scoped by `is_comp_public()`" rule: the `records` table (UK regional/national records) is **app-global reference data, not tied to any competition**, so its anon read policy is **unconditional** (`using (true)`). It is the only anon-readable table not gated on comp visibility. Writes still follow the standard model (authenticated + `requireAdmin()`). See the ADR in section 7.
 
 ---
 
@@ -182,3 +185,9 @@ A competition can opt into a team format (`is_team_competition`, full power only
 Members are modelled as ordinary `entries` tagged with `team_id` + `team_lift` (one member per lift per team, enforced by a partial unique index plus a check that the two columns are set together), rather than a separate membership table. This lets the existing registration, flight and attempt paths reuse the entry unchanged; deleting a team unassigns its members via `ON DELETE SET NULL` instead of removing their registrations. On the sessions & flights screen, team comps assign whole teams to a flight at once (every member's entry moves together) rather than placing individual lifters.
 
 GL uses the full-power (3-lift) coefficients for all three roles. The IPF publishes GL coefficients only for full powerlifting and for bench-only — there is no official single-squat or single-deadlift set — so scoring every role on the full-power coefficients keeps the three contributions on one comparable scale. This is a deliberate house rule for the format, not an official IPF score.
+
+### UK records: an app-global table, not competition-scoped
+
+The regional/national records browser (replacing the in-code JSON file of `StrengthAnalytics/BPRecords`) stores its data in a `records` table that is the first and only **app-global** table — it hangs off no `competition_id`, has no foreign keys to any competition table, and is never affected by a comp's lifecycle. A UK record is a standing reference value owned by no meet.
+
+Two consequences follow. First, its **anon read policy is unconditional** (`using (true)`) rather than gated on `is_comp_public()`: records are public reference data that should always render, regardless of whether any comp is published. This is the single documented exception in section 3. Second, the record holder's `name` is **free text**, not a foreign key to `lifters`, mirroring the source dataset and keeping the records feature fully independent of the registration data — so a records change can never touch, and is never touched by, the competition software. The record vocabulary (`record_lift`, `record_equipment` enums; weight-class/age-category/region constants) is likewise kept separate from the comp vocabulary for the same isolation reason — though the record weight-class list is *derived* from the comp's seeded `DEFAULT_WEIGHT_CLASSES` so the two can't drift. The natural key `(region, gender, weight_class, age_category, lift, equipment)` is unique and **case-insensitive** (the three free-text columns are `citext`), so one row is authoritative per category regardless of capitalisation and bulk import is an upsert on that key.

@@ -40,6 +40,7 @@ This project is developed online-only against the hosted Supabase dev project an
 /app
   /(admin)                      ← auth-gated staff routes, full chrome
     /comps                      ← comp list, comp setup
+    /records/manage             ← UK regional/national records management (app-global; public browser is /records)
     /[comp-slug]
       /entries                  ← lifter registration, inline weigh-in editing
       /weigh-in                 ← day-of weigh-in by session (bodyweight, openers, rack settings)
@@ -59,6 +60,7 @@ This project is developed online-only against the hosted Supabase dev project an
       /attempt                  ← current attempt + ref lights overlay
       /weight-class             ← weight class standings overlay
   /(public)                     ← public-facing views
+    /records                    ← public UK records browser (app-global, sign-in-free)
     /[comp-slug]                ← comp landing page
     /[comp-slug]/live           ← live scoreboard for venue TVs and socials (planned)
     /[comp-slug]/live/warm-up   ← public, sign-in-free warm-up board (per-platform via ?platform=)

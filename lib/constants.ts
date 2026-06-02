@@ -5,6 +5,8 @@ type EventType = Database['public']['Enums']['event_type'];
 type CompStatus = Database['public']['Enums']['comp_status'];
 type EntryStatus = Database['public']['Enums']['entry_status'];
 type LiftType = Database['public']['Enums']['lift_type'];
+export type RecordLift = Database['public']['Enums']['record_lift'];
+export type RecordEquipment = Database['public']['Enums']['record_equipment'];
 
 export type Gender = 'male' | 'female';
 
@@ -125,15 +127,20 @@ export const COMP_STATUSES = Object.keys(COMP_STATUS_LABELS) as CompStatus[];
 export const GENDERS = Object.keys(GENDER_LABELS) as Gender[];
 export const ENTRY_STATUSES = Object.keys(ENTRY_STATUS_LABELS) as EntryStatus[];
 
-// Default IPF age divisions, in competition running order. Used by the "seed defaults" action.
+// Default age divisions, in competition running order, using the British Powerlifting nomenclature
+// (U16/U18/U23 youth classes and M1-M6 masters). Used by the "seed defaults" action and mirrored by
+// RECORD_AGE_CATEGORIES for the records dataset.
 export const DEFAULT_DIVISIONS: readonly string[] = [
-  'Sub-Junior',
-  'Junior',
+  'U16',
+  'U18',
+  'U23',
   'Open',
-  'Masters 1',
-  'Masters 2',
-  'Masters 3',
-  'Masters 4',
+  'M1',
+  'M2',
+  'M3',
+  'M4',
+  'M5',
+  'M6',
 ];
 
 export type WeightClassSeed = {
@@ -144,9 +151,11 @@ export type WeightClassSeed = {
   upper_kg: number | null;
 };
 
-// Default IPF classic open weight classes, in running order per gender.
+// Default IPF classic weight classes, in running order per gender. Includes the sub-junior/junior
+// lightest classes (53 kg men, 43 kg women) below the eight open classes.
 export const DEFAULT_WEIGHT_CLASSES: readonly WeightClassSeed[] = [
-  { name: '-59 kg', gender: 'male', lower_kg: 0, upper_kg: 59 },
+  { name: '-53 kg', gender: 'male', lower_kg: 0, upper_kg: 53 },
+  { name: '-59 kg', gender: 'male', lower_kg: 53, upper_kg: 59 },
   { name: '-66 kg', gender: 'male', lower_kg: 59, upper_kg: 66 },
   { name: '-74 kg', gender: 'male', lower_kg: 66, upper_kg: 74 },
   { name: '-83 kg', gender: 'male', lower_kg: 74, upper_kg: 83 },
@@ -154,7 +163,8 @@ export const DEFAULT_WEIGHT_CLASSES: readonly WeightClassSeed[] = [
   { name: '-105 kg', gender: 'male', lower_kg: 93, upper_kg: 105 },
   { name: '-120 kg', gender: 'male', lower_kg: 105, upper_kg: 120 },
   { name: '120 kg+', gender: 'male', lower_kg: 120, upper_kg: null },
-  { name: '-47 kg', gender: 'female', lower_kg: 0, upper_kg: 47 },
+  { name: '-43 kg', gender: 'female', lower_kg: 0, upper_kg: 43 },
+  { name: '-47 kg', gender: 'female', lower_kg: 43, upper_kg: 47 },
   { name: '-52 kg', gender: 'female', lower_kg: 47, upper_kg: 52 },
   { name: '-57 kg', gender: 'female', lower_kg: 52, upper_kg: 57 },
   { name: '-63 kg', gender: 'female', lower_kg: 57, upper_kg: 63 },
@@ -162,4 +172,88 @@ export const DEFAULT_WEIGHT_CLASSES: readonly WeightClassSeed[] = [
   { name: '-76 kg', gender: 'female', lower_kg: 69, upper_kg: 76 },
   { name: '-84 kg', gender: 'female', lower_kg: 76, upper_kg: 84 },
   { name: '84 kg+', gender: 'female', lower_kg: 84, upper_kg: null },
+];
+
+// UK records vocabulary -------------------------------------------------------------------------
+//
+// Standalone, app-global reference data (the regional/national records browser). These categories
+// are deliberately separate from the competition vocabulary above: records use the British
+// Powerlifting record nomenclature (bench_press / total as record lifts, M1-M4 master classes,
+// 'M'/'F' gender) and the source dataset (StrengthAnalytics/BPRecords), not the comp enums. Keeping
+// them apart means a change to the comp model can never silently alter the records dataset.
+
+// Record gender is stored as 'M'/'F' to match the source data and the admins' Google Sheet exports.
+export const RECORD_GENDERS = ['M', 'F'] as const;
+export type RecordGender = (typeof RECORD_GENDERS)[number];
+
+export const RECORD_GENDER_LABELS: Record<RecordGender, string> = {
+  M: 'Male',
+  F: 'Female',
+};
+
+// The five record lifts (note these differ from the comp lift_type: the bench is named bench_press,
+// and there are bench_press_ac — "Bench Press (A/C)", the assisted/adaptive class — and total
+// disciplines). Order here drives the dropdown order on the records screens.
+export const RECORD_LIFT_LABELS: Record<RecordLift, string> = {
+  squat: 'Squat',
+  bench_press: 'Bench Press',
+  deadlift: 'Deadlift',
+  total: 'Total',
+  bench_press_ac: 'Bench Press (A/C)',
+};
+
+export const RECORD_EQUIPMENT_LABELS: Record<RecordEquipment, string> = {
+  equipped: 'Equipped',
+  unequipped: 'Unequipped',
+};
+
+export const RECORD_LIFTS = Object.keys(RECORD_LIFT_LABELS) as RecordLift[];
+export const RECORD_EQUIPMENTS = Object.keys(RECORD_EQUIPMENT_LABELS) as RecordEquipment[];
+
+// Record age categories, in age order (British Powerlifting record nomenclature).
+export const RECORD_AGE_CATEGORIES: readonly string[] = [
+  'U16',
+  'U18',
+  'U23',
+  'Open',
+  'M1',
+  'M2',
+  'M3',
+  'M4',
+  'M5',
+  'M6',
+];
+
+// Records use the same bodyweight categories as the comp's seeded IPF classes, derived from
+// DEFAULT_WEIGHT_CLASSES so the two can never drift. Stored as free text on the row; this list drives
+// the UI dropdowns and the import-preview "unusual class" warning rather than being a hard DB
+// constraint, so a non-standard class is flagged but never rejected outright.
+export const RECORD_WEIGHT_CLASSES: Record<RecordGender, readonly string[]> = {
+  M: DEFAULT_WEIGHT_CLASSES.filter((weightClass) => weightClass.gender === 'male').map(
+    (weightClass) => weightClass.name,
+  ),
+  F: DEFAULT_WEIGHT_CLASSES.filter((weightClass) => weightClass.gender === 'female').map(
+    (weightClass) => weightClass.name,
+  ),
+};
+
+// Regions for the admin dropdown, in British Powerlifting order. The `region` column is free text
+// (the tier — British / home nation / sub-national — is implied by the value), so this is a
+// suggestion list and an operator can still enter a region not listed here.
+export const SUGGESTED_RECORD_REGIONS: readonly string[] = [
+  'England',
+  'Wales',
+  'Scotland',
+  'British',
+  'British Universities',
+  'Northern Ireland',
+  'Yorkshire & North East',
+  'North West',
+  'North Midlands',
+  'East Midlands',
+  'West Midlands',
+  'Greater London',
+  'South West',
+  'South Midlands',
+  'South East',
 ];
