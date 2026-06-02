@@ -233,19 +233,29 @@ export async function bulkUpsertRecordsAction(input: {
       }
 
       const key = recordNaturalKey(validated.data);
-      const isPasteDuplicate = toWrite.has(key);
-      const status: 'created' | 'updated' = existingKeys.has(key) || isPasteDuplicate ? 'updated' : 'created';
-      toWrite.set(key, toRow(validated.data));
 
-      const warning = row.warnings.length > 0 ? row.warnings.join(' ') : null;
+      // A later row for a category already seen in this paste is a duplicate. The first occurrence is
+      // the one written (a multi-row upsert can't touch the same conflict target twice), so report it
+      // as skipped rather than double-counting it as another created/updated write.
+      if (toWrite.has(key)) {
+        summary.skipped++;
+        summary.outcomes.push({
+          line: row.line,
+          label,
+          status: 'skipped',
+          message: 'Duplicate of an earlier row for the same category in this paste.',
+        });
+        continue;
+      }
+
+      const status: 'created' | 'updated' = existingKeys.has(key) ? 'updated' : 'created';
+      toWrite.set(key, toRow(validated.data));
       summary[status]++;
       summary.outcomes.push({
         line: row.line,
         label,
         status,
-        message: isPasteDuplicate
-          ? `Overrides an earlier row for the same category in this paste.${warning ? ` ${warning}` : ''}`
-          : warning,
+        message: row.warnings.length > 0 ? row.warnings.join(' ') : null,
       });
     }
 

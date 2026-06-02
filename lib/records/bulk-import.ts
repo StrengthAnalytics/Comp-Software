@@ -6,6 +6,7 @@ import {
   type RecordLift,
 } from '@/lib/constants';
 import { normalizeRecordWeightClass } from '@/lib/records/weight-class';
+import { isRealIsoDate } from '@/lib/dates';
 import { roundToOneDecimal } from '@/lib/number-input';
 
 // Bulk records entry via copy-paste: the admin keeps records in a Google Sheet (the same nine
@@ -121,20 +122,23 @@ function normalizeEquipment(raw: string): RecordEquipment | null {
   return null;
 }
 
-// ISO (YYYY-MM-DD) and day-first formats (DD/MM/YYYY, D-M-YYYY) common in UK spreadsheets.
+// ISO (YYYY-MM-DD) and day-first formats (DD/MM/YYYY, D-M-YYYY) common in UK spreadsheets. Both are
+// validated as real calendar dates (isRealIsoDate), so an impossible date like 31/02/2020 errors in
+// the preview rather than passing through and aborting the upsert at the Postgres date column.
 function parseFlexibleDate(raw: string): { value: string | null; ok: boolean } {
   const value = raw.trim();
   if (value === '') {
     return { value: null, ok: true };
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return { value, ok: true };
+    return isRealIsoDate(value) ? { value, ok: true } : { value: null, ok: false };
   }
   const dayFirst = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(value);
   if (dayFirst) {
     const [, day, month, year] = dayFirst;
-    if (Number(month) >= 1 && Number(month) <= 12 && Number(day) >= 1 && Number(day) <= 31) {
-      return { value: `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`, ok: true };
+    const iso = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    if (isRealIsoDate(iso)) {
+      return { value: iso, ok: true };
     }
   }
   return { value: null, ok: false };

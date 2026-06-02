@@ -29,7 +29,8 @@ export function toRecordView(row: {
   equipment: RecordEquipment;
   weight_kg: number;
   date_set: string | null;
-  notes: string | null;
+  // Optional so the public page can omit notes from its select (they aren't shown publicly).
+  notes?: string | null;
 }): RecordView {
   return {
     id: row.id,
@@ -43,6 +44,6 @@ export function toRecordView(row: {
     equipment: row.equipment,
     weightKg: row.weight_kg,
     dateSet: row.date_set,
-    notes: row.notes,
+    notes: row.notes ?? null,
   };
 }

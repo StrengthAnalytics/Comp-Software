@@ -111,6 +111,16 @@ describe('parseRecordsImport', () => {
     ]);
   });
 
+  it('rejects an impossible calendar date in either format', () => {
+    const text = tsv([
+      ['England', 'Day First', '-83 kg', 'M', 'Total', 'Open', '700', '31/02/2020', 'Unequipped'],
+      ['England', 'ISO', '-83 kg', 'M', 'Total', 'Open', '700', '2020-02-31', 'Unequipped'],
+    ]);
+    const rows = parseRecordsImport(text);
+    expect(rows[0].errors).toContain('Invalid date set.');
+    expect(rows[1].errors).toContain('Invalid date set.');
+  });
+
   it('parses day-first dates common in UK spreadsheets', () => {
     const text = tsv([
       ['England', 'Day First', '83kg', 'M', 'Total', 'Open', '700', '15/01/2024', 'Unequipped'],

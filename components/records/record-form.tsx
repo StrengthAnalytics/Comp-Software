@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { createRecordAction, updateRecordAction } from '@/actions/records';
+import { normalizeRecordWeightClass } from '@/lib/records/weight-class';
 import { numberToInput, parseOptionalNumber } from '@/lib/number-input';
 import {
   RECORD_AGE_CATEGORIES,
@@ -152,7 +153,15 @@ export function RecordForm({
           <select
             id="record-gender"
             value={gender}
-            onChange={(event) => setGender(event.target.value as RecordGender)}
+            onChange={(event) => {
+              const nextGender = event.target.value as RecordGender;
+              setGender(nextGender);
+              // Weight classes are sex-specific (men and women share none), so clear a class that
+              // isn't valid for the new sex — otherwise a Female -43 kg silently saves as Male -43 kg.
+              setWeightClass((current) =>
+                RECORD_WEIGHT_CLASSES[nextGender].includes(normalizeRecordWeightClass(current)) ? current : '',
+              );
+            }}
             className={INPUT_CLASS}
           >
             {RECORD_GENDERS.map((option) => (

@@ -75,6 +75,10 @@ describe('recordInputSchema', () => {
   it('rejects a non-ISO date (the bulk parser normalises before this point)', () => {
     expect(recordInputSchema.safeParse({ ...base, dateSet: '15/01/2024' }).success).toBe(false);
   });
+
+  it('rejects an impossible calendar date that passes the format regex', () => {
+    expect(recordInputSchema.safeParse({ ...base, dateSet: '2024-02-31' }).success).toBe(false);
+  });
 });
 
 describe('recordUpdateSchema', () => {

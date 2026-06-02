@@ -1,14 +1,17 @@
 import { z } from 'zod';
 import { RECORD_EQUIPMENTS, RECORD_GENDERS, RECORD_LIFTS } from '@/lib/constants';
 import { normalizeRecordWeightClass } from '@/lib/records/weight-class';
+import { isRealIsoDate } from '@/lib/dates';
 import { roundToOneDecimal } from '@/lib/number-input';
 
-// Blank string → null, so the optional date clears cleanly when the operator empties the field.
+// Blank string → null, so the optional date clears cleanly when the operator empties the field. The
+// refine rejects impossible calendar dates (e.g. 2024-02-31) that the format regex alone would pass.
 const optionalDate = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
   z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid date.')
+    .refine(isRealIsoDate, 'Enter a valid date.')
     .nullable(),
 );
 
