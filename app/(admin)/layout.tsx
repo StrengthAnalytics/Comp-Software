@@ -24,7 +24,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
               <Link href="/comps" className="text-sm text-neutral-600 hover:text-neutral-900">
                 Competitions
               </Link>
-              <Link href="/records" className="text-sm text-neutral-600 hover:text-neutral-900">
+              <Link href="/records/manage" className="text-sm text-neutral-600 hover:text-neutral-900">
                 Records
               </Link>
             </nav>

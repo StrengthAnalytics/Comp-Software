@@ -1,16 +1,19 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { deleteRecordAction } from '@/actions/records';
 import { formatRecordsExport, type RecordExportRow } from '@/lib/records/bulk-import';
+import { ALL_FILTER, selectRecords, type RecordFilters, type RecordSortKey } from '@/lib/records/filter';
+import type { RecordView } from '@/lib/records/record-view';
 import {
   RECORD_EQUIPMENT_LABELS,
   RECORD_GENDER_LABELS,
   RECORD_LIFT_LABELS,
   RECORD_LIFTS,
 } from '@/lib/constants';
-import { RecordForm, type AdminRecord } from '@/components/records/record-form';
+import { RecordForm } from '@/components/records/record-form';
 import { RecordsBulkImport } from '@/components/records/records-bulk-import';
 
 const GHOST_BUTTON =
@@ -20,47 +23,13 @@ const PRIMARY_BUTTON =
 const FILTER_CLASS =
   'rounded-md border border-neutral-300 px-2 py-1.5 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const COPY_RESET_MS = 2000;
-const ALL = 'all';
-
-type SortKey = 'category' | 'weight-desc' | 'date-desc' | 'name';
-
-// Leading number of a weight class ("83kg" → 83, "120+kg" → 120) for a numeric class sort. Unparseable
-// classes sort last.
-function weightClassValue(weightClass: string): number {
-  const match = /\d+(\.\d+)?/.exec(weightClass);
-  return match ? Number(match[0]) : Number.POSITIVE_INFINITY;
-}
+const ALL = ALL_FILTER;
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].toSorted((a, b) => a.localeCompare(b));
 }
 
-function compareRecords(a: AdminRecord, b: AdminRecord, sort: SortKey): number {
-  switch (sort) {
-    case 'weight-desc': {
-      return b.weightKg - a.weightKg;
-    }
-    case 'date-desc': {
-      // Newest first; records with no date sort last.
-      return (b.dateSet ?? '').localeCompare(a.dateSet ?? '');
-    }
-    case 'name': {
-      return a.name.localeCompare(b.name);
-    }
-    case 'category': {
-      return (
-        a.region.localeCompare(b.region) ||
-        a.gender.localeCompare(b.gender) ||
-        weightClassValue(a.weightClass) - weightClassValue(b.weightClass) ||
-        a.weightClass.localeCompare(b.weightClass) ||
-        RECORD_LIFTS.indexOf(a.lift) - RECORD_LIFTS.indexOf(b.lift) ||
-        a.ageCategory.localeCompare(b.ageCategory)
-      );
-    }
-  }
-}
-
-function toExportRow(record: AdminRecord): RecordExportRow {
+function toExportRow(record: RecordView): RecordExportRow {
   return {
     region: record.region,
     name: record.name,
@@ -74,7 +43,7 @@ function toExportRow(record: AdminRecord): RecordExportRow {
   };
 }
 
-export function RecordsManager({ records }: { records: AdminRecord[] }) {
+export function RecordsManager({ records }: { records: RecordView[] }) {
   const router = useRouter();
 
   const [query, setQuery] = useState('');
@@ -83,10 +52,10 @@ export function RecordsManager({ records }: { records: AdminRecord[] }) {
   const [lift, setLift] = useState(ALL);
   const [equipment, setEquipment] = useState(ALL);
   const [ageCategory, setAgeCategory] = useState(ALL);
-  const [sort, setSort] = useState<SortKey>('category');
+  const [sort, setSort] = useState<RecordSortKey>('category');
 
   const [showAdd, setShowAdd] = useState(false);
-  const [editing, setEditing] = useState<AdminRecord | null>(null);
+  const [editing, setEditing] = useState<RecordView | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -96,30 +65,16 @@ export function RecordsManager({ records }: { records: AdminRecord[] }) {
   const ageOptions = useMemo(() => uniqueSorted(records.map((record) => record.ageCategory)), [records]);
 
   const filtered = useMemo(() => {
-    const trimmedQuery = query.trim().toLowerCase();
-    return records
-      .filter((record) => {
-        if (trimmedQuery !== '' && !record.name.toLowerCase().includes(trimmedQuery)) {
-          return false;
-        }
-        if (region !== ALL && record.region !== region) {
-          return false;
-        }
-        if (gender !== ALL && record.gender !== gender) {
-          return false;
-        }
-        if (lift !== ALL && record.lift !== lift) {
-          return false;
-        }
-        if (equipment !== ALL && record.equipment !== equipment) {
-          return false;
-        }
-        if (ageCategory !== ALL && record.ageCategory !== ageCategory) {
-          return false;
-        }
-        return true;
-      })
-      .toSorted((a, b) => compareRecords(a, b, sort));
+    const filters: RecordFilters = {
+      query,
+      region,
+      gender,
+      lift,
+      equipment,
+      ageCategory,
+      weightClass: ALL,
+    };
+    return selectRecords(records, filters, sort);
   }, [records, query, region, gender, lift, equipment, ageCategory, sort]);
 
   function closeForms() {
@@ -164,8 +119,11 @@ export function RecordsManager({ records }: { records: AdminRecord[] }) {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">UK records</h1>
           <p className="mt-1 text-sm text-neutral-600">
-            {records.length} record{records.length === 1 ? '' : 's'}. Regional and national records shown publicly at
-            /records.
+            {records.length} record{records.length === 1 ? '' : 's'}.{' '}
+            <Link href="/records" target="_blank" rel="noopener" className="underline hover:text-neutral-900">
+              View the public page
+            </Link>{' '}
+            (opens in a new tab).
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -250,7 +208,7 @@ export function RecordsManager({ records }: { records: AdminRecord[] }) {
         </select>
         <select
           value={sort}
-          onChange={(event) => setSort(event.target.value as SortKey)}
+          onChange={(event) => setSort(event.target.value as RecordSortKey)}
           className={`${FILTER_CLASS} ml-auto`}
           aria-label="Sort"
         >

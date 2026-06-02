@@ -17,22 +17,8 @@ import {
   type RecordGender,
   type RecordLift,
 } from '@/lib/constants';
+import type { RecordView } from '@/lib/records/record-view';
 import type { FieldErrors } from '@/types/action-result';
-
-// One UK record, as the admin screen holds it (camelCase; the page maps the snake_case DB row).
-export type AdminRecord = {
-  id: string;
-  region: string;
-  name: string;
-  gender: RecordGender;
-  weightClass: string;
-  ageCategory: string;
-  lift: RecordLift;
-  equipment: RecordEquipment;
-  weightKg: number;
-  dateSet: string | null;
-  notes: string | null;
-};
 
 const INPUT_CLASS =
   'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
@@ -58,7 +44,7 @@ export function RecordForm({
   onClose,
   onSaved,
 }: {
-  initial?: AdminRecord | null;
+  initial?: RecordView | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
