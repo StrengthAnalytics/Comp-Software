@@ -197,8 +197,10 @@ export async function bulkUpsertRecordsAction(input: {
     );
 
     const summary: BulkRecordSummary = { created: 0, updated: 0, skipped: 0, errors: 0, outcomes: [] };
-    const seen = new Set<string>();
-    const toWrite: ReturnType<typeof toRow>[] = [];
+    // Keyed by natural key so two pasted rows for the same category collapse to one write (last wins).
+    // A multi-row upsert with two rows sharing the conflict target would otherwise be rejected by
+    // Postgres ("ON CONFLICT DO UPDATE command cannot affect row a second time").
+    const toWrite = new Map<string, ReturnType<typeof toRow>>();
 
     for (const row of rows) {
       const label = rowLabel(row);
@@ -231,23 +233,27 @@ export async function bulkUpsertRecordsAction(input: {
       }
 
       const key = recordNaturalKey(validated.data);
-      const status: 'created' | 'updated' = existingKeys.has(key) || seen.has(key) ? 'updated' : 'created';
-      seen.add(key);
+      const isPasteDuplicate = toWrite.has(key);
+      const status: 'created' | 'updated' = existingKeys.has(key) || isPasteDuplicate ? 'updated' : 'created';
+      toWrite.set(key, toRow(validated.data));
 
-      toWrite.push(toRow(validated.data));
+      const warning = row.warnings.length > 0 ? row.warnings.join(' ') : null;
       summary[status]++;
       summary.outcomes.push({
         line: row.line,
         label,
         status,
-        message: row.warnings.length > 0 ? row.warnings.join(' ') : null,
+        message: isPasteDuplicate
+          ? `Overrides an earlier row for the same category in this paste.${warning ? ` ${warning}` : ''}`
+          : warning,
       });
     }
 
-    // Upsert the valid rows in chunks on the natural key. toRow omits notes, so a re-import never
-    // wipes a note added through the single-record editor.
-    for (let start = 0; start < toWrite.length; start += UPSERT_CHUNK_SIZE) {
-      const chunk = toWrite.slice(start, start + UPSERT_CHUNK_SIZE);
+    // Upsert the de-duplicated valid rows in chunks on the natural key. toRow omits notes, so a
+    // re-import never wipes a note added through the single-record editor.
+    const rowsToWrite = [...toWrite.values()];
+    for (let start = 0; start < rowsToWrite.length; start += UPSERT_CHUNK_SIZE) {
+      const chunk = rowsToWrite.slice(start, start + UPSERT_CHUNK_SIZE);
       const { error } = await supabase.from('records').upsert(chunk, { onConflict: RECORD_CONFLICT_TARGET });
       if (error) {
         Sentry.captureException(error);
