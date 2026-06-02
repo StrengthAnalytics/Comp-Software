@@ -89,6 +89,16 @@ describe('parseRecordsImport', () => {
     expect(rows[1].warnings).toEqual([]);
   });
 
+  it('recognises the sub-junior 53 kg (M) and 43 kg (F) classes without warning', () => {
+    const text = tsv([
+      ['England', 'Youth M', '53kg', 'M', 'Squat', 'U18', '120', '2024-01-15', 'Unequipped'],
+      ['England', 'Youth F', '43kg', 'F', 'Deadlift', 'U16', '90', '2024-01-15', 'Unequipped'],
+    ]);
+    const rows = parseRecordsImport(text);
+    expect(rows[0]).toMatchObject({ weightClass: '-53 kg', warnings: [] });
+    expect(rows[1]).toMatchObject({ weightClass: '-43 kg', warnings: [] });
+  });
+
   it('warns (without blocking) on an unusual weight class or age category', () => {
     const text = tsv([
       ['England', 'Odd Class', '999kg', 'M', 'Squat', 'Veteran', '300', '2024-01-15', 'Unequipped'],

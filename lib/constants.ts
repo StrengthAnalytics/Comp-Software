@@ -127,15 +127,20 @@ export const COMP_STATUSES = Object.keys(COMP_STATUS_LABELS) as CompStatus[];
 export const GENDERS = Object.keys(GENDER_LABELS) as Gender[];
 export const ENTRY_STATUSES = Object.keys(ENTRY_STATUS_LABELS) as EntryStatus[];
 
-// Default IPF age divisions, in competition running order. Used by the "seed defaults" action.
+// Default age divisions, in competition running order, using the British Powerlifting nomenclature
+// (U16/U18/U23 youth classes and M1-M6 masters). Used by the "seed defaults" action and mirrored by
+// RECORD_AGE_CATEGORIES for the records dataset.
 export const DEFAULT_DIVISIONS: readonly string[] = [
-  'Sub-Junior',
-  'Junior',
+  'U16',
+  'U18',
+  'U23',
   'Open',
-  'Masters 1',
-  'Masters 2',
-  'Masters 3',
-  'Masters 4',
+  'M1',
+  'M2',
+  'M3',
+  'M4',
+  'M5',
+  'M6',
 ];
 
 export type WeightClassSeed = {
@@ -146,9 +151,11 @@ export type WeightClassSeed = {
   upper_kg: number | null;
 };
 
-// Default IPF classic open weight classes, in running order per gender.
+// Default IPF classic weight classes, in running order per gender. Includes the sub-junior/junior
+// lightest classes (53 kg men, 43 kg women) below the eight open classes.
 export const DEFAULT_WEIGHT_CLASSES: readonly WeightClassSeed[] = [
-  { name: '-59 kg', gender: 'male', lower_kg: 0, upper_kg: 59 },
+  { name: '-53 kg', gender: 'male', lower_kg: 0, upper_kg: 53 },
+  { name: '-59 kg', gender: 'male', lower_kg: 53, upper_kg: 59 },
   { name: '-66 kg', gender: 'male', lower_kg: 59, upper_kg: 66 },
   { name: '-74 kg', gender: 'male', lower_kg: 66, upper_kg: 74 },
   { name: '-83 kg', gender: 'male', lower_kg: 74, upper_kg: 83 },
@@ -156,7 +163,8 @@ export const DEFAULT_WEIGHT_CLASSES: readonly WeightClassSeed[] = [
   { name: '-105 kg', gender: 'male', lower_kg: 93, upper_kg: 105 },
   { name: '-120 kg', gender: 'male', lower_kg: 105, upper_kg: 120 },
   { name: '120 kg+', gender: 'male', lower_kg: 120, upper_kg: null },
-  { name: '-47 kg', gender: 'female', lower_kg: 0, upper_kg: 47 },
+  { name: '-43 kg', gender: 'female', lower_kg: 0, upper_kg: 43 },
+  { name: '-47 kg', gender: 'female', lower_kg: 43, upper_kg: 47 },
   { name: '-52 kg', gender: 'female', lower_kg: 47, upper_kg: 52 },
   { name: '-57 kg', gender: 'female', lower_kg: 52, upper_kg: 57 },
   { name: '-63 kg', gender: 'female', lower_kg: 57, upper_kg: 63 },
