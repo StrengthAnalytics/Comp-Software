@@ -5,8 +5,8 @@ type EventType = Database['public']['Enums']['event_type'];
 type CompStatus = Database['public']['Enums']['comp_status'];
 type EntryStatus = Database['public']['Enums']['entry_status'];
 type LiftType = Database['public']['Enums']['lift_type'];
-type RecordLift = Database['public']['Enums']['record_lift'];
-type RecordEquipment = Database['public']['Enums']['record_equipment'];
+export type RecordLift = Database['public']['Enums']['record_lift'];
+export type RecordEquipment = Database['public']['Enums']['record_equipment'];
 
 export type Gender = 'male' | 'female';
 
