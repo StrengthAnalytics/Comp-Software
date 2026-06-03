@@ -12,15 +12,21 @@ type ZoomControl = {
   onZoomOut: () => void;
 };
 
+type SwitchControl = { checked: boolean; onToggle: () => void };
+
 type DisplayOptionsDrawerProps = {
   open: boolean;
   onClose: () => void;
+  // Master toggle for the whole up-next card strip.
+  showCards: SwitchControl;
+  // "Lifts to next flight" mode: a fixed current + next + count three-card strip.
+  flightCount: SwitchControl;
   upNextOptions: readonly number[];
   upNextCount: number;
   onUpNextChange: (count: number) => void;
   // The optional plate/rack detail toggle for the up-next cards, or null when it doesn't apply (5-up,
-  // where the cards are too narrow for the diagram).
-  upNextDetail: { checked: boolean; onToggle: () => void } | null;
+  // where the cards are too narrow for the diagram, or countMode, which has its own third card).
+  upNextDetail: SwitchControl | null;
   zoom: ZoomControl;
   columnToggles: BoardOptionToggle[];
 };
@@ -37,6 +43,8 @@ const ZOOM_BUTTON =
 export function DisplayOptionsDrawer({
   open,
   onClose,
+  showCards,
+  flightCount,
   upNextOptions,
   upNextCount,
   onUpNextChange,
@@ -104,39 +112,56 @@ export function DisplayOptionsDrawer({
         </header>
 
         <div className="min-h-0 flex-1 overflow-auto p-4">
-          <Section title="Up next lifters">
-            <div
-              className="flex overflow-hidden rounded border border-neutral-300"
-              role="group"
-              aria-label="Up next lifters"
-            >
-              {upNextOptions.map((option) => {
-                const active = option === upNextCount;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => onUpNextChange(option)}
-                    aria-pressed={active}
-                    className={`${SEGMENT_BUTTON} ${
-                      active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'
-                    }`}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
-            {upNextDetail ? (
-              <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100">
-                <span>Plate loading &amp; rack heights</span>
-                <input
-                  type="checkbox"
-                  checked={upNextDetail.checked}
-                  onChange={upNextDetail.onToggle}
-                  className="h-4 w-4 accent-neutral-800"
+          <Section title="Up next cards">
+            <SwitchRow label="Show up-next cards" checked={showCards.checked} onToggle={showCards.onToggle} />
+            {showCards.checked ? (
+              <div className="mt-2 space-y-2">
+                <SwitchRow
+                  label="Lifts to next flight"
+                  checked={flightCount.checked}
+                  onToggle={flightCount.onToggle}
                 />
-              </label>
+                {flightCount.checked ? (
+                  <p className="px-2 text-xs text-neutral-500">
+                    Shows the current lifter, the next lifter, and the number of lifts until the next flight.
+                  </p>
+                ) : (
+                  <>
+                    <div className="px-2 pt-1">
+                      <p className="mb-1 text-xs font-medium text-neutral-500">Number of lifters</p>
+                      <div
+                        className="flex w-max overflow-hidden rounded border border-neutral-300"
+                        role="group"
+                        aria-label="Number of up-next lifters"
+                      >
+                        {upNextOptions.map((option) => {
+                          const active = option === upNextCount;
+                          return (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => onUpNextChange(option)}
+                              aria-pressed={active}
+                              className={`${SEGMENT_BUTTON} ${
+                                active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'
+                              }`}
+                            >
+                              {option}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {upNextDetail ? (
+                      <SwitchRow
+                        label="Plate loading & rack heights"
+                        checked={upNextDetail.checked}
+                        onToggle={upNextDetail.onToggle}
+                      />
+                    ) : null}
+                  </>
+                )}
+              </div>
             ) : null}
           </Section>
 
@@ -170,15 +195,7 @@ export function DisplayOptionsDrawer({
             <ul className="space-y-1">
               {columnToggles.map((toggle) => (
                 <li key={toggle.id}>
-                  <label className="flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100">
-                    <span>{toggle.label}</span>
-                    <input
-                      type="checkbox"
-                      checked={toggle.checked}
-                      onChange={toggle.onToggle}
-                      className="h-4 w-4 accent-neutral-800"
-                    />
-                  </label>
+                  <SwitchRow label={toggle.label} checked={toggle.checked} onToggle={toggle.onToggle} />
                 </li>
               ))}
             </ul>
@@ -195,5 +212,15 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h3>
       {children}
     </section>
+  );
+}
+
+// A labelled checkbox row, used for every on/off control in the drawer.
+function SwitchRow({ label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void }) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100">
+      <span>{label}</span>
+      <input type="checkbox" checked={checked} onChange={onToggle} className="h-4 w-4 accent-neutral-800" />
+    </label>
   );
 }

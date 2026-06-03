@@ -7,6 +7,7 @@ import type { KitType } from '@/lib/scoring/ipf-gl';
 import { compareRunningOrder, selectUpcomingLifters } from '@/lib/attempts/running-order';
 import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { buildPlatformLiveView, type PlatformLiveRow } from '@/lib/scorekeeper/platform-live-view';
+import { computeLiftsToNextFlight } from '@/lib/scorekeeper/flight-count';
 import { bestLiftFor, computeEntryScore, computePredictedScore, type PredictedScore } from '@/lib/scorekeeper/entry-score';
 import { computePlacings, type PlaceableEntry } from '@/lib/scorekeeper/placings';
 import { computeBoardTeamStandings } from '@/lib/scorekeeper/team-board-standings';
@@ -117,6 +118,9 @@ type WarmUpView = {
   current: { entryId: string; lift: LiftType; attemptNumber: number } | null;
   // The upcoming lifters in running order (up to MAX_UP_NEXT); the board shows the chosen first 1/3/5.
   upNext: PositionCardData[];
+  // Lifts remaining in the current flight for the on-platform lift, and the next flight to contest it —
+  // for the optional "lifts to next flight" count card. Null when no lifter is on the platform.
+  flightCount: { count: number; nextFlightName: string | null; lift: LiftType } | null;
   roster: { entry: BoardEntry; flightName: string }[];
 };
 
@@ -209,19 +213,30 @@ export function WarmUpDisplay({
   const setZoom = (index: number) => setZoomPref(String(ZOOM_LEVELS[index]));
   const zoomClass = `warmup-zoom-${zoomLevel}`;
 
+  // Master toggle for the whole up-next card strip (default on); when off the table gets the space.
+  const [showCardsPref, toggleShowCards] = usePersistentToggle('warmup:upnext:show');
+
+  // "Lifts to next flight" mode (default off): the strip becomes a fixed three cards — on platform, on
+  // deck, and a count of lifts until the next flight starts this lift — overriding the 1/3/5 choice.
+  const [flightCountPref, toggleFlightCount] = usePersistentToggle('warmup:upnext:flightcount', false);
+  const countMode = flightCountPref;
+
   // How many upcoming lifters the up-next strip shows (1, 3 or 5), persisted per browser. A stored
   // value outside the option list falls back to 3. Always render `upNextCount` cards, padding with
-  // nulls so the strip keeps its shape before any lifter is up.
+  // nulls so the strip keeps its shape before any lifter is up. Ignored while countMode is on.
   const [upNextPref, setUpNextPref] = usePersistentString('warmup:upnext', '3');
   const upNextCount = UP_NEXT_OPTIONS.includes(Number(upNextPref)) ? Number(upNextPref) : 3;
   const upNextCards = Array.from({ length: upNextCount }, (_, index) => view.upNext[index] ?? null);
 
   // Optional plate-loading + rack-height detail on the up-next cards (a smaller echo of the loading
-  // display). Only offered for 1 or 3 cards — at 5 the cards are too narrow for the diagram — so a 5-up
-  // board never shows it even if the preference is on.
+  // display). Only offered for 1 or 3 lifter cards — not at 5 (cards too narrow) and not in countMode
+  // (which has its own third card) — so the board never shows it when it doesn't apply.
   const [detailPref, toggleDetail] = usePersistentToggle('warmup:upnext:detail', false);
-  const upNextDetailAvailable = upNextCount !== MAX_UP_NEXT;
+  const upNextDetailAvailable = !countMode && upNextCount !== MAX_UP_NEXT;
   const showUpNextDetail = detailPref && upNextDetailAvailable;
+
+  // The strip is three cards in countMode, otherwise the chosen lifter count.
+  const stripGridClass = UP_NEXT_GRID[countMode ? 3 : upNextCount];
 
   // All view controls (up-next count, zoom, columns) live in a right-side slide-out drawer, so the
   // header stays a clean status bar with a single trigger rather than a crowded row of controls.
@@ -376,21 +391,31 @@ export function WarmUpDisplay({
         </div>
       </header>
 
-      <div
-        aria-live="polite"
-        aria-label="Platform running order"
-        className={`grid shrink-0 gap-3 border-b border-neutral-200 p-4 ${UP_NEXT_GRID[upNextCount]}`}
-      >
-        {upNextCards.map((card, index) => (
-          <PositionCard
-            key={UP_NEXT_LABELS[index]}
-            label={UP_NEXT_LABELS[index]}
-            card={card}
-            highlight={index === 0}
-            showDetail={showUpNextDetail}
-          />
-        ))}
-      </div>
+      {showCardsPref ? (
+        <div
+          aria-live="polite"
+          aria-label="Platform running order"
+          className={`grid shrink-0 gap-3 border-b border-neutral-200 p-4 ${stripGridClass}`}
+        >
+          {countMode ? (
+            <>
+              <PositionCard label={UP_NEXT_LABELS[0]} card={view.upNext[0] ?? null} highlight />
+              <PositionCard label={UP_NEXT_LABELS[1]} card={view.upNext[1] ?? null} />
+              <FlightCountCard data={view.flightCount} />
+            </>
+          ) : (
+            upNextCards.map((card, index) => (
+              <PositionCard
+                key={UP_NEXT_LABELS[index]}
+                label={UP_NEXT_LABELS[index]}
+                card={card}
+                highlight={index === 0}
+                showDetail={showUpNextDetail}
+              />
+            ))
+          )}
+        </div>
+      ) : null}
 
       {/* No top padding on the scroll area: the sticky column header pins flush to the top of the
           scroll region so rows disappear straight under it (top padding would leave a strip where
@@ -605,6 +630,8 @@ export function WarmUpDisplay({
       <DisplayOptionsDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        showCards={{ checked: showCardsPref, onToggle: toggleShowCards }}
+        flightCount={{ checked: flightCountPref, onToggle: toggleFlightCount }}
         upNextOptions={UP_NEXT_OPTIONS}
         upNextCount={upNextCount}
         onUpNextChange={(count) => setUpNextPref(String(count))}
@@ -646,6 +673,7 @@ function buildView({
     header: null,
     current: null,
     upNext: [],
+    flightCount: null,
     roster: [],
   };
 
@@ -695,13 +723,67 @@ function buildView({
     current = { entryId: onPlatform.entryId, lift: onPlatform.lift, attemptNumber: onPlatform.attemptNumber };
   }
 
+  // Lifts-to-next-flight count for the on-platform lift. Counts every to-come attempt of that lift in
+  // the current flight (a team member only contests their assigned lift, so a team comp filters to it),
+  // and names the next flight that contests it. Per-round result is read from the attempts map (a
+  // missing round is a future attempt, still to come).
+  let flightCount: WarmUpView['flightCount'] = null;
+  if (onPlatform) {
+    const lift = onPlatform.lift;
+    const contesting = rosterItems.filter(({ entry }) => !isTeamCompetition || entry.teamLift === lift);
+    const lifters = contesting.map(({ entry, flight }) => ({
+      flightId: flight.id,
+      results: ATTEMPT_NUMBERS.map((attemptNumber) => attempts.get(attemptKey(entry.id, lift, attemptNumber))?.result ?? null),
+    }));
+    const flightById = new Map(contesting.map(({ flight }) => [flight.id, flight]));
+    const flightList = [...flightById.values()].map((flight) => ({
+      id: flight.id,
+      name: flight.name,
+      sortOrder: flight.sortOrder,
+    }));
+    const { count, nextFlightName } = computeLiftsToNextFlight({
+      currentFlightId: onPlatform.flight.id,
+      flights: flightList,
+      lifters,
+    });
+    flightCount = { count, nextFlightName, lift };
+  }
+
   return {
     sessionName: liveSession.name,
     header,
     current,
     upNext: upcomingRows.map((row) => toCard(row)),
+    flightCount,
     roster,
   };
+}
+
+// The optional third card in "lifts to next flight" mode: a big count of lifts remaining in the current
+// flight for the on-platform lift, with the next flight it leads into (or "end of flight" for the last
+// one). The count includes the lift on the platform now, so it ticks down as each is judged.
+function FlightCountCard({
+  data,
+}: {
+  data: { count: number; nextFlightName: string | null; lift: LiftType } | null;
+}) {
+  return (
+    <div className="rounded-lg border border-neutral-300 bg-neutral-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        {data?.nextFlightName ? `Until Flight ${data.nextFlightName}` : 'Until end of flight'}
+      </p>
+      {data ? (
+        <div className="mt-1 flex items-baseline gap-2">
+          <span className="text-5xl font-bold tabular-nums text-neutral-900">{data.count}</span>
+          <span className="text-base text-neutral-600">
+            {data.count === 1 ? 'lift' : 'lifts'} of {LIFT_LABELS[data.lift]} left
+          </span>
+        </div>
+      ) : (
+        <p className="mt-1 text-base text-neutral-400">—</p>
+      )}
+    </div>
+  );
 }
 
 function PositionCard({
