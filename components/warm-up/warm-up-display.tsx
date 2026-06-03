@@ -143,16 +143,19 @@ export function WarmUpDisplay({
   const bestForLift = (entryId: string, lift: LiftType): number => bestLiftFor(attempts, entryId, lift);
 
   // Per-browser column visibility, so each TV can show its own cut of the same comp. Only the lifter
-  // name column is always shown; every other column — including the per-lift attempt weights — is
-  // optional. Lot/BW/class/div/rack/attempts/best/total default on (the full view); the sub-total and
-  // IPF GL columns are extras, so they default off.
+  // name column is always shown; every other column — including each lift's attempt weights, toggled
+  // per lift — is optional. Lot/BW/class/div/rack/attempts/best/total default on (the full view); the
+  // sub-total and IPF GL columns are extras, so they default off.
   const [teamPref, toggleTeam] = usePersistentToggle('warmup:col:team');
   const [showLot, toggleLot] = usePersistentToggle('warmup:col:lot');
   const [showBw, toggleBw] = usePersistentToggle('warmup:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('warmup:col:class');
   const [showDiv, toggleDiv] = usePersistentToggle('warmup:col:div');
   const [showRack, toggleRack] = usePersistentToggle('warmup:col:rack');
-  const [showAttempts, toggleAttempts] = usePersistentToggle('warmup:col:attempts');
+  // Attempt columns toggle per lift, so a board can show only the lift currently being warmed up.
+  const [showSquatAttempts, toggleSquatAttempts] = usePersistentToggle('warmup:col:attempts:squat');
+  const [showBenchAttempts, toggleBenchAttempts] = usePersistentToggle('warmup:col:attempts:bench');
+  const [showDeadliftAttempts, toggleDeadliftAttempts] = usePersistentToggle('warmup:col:attempts:deadlift');
   const [showBest, toggleBest] = usePersistentToggle('warmup:col:best');
   const [showTotal, toggleTotal] = usePersistentToggle('warmup:col:total');
   const [subTotalPref, toggleSubTotal] = usePersistentToggle('warmup:col:subtotal', false);
@@ -238,6 +241,26 @@ export function WarmUpDisplay({
     return computeBoardTeamStandings(attempts, entries, kitType);
   }, [attempts, entries, kitType, isTeamCompetition, showCurPlace, showPredPlace, showTeamActual, showTeamPred]);
 
+  // The three per-lift attempt toggles are declared unconditionally above (hooks can't be conditional),
+  // but a toggle is offered only for a contested lift (columnLifts), so a bench-only comp shows just
+  // "Bench attempts". Keyed by lift so the lift cells/header can look up their own visibility.
+  const attemptsByLift: Record<LiftType, boolean> = {
+    squat: showSquatAttempts,
+    bench: showBenchAttempts,
+    deadlift: showDeadliftAttempts,
+  };
+  const attemptsToggleByLift: Record<LiftType, () => void> = {
+    squat: toggleSquatAttempts,
+    bench: toggleBenchAttempts,
+    deadlift: toggleDeadliftAttempts,
+  };
+  const liftAttemptToggles: BoardOptionToggle[] = columnLifts.map((lift) => ({
+    id: `attempts-${lift}`,
+    label: `${LIFT_LABELS[lift]} attempts`,
+    checked: attemptsByLift[lift],
+    onToggle: attemptsToggleByLift[lift],
+  }));
+
   const columnToggles: BoardOptionToggle[] = [
     ...(isTeamCompetition ? [{ id: 'team', label: 'Team', checked: showTeam, onToggle: toggleTeam }] : []),
     { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
@@ -245,7 +268,7 @@ export function WarmUpDisplay({
     { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
     { id: 'div', label: 'Division', checked: showDiv, onToggle: toggleDiv },
     { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
-    { id: 'attempts', label: 'Attempts', checked: showAttempts, onToggle: toggleAttempts },
+    ...liftAttemptToggles,
     { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest },
     ...(canSubTotal
       ? [{ id: 'subtotal', label: 'Sub-total (S+B)', checked: showSubTotal, onToggle: toggleSubTotal }]
@@ -337,7 +360,7 @@ export function WarmUpDisplay({
                 ) : null}
                 {columnLifts.map((lift) => (
                   <Fragment key={lift}>
-                    <LiftHeader lift={lift} showRack={showRack} showAttempts={showAttempts} showBest={showBest} />
+                    <LiftHeader lift={lift} showRack={showRack} showAttempts={attemptsByLift[lift]} showBest={showBest} />
                     {showSubTotal && lift === 'bench' ? (
                       <th scope="col" className={`w-20 text-center ${HEAD}`}>
                         S+B
@@ -447,7 +470,7 @@ export function WarmUpDisplay({
                             attempts={attempts}
                             current={view.current}
                             showRack={showRack}
-                            showAttempts={showAttempts}
+                            showAttempts={attemptsByLift[lift]}
                             showBest={showBest}
                           />
                           {showSubTotal && lift === 'bench' ? (
