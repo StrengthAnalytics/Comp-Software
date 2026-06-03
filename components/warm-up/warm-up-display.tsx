@@ -142,16 +142,17 @@ export function WarmUpDisplay({
   // warm-up board stays in step with the run screen and overlay on every lifter's numbers.
   const bestForLift = (entryId: string, lift: LiftType): number => bestLiftFor(attempts, entryId, lift);
 
-  // Per-browser column visibility, so each TV can show its own cut of the same comp. The lifter and
-  // attempt columns are the point of the screen, so they are always shown; everything else is optional.
-  // Lot/BW/class/div/rack/best/total default on (the full view); the sub-total and IPF GL columns are
-  // extras, so they default off.
+  // Per-browser column visibility, so each TV can show its own cut of the same comp. Only the lifter
+  // name column is always shown; every other column — including the per-lift attempt weights — is
+  // optional. Lot/BW/class/div/rack/attempts/best/total default on (the full view); the sub-total and
+  // IPF GL columns are extras, so they default off.
   const [teamPref, toggleTeam] = usePersistentToggle('warmup:col:team');
   const [showLot, toggleLot] = usePersistentToggle('warmup:col:lot');
   const [showBw, toggleBw] = usePersistentToggle('warmup:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('warmup:col:class');
   const [showDiv, toggleDiv] = usePersistentToggle('warmup:col:div');
   const [showRack, toggleRack] = usePersistentToggle('warmup:col:rack');
+  const [showAttempts, toggleAttempts] = usePersistentToggle('warmup:col:attempts');
   const [showBest, toggleBest] = usePersistentToggle('warmup:col:best');
   const [showTotal, toggleTotal] = usePersistentToggle('warmup:col:total');
   const [subTotalPref, toggleSubTotal] = usePersistentToggle('warmup:col:subtotal', false);
@@ -244,6 +245,7 @@ export function WarmUpDisplay({
     { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
     { id: 'div', label: 'Division', checked: showDiv, onToggle: toggleDiv },
     { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
+    { id: 'attempts', label: 'Attempts', checked: showAttempts, onToggle: toggleAttempts },
     { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest },
     ...(canSubTotal
       ? [{ id: 'subtotal', label: 'Sub-total (S+B)', checked: showSubTotal, onToggle: toggleSubTotal }]
@@ -335,7 +337,7 @@ export function WarmUpDisplay({
                 ) : null}
                 {columnLifts.map((lift) => (
                   <Fragment key={lift}>
-                    <LiftHeader lift={lift} showRack={showRack} showBest={showBest} />
+                    <LiftHeader lift={lift} showRack={showRack} showAttempts={showAttempts} showBest={showBest} />
                     {showSubTotal && lift === 'bench' ? (
                       <th scope="col" className={`w-20 text-center ${HEAD}`}>
                         S+B
@@ -445,6 +447,7 @@ export function WarmUpDisplay({
                             attempts={attempts}
                             current={view.current}
                             showRack={showRack}
+                            showAttempts={showAttempts}
                             showBest={showBest}
                           />
                           {showSubTotal && lift === 'bench' ? (
@@ -615,7 +618,17 @@ function PositionCard({ label, card, highlight }: { label: string; card: Positio
   );
 }
 
-function LiftHeader({ lift, showRack, showBest }: { lift: LiftType; showRack: boolean; showBest: boolean }) {
+function LiftHeader({
+  lift,
+  showRack,
+  showAttempts,
+  showBest,
+}: {
+  lift: LiftType;
+  showRack: boolean;
+  showAttempts: boolean;
+  showBest: boolean;
+}) {
   return (
     <>
       {showRack && liftHasRack(lift) ? (
@@ -623,14 +636,18 @@ function LiftHeader({ lift, showRack, showBest }: { lift: LiftType; showRack: bo
           {LIFT_LABELS[lift]} rack
         </th>
       ) : null}
-      {ATTEMPT_NUMBERS.map((attemptNumber) => (
-        <th key={`${lift}-${attemptNumber}`} scope="col" className={`w-16 text-center ${HEAD}`}>
-          {attemptNumber === 1 ? `${LIFT_LABELS[lift]} ${attemptNumber}` : String(attemptNumber)}
-        </th>
-      ))}
+      {showAttempts
+        ? ATTEMPT_NUMBERS.map((attemptNumber) => (
+            <th key={`${lift}-${attemptNumber}`} scope="col" className={`w-16 text-center ${HEAD}`}>
+              {attemptNumber === 1 ? `${LIFT_LABELS[lift]} ${attemptNumber}` : String(attemptNumber)}
+            </th>
+          ))
+        : null}
       {showBest ? (
         <th scope="col" className={`w-16 text-center ${HEAD}`}>
-          Best
+          {/* Without the attempt columns the plain "Best" header can't be told apart from the other
+              lifts' Best columns, so name the lift when attempts are hidden. */}
+          {showAttempts ? 'Best' : `${LIFT_LABELS[lift]} best`}
         </th>
       ) : null}
     </>
@@ -648,6 +665,7 @@ function LiftCells({
   attempts,
   current,
   showRack,
+  showAttempts,
   showBest,
 }: {
   lift: LiftType;
@@ -657,6 +675,7 @@ function LiftCells({
   attempts: Map<string, BoardAttempt>;
   current: WarmUpView['current'];
   showRack: boolean;
+  showAttempts: boolean;
   showBest: boolean;
 }) {
   return (
@@ -666,7 +685,8 @@ function LiftCells({
           {active ? rackText(entry, lift) : <span className="text-neutral-300">—</span>}
         </td>
       ) : null}
-      {ATTEMPT_NUMBERS.map((attemptNumber) => {
+      {showAttempts
+        ? ATTEMPT_NUMBERS.map((attemptNumber) => {
         const attempt = attempts.get(attemptKey(entry.id, lift, attemptNumber));
         const isCurrent =
           current?.entryId === entry.id && current.lift === lift && current.attemptNumber === attemptNumber;
@@ -680,7 +700,8 @@ function LiftCells({
             {declaredWeight === null ? <span className="text-neutral-300">—</span> : declaredWeight}
           </td>
         );
-      })}
+          })
+        : null}
       {showBest ? (
         <td className={`text-center tabular-nums text-neutral-700 ${CELL}`}>{active && best > 0 ? best : '—'}</td>
       ) : null}
