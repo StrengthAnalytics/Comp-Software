@@ -18,6 +18,19 @@
   }
 }
 
+/* Warm-up board table zoom. The board's header zoom control scales just the scoresheet table (in
+   discrete steps) so an operator who has hidden columns can enlarge what's left. `zoom` is used rather
+   than `transform: scale()` because it reflows — the scroll container scrolls the enlarged table and
+   the sticky column header keeps working, which a transform would break. Discrete classes (rather than
+   an inline style) keep to the project's no-inline-styles rule. Chromium-first (the operators' and OBS
+   browser); Firefox 126+ and Safari also support `zoom`. */
+.warmup-zoom-100 { zoom: 1; }
+.warmup-zoom-125 { zoom: 1.25; }
+.warmup-zoom-150 { zoom: 1.5; }
+.warmup-zoom-175 { zoom: 1.75; }
+.warmup-zoom-200 { zoom: 2; }
+.warmup-zoom-250 { zoom: 2.5; }
+
 /* Backup print sheets (the weigh-in and rack-heights screens): when printing, drop the app chrome from
    the flow entirely (display:none, not just hidden) so it leaves no trailing blank pages, and show
    only the sheet. Scoped with :has so every other page still prints normally; the sheet is portalled

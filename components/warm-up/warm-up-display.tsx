@@ -15,6 +15,7 @@ import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import { BoardOptions, type BoardOptionToggle } from '@/components/scorekeeper/board-options';
 import { usePersistentToggle } from '@/lib/use-persistent-toggle';
+import { usePersistentString } from '@/lib/use-persistent-string';
 import type {
   BoardAttempt,
   BoardEntry,
@@ -42,6 +43,11 @@ const ROW_BAND = 'bg-neutral-50';
 // Options-dropdown trigger styling for the dark header (the shared BoardOptions defaults to a
 // light-toolbar trigger).
 const DARK_TRIGGER = 'rounded border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-100 hover:bg-neutral-800';
+// Discrete table-zoom steps (percent); each maps to a .warmup-zoom-* class in globals.css that scales
+// the scoresheet table. Keep in sync with those classes.
+const ZOOM_LEVELS: number[] = [100, 125, 150, 175, 200, 250];
+const ZOOM_BUTTON =
+  'rounded border border-neutral-600 px-2 py-1 text-xs font-medium leading-none text-neutral-100 hover:bg-neutral-800 disabled:opacity-40';
 
 type WarmUpDisplayProps = {
   competitionId: string;
@@ -169,6 +175,17 @@ export function WarmUpDisplay({
   const [teamActualPref, toggleTeamActual] = usePersistentToggle('warmup:col:teamactual', false);
   const [teamPredPref, toggleTeamPred] = usePersistentToggle('warmup:col:teampred', false);
   const [striped, toggleStriping] = usePersistentToggle('warmup:striping');
+
+  // Table zoom (percent), persisted per browser. Scales only the scoresheet table (via a .warmup-zoom-*
+  // class) so an operator who has hidden columns can enlarge what remains. A stored value not in the
+  // step list falls back to 100%.
+  const [zoomPref, setZoomPref] = usePersistentString('warmup:zoom', '100');
+  const zoomLevel = ZOOM_LEVELS.includes(Number(zoomPref)) ? Number(zoomPref) : 100;
+  const zoomIndex = ZOOM_LEVELS.indexOf(zoomLevel);
+  const canZoomOut = zoomIndex > 0;
+  const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
+  const setZoom = (index: number) => setZoomPref(String(ZOOM_LEVELS[index]));
+  const zoomClass = `warmup-zoom-${zoomLevel}`;
 
   // The sub-total (best squat + best bench) only means anything when both lifts are contested by the
   // same lifter, so the option is offered only then and the column is shown after the bench's Best
@@ -307,6 +324,29 @@ export function WarmUpDisplay({
             ) : null}
             {headerProgress ? <p className="text-2xl font-semibold tabular-nums">{headerProgress}</p> : null}
           </div>
+          <div className="flex items-center gap-1" role="group" aria-label="Table zoom">
+            <button
+              type="button"
+              onClick={() => setZoom(zoomIndex - 1)}
+              disabled={!canZoomOut}
+              aria-label="Zoom out"
+              className={ZOOM_BUTTON}
+            >
+              −
+            </button>
+            <span className="w-12 text-center text-xs font-medium tabular-nums text-neutral-200" aria-live="polite">
+              {zoomLevel}%
+            </span>
+            <button
+              type="button"
+              onClick={() => setZoom(zoomIndex + 1)}
+              disabled={!canZoomIn}
+              aria-label="Zoom in"
+              className={ZOOM_BUTTON}
+            >
+              +
+            </button>
+          </div>
           <BoardOptions toggles={columnToggles} triggerClassName={DARK_TRIGGER} />
         </div>
       </header>
@@ -327,7 +367,7 @@ export function WarmUpDisplay({
           margin instead, which scrolls away cleanly under the pinned header. */}
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         {view.roster.length > 0 ? (
-          <table className="mt-4 w-full min-w-max border-separate border-spacing-0 text-base">
+          <table className={`mt-4 w-full min-w-max border-separate border-spacing-0 text-base ${zoomClass}`}>
             <thead className="sticky top-0 z-20">
               <tr>
                 <th scope="col" className={`sticky left-0 z-30 min-w-[12rem] border-l text-left ${HEAD}`}>
