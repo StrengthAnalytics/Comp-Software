@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import type { Database } from '@/types/database.types';
 import { ATTEMPTS_PER_LIFT, LIFT_LABELS, type Lifts } from '@/lib/constants';
 import type { KitType } from '@/lib/scoring/ipf-gl';
@@ -13,7 +13,8 @@ import { computeBoardTeamStandings } from '@/lib/scorekeeper/team-board-standing
 import type { TeamStanding } from '@/lib/scoring/team-standings';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
-import { BoardOptions, type BoardOptionToggle } from '@/components/scorekeeper/board-options';
+import type { BoardOptionToggle } from '@/components/scorekeeper/board-options';
+import { DisplayOptionsDrawer } from '@/components/warm-up/display-options-drawer';
 import { usePersistentToggle } from '@/lib/use-persistent-toggle';
 import { usePersistentString } from '@/lib/use-persistent-string';
 import type {
@@ -52,8 +53,6 @@ const ZOOM_LEVELS: number[] = Array.from(
   { length: (ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP + 1 },
   (_, index) => ZOOM_MIN + index * ZOOM_STEP,
 );
-const ZOOM_BUTTON =
-  'rounded border border-neutral-600 px-2 py-1 text-xs font-medium leading-none text-neutral-100 hover:bg-neutral-800 disabled:opacity-40';
 
 // How many upcoming lifters the up-next card strip can show, selectable per browser. The labels name
 // the first three (the standard powerlifting calls); positions beyond that are ordinal. The grid class
@@ -213,6 +212,10 @@ export function WarmUpDisplay({
   const upNextCount = UP_NEXT_OPTIONS.includes(Number(upNextPref)) ? Number(upNextPref) : 3;
   const upNextCards = Array.from({ length: upNextCount }, (_, index) => view.upNext[index] ?? null);
 
+  // All view controls (up-next count, zoom, columns) live in a right-side slide-out drawer, so the
+  // header stays a clean status bar with a single trigger rather than a crowded row of controls.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   // The sub-total (best squat + best bench) only means anything when both lifts are contested by the
   // same lifter, so the option is offered only then and the column is shown after the bench's Best
   // column. Excluded for team comps, where each member contests a single assigned lift — a squat-only
@@ -350,49 +353,15 @@ export function WarmUpDisplay({
             ) : null}
             {headerProgress ? <p className="text-2xl font-semibold tabular-nums">{headerProgress}</p> : null}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Up next</span>
-            <div className="flex overflow-hidden rounded border border-neutral-600" role="group" aria-label="Up next lifters">
-              {UP_NEXT_OPTIONS.map((option) => {
-                const active = option === upNextCount;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setUpNextPref(String(option))}
-                    aria-pressed={active}
-                    className={`px-2.5 py-1 text-xs font-semibold tabular-nums ${active ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-100 hover:bg-neutral-800'}`}
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className="flex items-center gap-1" role="group" aria-label="Table zoom">
-            <button
-              type="button"
-              onClick={() => setZoom(zoomIndex - 1)}
-              disabled={!canZoomOut}
-              aria-label="Zoom out"
-              className={ZOOM_BUTTON}
-            >
-              −
-            </button>
-            <span className="w-12 text-center text-xs font-medium tabular-nums text-neutral-200" aria-live="polite">
-              {zoomLevel}%
-            </span>
-            <button
-              type="button"
-              onClick={() => setZoom(zoomIndex + 1)}
-              disabled={!canZoomIn}
-              aria-label="Zoom in"
-              className={ZOOM_BUTTON}
-            >
-              +
-            </button>
-          </div>
-          <BoardOptions toggles={columnToggles} triggerClassName={DARK_TRIGGER} />
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={drawerOpen}
+            className={DARK_TRIGGER}
+          >
+            Display options
+          </button>
         </div>
       </header>
 
@@ -615,6 +584,22 @@ export function WarmUpDisplay({
           <p className="p-8 text-center text-lg text-neutral-500">No lifters in this session yet.</p>
         )}
       </div>
+
+      <DisplayOptionsDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        upNextOptions={UP_NEXT_OPTIONS}
+        upNextCount={upNextCount}
+        onUpNextChange={(count) => setUpNextPref(String(count))}
+        zoom={{
+          level: zoomLevel,
+          canZoomIn,
+          canZoomOut,
+          onZoomIn: () => setZoom(zoomIndex + 1),
+          onZoomOut: () => setZoom(zoomIndex - 1),
+        }}
+        columnToggles={columnToggles}
+      />
     </div>
   );
 }
