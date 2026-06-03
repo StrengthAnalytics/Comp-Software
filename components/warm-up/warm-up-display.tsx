@@ -46,9 +46,9 @@ const ROW_BAND = 'bg-neutral-50';
 // Options-dropdown trigger styling for the dark header (the shared BoardOptions defaults to a
 // light-toolbar trigger).
 const DARK_TRIGGER = 'rounded border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-100 hover:bg-neutral-800';
-// Table-zoom steps in 5% increments from 100% to 250%; each maps to a .warmup-zoom-* class in
+// Table-zoom steps in 5% increments from 50% to 250%; each maps to a .warmup-zoom-* class in
 // globals.css that scales the scoresheet table. Keep the range in sync with those classes.
-const ZOOM_MIN = 100;
+const ZOOM_MIN = 50;
 const ZOOM_MAX = 250;
 const ZOOM_STEP = 5;
 const ZOOM_LEVELS: number[] = Array.from(
@@ -179,6 +179,10 @@ export function WarmUpDisplay({
   // per lift — is optional. Lot/BW/class/div/rack/attempts/best/total default on (the full view); the
   // sub-total and IPF GL columns are extras, so they default off.
   const [teamPref, toggleTeam] = usePersistentToggle('warmup:col:team');
+  // Flight has its own column now (no longer appended to the lifter name); on by default so the flight
+  // stays visible as before. Platform is uniform on a per-platform board, so it defaults off.
+  const [showFlight, toggleFlight] = usePersistentToggle('warmup:col:flight');
+  const [showPlatform, togglePlatform] = usePersistentToggle('warmup:col:platform', false);
   const [showLot, toggleLot] = usePersistentToggle('warmup:col:lot');
   const [showBw, toggleBw] = usePersistentToggle('warmup:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('warmup:col:class');
@@ -335,6 +339,8 @@ export function WarmUpDisplay({
 
   const columnToggles: BoardOptionToggle[] = [
     ...(isTeamCompetition ? [{ id: 'team', label: 'Team', checked: showTeam, onToggle: toggleTeam }] : []),
+    { id: 'flight', label: 'Flight', checked: showFlight, onToggle: toggleFlight },
+    { id: 'platform', label: 'Platform', checked: showPlatform, onToggle: togglePlatform },
     { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
     { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
     { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
@@ -432,6 +438,16 @@ export function WarmUpDisplay({
                 {showTeam ? (
                   <th scope="col" className={`w-32 text-left ${HEAD}`}>
                     Team
+                  </th>
+                ) : null}
+                {showFlight ? (
+                  <th scope="col" className={`w-24 text-left ${HEAD}`}>
+                    Flight
+                  </th>
+                ) : null}
+                {showPlatform ? (
+                  <th scope="col" className={`w-28 text-left ${HEAD}`}>
+                    Platform
                   </th>
                 ) : null}
                 {showLot ? (
@@ -536,10 +552,15 @@ export function WarmUpDisplay({
                       className={`sticky left-0 z-10 whitespace-nowrap border-l ${banded ? ROW_BAND : 'bg-white'} ${CELL}`}
                     >
                       <span className="font-semibold text-neutral-900">{entry.lifterName}</span>
-                      <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
                     </td>
                     {showTeam ? (
                       <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.teamName ?? '—'}</td>
+                    ) : null}
+                    {showFlight ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{flightName}</td>
+                    ) : null}
+                    {showPlatform ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{platformName}</td>
                     ) : null}
                     {showLot ? (
                       <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.lotNumber ?? '—'}</td>
