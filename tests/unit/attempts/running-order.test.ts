@@ -7,6 +7,7 @@ import {
   selectLiveSession,
   selectLoadingPositions,
   selectPlatformPositions,
+  selectUpcomingLifters,
   type RosterEntryFields,
   type RunningOrderFields,
 } from '@/lib/attempts/running-order';
@@ -117,6 +118,39 @@ describe('selectPlatformPositions', () => {
 
   it('returns nulls when the queue is empty', () => {
     expect(selectPlatformPositions([])).toEqual({ onPlatform: null, onDeck: null, inTheHole: null });
+  });
+});
+
+describe('selectUpcomingLifters', () => {
+  const rows = [
+    { ...base, id: 'a', weightKg: 100, result: 'pending' as const },
+    { ...base, id: 'b', weightKg: 110, result: 'pending' as const },
+    { ...base, id: 'c', weightKg: 120, result: 'pending' as const },
+    { ...base, id: 'd', weightKg: 130, result: 'pending' as const },
+    { ...base, id: 'e', weightKg: 140, result: 'pending' as const },
+    { ...base, id: 'f', weightKg: 150, result: 'pending' as const },
+  ];
+
+  it('returns the next `count` pending lifters in running order', () => {
+    expect(selectUpcomingLifters(rows, 5).map((row) => row.id)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(selectUpcomingLifters(rows, 1).map((row) => row.id)).toEqual(['a']);
+  });
+
+  it('returns fewer than `count` when the queue is shorter', () => {
+    expect(selectUpcomingLifters(rows.slice(0, 2), 5).map((row) => row.id)).toEqual(['a', 'b']);
+  });
+
+  it('skips decided attempts and undeclared weights', () => {
+    expect(
+      selectUpcomingLifters(
+        [
+          { ...base, id: 'done', weightKg: 90, result: 'good_lift' as const },
+          { ...base, id: 'undeclared', weightKg: null, result: 'pending' as const },
+          { ...base, id: 'next', weightKg: 100, result: 'pending' as const },
+        ],
+        5,
+      ).map((row) => row.id),
+    ).toEqual(['next']);
   });
 });
 

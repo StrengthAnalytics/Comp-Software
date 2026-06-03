@@ -92,14 +92,25 @@ export type PlatformPositions<T> = {
   inTheHole: T | null;
 };
 
+// The next `count` lifters up, in running order: the pending attempts that have a declared weight,
+// sorted, capped at `count`. The warm-up board draws its configurable up-next cards (next 1, 3 or 5)
+// from this, and selectPlatformPositions takes its three from the same queue.
+export function selectUpcomingLifters<T extends RunningOrderFields & { result: AttemptResult }>(
+  attempts: readonly T[],
+  count: number,
+): T[] {
+  return attempts
+    .filter((attempt) => attempt.result === 'pending' && attempt.weightKg !== null)
+    .toSorted(compareRunningOrder)
+    .slice(0, count);
+}
+
 // The next three lifters up, in running order: the first pending attempt with a declared weight is on
 // the platform, then on deck, then in the hole. Pass the attempts of one session (one platform).
 export function selectPlatformPositions<T extends RunningOrderFields & { result: AttemptResult }>(
   attempts: readonly T[],
 ): PlatformPositions<T> {
-  const queue = attempts
-    .filter((attempt) => attempt.result === 'pending' && attempt.weightKg !== null)
-    .toSorted(compareRunningOrder);
+  const queue = selectUpcomingLifters(attempts, 3);
 
   return {
     onPlatform: queue[0] ?? null,

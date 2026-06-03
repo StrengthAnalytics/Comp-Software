@@ -4,7 +4,7 @@ import { Fragment, useMemo } from 'react';
 import type { Database } from '@/types/database.types';
 import { ATTEMPTS_PER_LIFT, LIFT_LABELS, type Lifts } from '@/lib/constants';
 import type { KitType } from '@/lib/scoring/ipf-gl';
-import { compareRunningOrder } from '@/lib/attempts/running-order';
+import { compareRunningOrder, selectUpcomingLifters } from '@/lib/attempts/running-order';
 import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { buildPlatformLiveView, type PlatformLiveRow } from '@/lib/scorekeeper/platform-live-view';
 import { bestLiftFor, computeEntryScore, computePredictedScore, type PredictedScore } from '@/lib/scorekeeper/entry-score';
@@ -43,11 +43,29 @@ const ROW_BAND = 'bg-neutral-50';
 // Options-dropdown trigger styling for the dark header (the shared BoardOptions defaults to a
 // light-toolbar trigger).
 const DARK_TRIGGER = 'rounded border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-100 hover:bg-neutral-800';
-// Discrete table-zoom steps (percent); each maps to a .warmup-zoom-* class in globals.css that scales
-// the scoresheet table. Keep in sync with those classes.
-const ZOOM_LEVELS: number[] = [100, 125, 150, 175, 200, 250];
+// Table-zoom steps in 5% increments from 100% to 250%; each maps to a .warmup-zoom-* class in
+// globals.css that scales the scoresheet table. Keep the range in sync with those classes.
+const ZOOM_MIN = 100;
+const ZOOM_MAX = 250;
+const ZOOM_STEP = 5;
+const ZOOM_LEVELS: number[] = Array.from(
+  { length: (ZOOM_MAX - ZOOM_MIN) / ZOOM_STEP + 1 },
+  (_, index) => ZOOM_MIN + index * ZOOM_STEP,
+);
 const ZOOM_BUTTON =
   'rounded border border-neutral-600 px-2 py-1 text-xs font-medium leading-none text-neutral-100 hover:bg-neutral-800 disabled:opacity-40';
+
+// How many upcoming lifters the up-next card strip can show, selectable per browser. The labels name
+// the first three (the standard powerlifting calls); positions beyond that are ordinal. The grid class
+// per count is a static string so Tailwind generates it (a computed `grid-cols-N` would be purged).
+const UP_NEXT_OPTIONS = [1, 3, 5];
+const MAX_UP_NEXT = 5;
+const UP_NEXT_LABELS = ['On platform', 'On deck', 'In the hole', '4th up', '5th up'];
+const UP_NEXT_GRID: Record<number, string> = {
+  1: 'grid-cols-1',
+  3: 'grid-cols-1 sm:grid-cols-3',
+  5: 'grid-cols-1 sm:grid-cols-3 lg:grid-cols-5',
+};
 
 type WarmUpDisplayProps = {
   competitionId: string;
@@ -94,7 +112,8 @@ type WarmUpView = {
   header: { flightName: string; lift: LiftType; round: number; position: number; total: number } | null;
   // The attempt currently on the platform, so its cell can be highlighted in the roster table.
   current: { entryId: string; lift: LiftType; attemptNumber: number } | null;
-  positions: { onPlatform: PositionCardData; onDeck: PositionCardData; inTheHole: PositionCardData };
+  // The upcoming lifters in running order (up to MAX_UP_NEXT); the board shows the chosen first 1/3/5.
+  upNext: PositionCardData[];
   roster: { entry: BoardEntry; flightName: string }[];
 };
 
@@ -186,6 +205,13 @@ export function WarmUpDisplay({
   const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
   const setZoom = (index: number) => setZoomPref(String(ZOOM_LEVELS[index]));
   const zoomClass = `warmup-zoom-${zoomLevel}`;
+
+  // How many upcoming lifters the up-next strip shows (1, 3 or 5), persisted per browser. A stored
+  // value outside the option list falls back to 3. Always render `upNextCount` cards, padding with
+  // nulls so the strip keeps its shape before any lifter is up.
+  const [upNextPref, setUpNextPref] = usePersistentString('warmup:upnext', '3');
+  const upNextCount = UP_NEXT_OPTIONS.includes(Number(upNextPref)) ? Number(upNextPref) : 3;
+  const upNextCards = Array.from({ length: upNextCount }, (_, index) => view.upNext[index] ?? null);
 
   // The sub-total (best squat + best bench) only means anything when both lifts are contested by the
   // same lifter, so the option is offered only then and the column is shown after the bench's Best
@@ -324,6 +350,25 @@ export function WarmUpDisplay({
             ) : null}
             {headerProgress ? <p className="text-2xl font-semibold tabular-nums">{headerProgress}</p> : null}
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">Up next</span>
+            <div className="flex overflow-hidden rounded border border-neutral-600" role="group" aria-label="Up next lifters">
+              {UP_NEXT_OPTIONS.map((option) => {
+                const active = option === upNextCount;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setUpNextPref(String(option))}
+                    aria-pressed={active}
+                    className={`px-2.5 py-1 text-xs font-semibold tabular-nums ${active ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-100 hover:bg-neutral-800'}`}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="flex items-center gap-1" role="group" aria-label="Table zoom">
             <button
               type="button"
@@ -354,11 +399,11 @@ export function WarmUpDisplay({
       <div
         aria-live="polite"
         aria-label="Platform running order"
-        className="grid shrink-0 grid-cols-1 gap-3 border-b border-neutral-200 p-4 sm:grid-cols-3"
+        className={`grid shrink-0 gap-3 border-b border-neutral-200 p-4 ${UP_NEXT_GRID[upNextCount]}`}
       >
-        <PositionCard label="On platform" card={view.positions.onPlatform} highlight />
-        <PositionCard label="On deck" card={view.positions.onDeck} />
-        <PositionCard label="In the hole" card={view.positions.inTheHole} />
+        {upNextCards.map((card, index) => (
+          <PositionCard key={UP_NEXT_LABELS[index]} label={UP_NEXT_LABELS[index]} card={card} highlight={index === 0} />
+        ))}
       </div>
 
       {/* No top padding on the scroll area: the sticky column header pins flush to the top of the
@@ -597,11 +642,11 @@ function buildView({
     sessionName: null,
     header: null,
     current: null,
-    positions: { onPlatform: null, onDeck: null, inTheHole: null },
+    upNext: [],
     roster: [],
   };
 
-  const { liveSession, rosterItems, liveRows, positions } = buildPlatformLiveView({
+  const { liveSession, rosterItems, liveRows } = buildPlatformLiveView({
     platformId,
     sessions,
     flights,
@@ -616,12 +661,16 @@ function buildView({
   // instead of by the flight's single current lift; otherwise order by the round in progress.
   const roster = orderRosterForSession(rosterItems, liveRows, isTeamCompetition);
 
+  // The upcoming lifters in running order (up to the max the strip can show); the first is on the
+  // platform. Sliced to the chosen count in the component.
+  const upcomingRows = selectUpcomingLifters(liveRows, MAX_UP_NEXT);
+
   // Header from the lifter on the platform: `group` is the declared attempts in this flight/lift/round
   // in running order (lightest first); position = the on-platform lifter's rank within it, total = its
   // size, so the fraction reads monotonically as the round progresses.
   let header: WarmUpView['header'] = null;
   let current: WarmUpView['current'] = null;
-  const onPlatform = positions.onPlatform;
+  const onPlatform = upcomingRows[0] ?? null;
   if (onPlatform) {
     const group = liveRows
       .filter(
@@ -647,11 +696,7 @@ function buildView({
     sessionName: liveSession.name,
     header,
     current,
-    positions: {
-      onPlatform: toCard(positions.onPlatform),
-      onDeck: toCard(positions.onDeck),
-      inTheHole: toCard(positions.inTheHole),
-    },
+    upNext: upcomingRows.map((row) => toCard(row)),
     roster,
   };
 }
