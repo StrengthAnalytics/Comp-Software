@@ -7,10 +7,12 @@ export function formatLifterName(surname: string, firstName: string): string {
 // Re-orders a "Surname, First" display name (as produced by formatLifterName) into "First Surname".
 // A name with no "Surname, First" comma — mononymous, or a blank surname — is returned unchanged. Lets
 // a display flip the name order without needing the first/surname parts plumbed through separately.
+// Splitting on the first ", " is exact for formatLifterName output; the trim tidies the degenerate
+// blank-first-name case ("Smith, " -> "Smith" rather than " Smith").
 export function flipLifterName(name: string): string {
   const separator = name.indexOf(', ');
   if (separator === -1) {
     return name;
   }
-  return `${name.slice(separator + 2)} ${name.slice(0, separator)}`;
+  return `${name.slice(separator + 2)} ${name.slice(0, separator)}`.trim();
 }

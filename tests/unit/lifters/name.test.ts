@@ -25,4 +25,9 @@ describe('flipLifterName', () => {
   it('returns a comma-less (mononymous) name unchanged', () => {
     expect(flipLifterName('Madonna')).toBe('Madonna');
   });
+
+  it('trims the degenerate blank-first-name case to just the surname', () => {
+    // formatLifterName('Smith', '') yields "Smith, " — flip must not leave a leading space.
+    expect(flipLifterName('Smith, ')).toBe('Smith');
+  });
 });

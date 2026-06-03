@@ -582,17 +582,21 @@ export function WarmUpDisplay({
                 // (white otherwise, to mask content scrolling beneath it).
                 const banded = striped && index % 2 === 1;
                 // A divider precedes the first row of each flight group (and the very first row), so
-                // each flight's start/end is obvious. The flight is contiguous in the individual-comp
-                // ordering this is gated to, so one divider per flight.
+                // each flight's start/end is obvious. Keyed on flightId (not the display name) so two
+                // flights that share a name still get a boundary between them. The flight is contiguous
+                // in the individual-comp ordering this is gated to, so one divider per flight.
                 const showDivider =
-                  showFlightDividers && (index === 0 || view.roster[index - 1].flightName !== flightName);
+                  showFlightDividers &&
+                  (index === 0 || view.roster[index - 1].entry.flightId !== entry.flightId);
                 return (
                   <Fragment key={entry.id}>
                     {showDivider ? (
                       <tr>
-                        <td colSpan={FULL_WIDTH_COLSPAN} className={SEPARATOR_CELL}>
+                        {/* A spanning th (scope=colgroup) rather than a td, so assistive tech announces
+                            the session/flight band as a group heading, not a blank data cell. */}
+                        <th scope="colgroup" colSpan={FULL_WIDTH_COLSPAN} className={SEPARATOR_CELL}>
                           {view.sessionName ? `${view.sessionName} — ${flightName}` : flightName}
-                        </td>
+                        </th>
                       </tr>
                     ) : null}
                     <tr className={banded ? ROW_BAND : ''}>
