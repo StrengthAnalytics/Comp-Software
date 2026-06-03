@@ -770,7 +770,9 @@ function FlightCountCard({
   return (
     <div className="rounded-lg border border-neutral-300 bg-neutral-50 p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-        {data?.nextFlightName ? `Until Flight ${data.nextFlightName}` : 'Until end of flight'}
+        {/* Flight names already include the word "Flight" (e.g. "Flight B"), as the header shows, so
+            the name is used as-is rather than prefixed — no "Until Flight Flight B". */}
+        {data?.nextFlightName ? `Until ${data.nextFlightName}` : 'Until end of flight'}
       </p>
       {data ? (
         <div className="mt-1 flex items-baseline gap-2">
