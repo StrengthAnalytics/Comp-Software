@@ -40,7 +40,9 @@ export function UpNextDetail({
 }) {
   const breakdown = weightKg === null ? null : platesPerSide(weightKg);
   return (
-    <div className="mt-2 space-y-2 border-t border-neutral-200 pt-2">
+    // Divider sits above when the card stacks (top border) and to the left when it sits beside the
+    // identity (left border) — driven by the card's container query, set on the PositionCard ancestor.
+    <div className="min-w-0 space-y-2 border-t border-neutral-200 pt-2 @sm:border-t-0 @sm:border-l @sm:pt-0 @sm:pl-4">
       {liftHasRack(lift) ? (
         <p className="text-sm text-neutral-600">
           <span className="font-semibold uppercase tracking-wide text-neutral-500">Rack </span>

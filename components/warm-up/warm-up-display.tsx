@@ -717,22 +717,28 @@ function PositionCard({
 }) {
   return (
     <div
-      className={
+      className={`@container ${
         highlight
           ? 'rounded-lg border-2 border-neutral-900 bg-amber-50 p-4'
           : 'rounded-lg border border-neutral-300 p-4'
-      }
+      }`}
     >
       <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{label}</p>
       {card ? (
-        <>
-          <p className="mt-1 truncate text-2xl font-bold text-neutral-900">{card.lifterName}</p>
-          <p className="text-base text-neutral-600">
-            {card.weightKg === null ? '' : `${card.weightKg} kg · `}
-            {LIFT_LABELS[card.lift]} {card.attemptNumber} · {card.flightName}
-          </p>
+        // Identity on the left, the optional plate/rack detail on the right; they stack vertically on a
+        // narrow card and sit side by side once the card is wide enough. A container query (not a screen
+        // breakpoint) drives this, so it responds to the card's own width — full width at 1-up, a third
+        // at 3-up — rather than the viewport.
+        <div className="mt-1 flex flex-col gap-2 @sm:flex-row @sm:items-start @sm:gap-4">
+          <div className="min-w-0 @sm:flex-1">
+            <p className="truncate text-2xl font-bold text-neutral-900">{card.lifterName}</p>
+            <p className="text-base text-neutral-600">
+              {card.weightKg === null ? '' : `${card.weightKg} kg · `}
+              {LIFT_LABELS[card.lift]} {card.attemptNumber} · {card.flightName}
+            </p>
+          </div>
           {showDetail ? <UpNextDetail entry={card.entry} lift={card.lift} weightKg={card.weightKg} /> : null}
-        </>
+        </div>
       ) : (
         <p className="mt-1 text-base text-neutral-400">—</p>
       )}
