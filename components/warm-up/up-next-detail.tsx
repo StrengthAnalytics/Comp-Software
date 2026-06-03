@@ -2,7 +2,7 @@
 
 import type { Database } from '@/types/database.types';
 import type { IpfPlateWeight } from '@/lib/constants';
-import { formatPlatesPerSide, platesPerSide, type PlateBreakdown } from '@/lib/plates/plate-math';
+import { expandPlatesToBars, formatPlatesPerSide, platesPerSide, type PlateBreakdown } from '@/lib/plates/plate-math';
 import { liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import type { BoardEntry } from '@/lib/scorekeeper/board-types';
 import { PLATE_STYLE } from '@/components/plates/plate-style';
@@ -63,9 +63,7 @@ function MiniPlateStack({ breakdown }: { breakdown: PlateBreakdown }) {
   if (!breakdown.loadable) {
     return <p className="text-sm font-medium text-red-600">Cannot load {breakdown.totalKg} kg with available plates</p>;
   }
-  const bars = breakdown.plates.flatMap((plate) =>
-    Array.from({ length: plate.count }, (_, index) => ({ weightKg: plate.weightKg, index })),
-  );
+  const bars = expandPlatesToBars(breakdown.plates);
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-end gap-1">

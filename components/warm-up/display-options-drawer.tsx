@@ -53,6 +53,9 @@ export function DisplayOptionsDrawer({
   columnToggles,
 }: DisplayOptionsDrawerProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  // The element focused before the drawer opened (the "Display options" trigger), so focus can return
+  // to it on close instead of being stranded on <body>.
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   // Escape closes; captured + propagation stopped so it can't also fire a host handler (e.g. a board's
   // full-screen-collapse on Escape).
@@ -70,10 +73,17 @@ export function DisplayOptionsDrawer({
     return () => globalThis.removeEventListener('keydown', onKeyDown, true);
   }, [open, onClose]);
 
-  // Move focus into the panel when it opens, so keyboard users land on the controls.
+  // Move focus into the panel on open (so keyboard/AT users land on the controls) and return it to the
+  // trigger on close — otherwise applying `inert` to the closing panel while focus is still inside it
+  // drops focus to <body>, so the next Tab restarts from the top of the page.
   useEffect(() => {
     if (open) {
+      const active = globalThis.document.activeElement;
+      triggerRef.current = active instanceof HTMLElement ? active : null;
       closeButtonRef.current?.focus();
+    } else {
+      triggerRef.current?.focus();
+      triggerRef.current = null;
     }
   }, [open]);
 

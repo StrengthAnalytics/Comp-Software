@@ -14,7 +14,11 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 
 ## [Unreleased]
 
+### Fixed
+- **Display options drawer returns focus to its trigger on close.** Closing the drawer applied `inert` to the panel while focus was still on the × button inside it, dropping focus to `<body>` (the next Tab restarted from the top of the page). The drawer now records the element focused before it opened and restores focus to it on close (`components/warm-up/display-options-drawer.tsx`).
+
 ### Changed
+- **Single-sourced the plate fan-out.** The warm-up board's up-next plate diagram and the loading-crew display each expanded a per-side `PlateBreakdown` into one entry per plate with the same `flatMap`/`Array.from` logic; that now lives in one shared, unit-tested `expandPlatesToBars` (`lib/plates/plate-math.ts`), so the two diagrams fan plates out identically (matching the already-shared `PLATE_STYLE` colours). No behaviour change.
 - **Warm-up board controls moved into a slide-out "Display options" drawer.** The header had grown a row of controls (the up-next 1/3/5 selector, the −/+ zoom, the columns dropdown) competing with the live data. They now live in a single right-side drawer opened by a small **Display options** button top-right, so the always-on header is back to a clean status bar (platform · comp, round in progress, "N of M lifters"). The drawer groups everything into sections — **Up next cards** (whether to show the strip, and its layout), **Table zoom** (−/% /+) and **Columns** (every toggle) — and opens over the board with a dismiss backdrop, closing on the backdrop, the × button or Escape; it slides in from the right, takes focus on open, and is `inert`/off-screen when closed. New `components/warm-up/display-options-drawer.tsx`; warm-up-board-specific (the run screen keeps its existing `BoardOptions` dropdown). Both warm-up boards get it via the shared `WarmUpDisplay`.
 
 ### Added

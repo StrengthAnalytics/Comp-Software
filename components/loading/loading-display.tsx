@@ -9,7 +9,7 @@ import {
   SQUAT_RACK_SETTING_LABELS,
   type IpfPlateWeight,
 } from '@/lib/constants';
-import { formatPlatesPerSide, platesPerSide, type PlateBreakdown } from '@/lib/plates/plate-math';
+import { expandPlatesToBars, formatPlatesPerSide, platesPerSide, type PlateBreakdown } from '@/lib/plates/plate-math';
 import { PLATE_STYLE } from '@/components/plates/plate-style';
 import {
   compareRunningOrder,
@@ -476,9 +476,7 @@ function PlateStack({ breakdown, size }: { breakdown: PlateBreakdown; size: Size
   }
   const tier = TIER[size];
   const heights = PLATE_HEIGHT[size];
-  const bars = breakdown.plates.flatMap((plate) =>
-    Array.from({ length: plate.count }, (_, index) => ({ weightKg: plate.weightKg, index })),
-  );
+  const bars = expandPlatesToBars(breakdown.plates);
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-end gap-2">
