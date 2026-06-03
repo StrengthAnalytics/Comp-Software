@@ -43,6 +43,12 @@ const CELL = 'border-b border-r border-neutral-300 px-2 py-1 align-middle';
 // Zebra band for alternate roster rows, single-sourced so the row and its opaque sticky first column
 // can never drift to different shades.
 const ROW_BAND = 'bg-neutral-50';
+// Flight divider row: a single cell spanning every column (the browser clamps the colSpan to the real
+// count) that bands the boundary between flight groups. Sticky-left so the session/flight label stays
+// visible when the table is scrolled sideways.
+const FULL_WIDTH_COLSPAN = 64;
+const SEPARATOR_CELL =
+  'sticky left-0 z-10 border-b-2 border-t-2 border-r border-neutral-300 bg-neutral-200 px-3 py-1.5 text-left text-sm font-bold uppercase tracking-wide text-neutral-700';
 // Options-dropdown trigger styling for the dark header (the shared BoardOptions defaults to a
 // light-toolbar trigger).
 const DARK_TRIGGER = 'rounded border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-100 hover:bg-neutral-800';
@@ -180,7 +186,9 @@ export function WarmUpDisplay({
   // sub-total and IPF GL columns are extras, so they default off.
   const [teamPref, toggleTeam] = usePersistentToggle('warmup:col:team');
   // Flight has its own column now (no longer appended to the lifter name); on by default so the flight
-  // stays visible as before. Platform is uniform on a per-platform board, so it defaults off.
+  // stays visible as before. Session and Platform are uniform on a per-platform, single-session board,
+  // so they default off.
+  const [showSession, toggleSession] = usePersistentToggle('warmup:col:session', false);
   const [showFlight, toggleFlight] = usePersistentToggle('warmup:col:flight');
   const [showPlatform, togglePlatform] = usePersistentToggle('warmup:col:platform', false);
   const [showLot, toggleLot] = usePersistentToggle('warmup:col:lot');
@@ -205,6 +213,11 @@ export function WarmUpDisplay({
   const [teamActualPref, toggleTeamActual] = usePersistentToggle('warmup:col:teamactual', false);
   const [teamPredPref, toggleTeamPred] = usePersistentToggle('warmup:col:teampred', false);
   const [striped, toggleStriping] = usePersistentToggle('warmup:striping');
+  // LiftingCast-style divider rows between flight groups, labelled with the session and flight, so the
+  // start/end of each flight reads clearly. Individual comps only: a team comp groups the roster by lift
+  // rather than flight, so flight dividers wouldn't line up with the grouping. On by default.
+  const [flightDividersPref, toggleFlightDividers] = usePersistentToggle('warmup:flightdividers');
+  const showFlightDividers = flightDividersPref && !isTeamCompetition;
 
   // Table zoom (percent), persisted per browser. Scales only the scoresheet table (via a .warmup-zoom-*
   // class) so an operator who has hidden columns can enlarge what remains. A stored value not in the
@@ -339,6 +352,7 @@ export function WarmUpDisplay({
 
   const columnToggles: BoardOptionToggle[] = [
     ...(isTeamCompetition ? [{ id: 'team', label: 'Team', checked: showTeam, onToggle: toggleTeam }] : []),
+    { id: 'session', label: 'Session', checked: showSession, onToggle: toggleSession },
     { id: 'flight', label: 'Flight', checked: showFlight, onToggle: toggleFlight },
     { id: 'platform', label: 'Platform', checked: showPlatform, onToggle: togglePlatform },
     { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
@@ -366,6 +380,9 @@ export function WarmUpDisplay({
           { id: 'predtotal', label: 'Predicted total', checked: showPredTotal, onToggle: togglePredTotal },
           { id: 'predgl', label: 'Predicted GL points', checked: showPredGl, onToggle: togglePredGl },
         ]),
+    ...(isTeamCompetition
+      ? []
+      : [{ id: 'dividers', label: 'Flight dividers', checked: flightDividersPref, onToggle: toggleFlightDividers }]),
     { id: 'striping', label: 'Row striping', checked: striped, onToggle: toggleStriping },
   ];
 
@@ -438,6 +455,11 @@ export function WarmUpDisplay({
                 {showTeam ? (
                   <th scope="col" className={`w-32 text-left ${HEAD}`}>
                     Team
+                  </th>
+                ) : null}
+                {showSession ? (
+                  <th scope="col" className={`w-24 text-left ${HEAD}`}>
+                    Session
                   </th>
                 ) : null}
                 {showFlight ? (
@@ -546,15 +568,31 @@ export function WarmUpDisplay({
                 // sticky first column needs its own opaque background, so it carries the same band
                 // (white otherwise, to mask content scrolling beneath it).
                 const banded = striped && index % 2 === 1;
+                // A divider precedes the first row of each flight group (and the very first row), so
+                // each flight's start/end is obvious. The flight is contiguous in the individual-comp
+                // ordering this is gated to, so one divider per flight.
+                const showDivider =
+                  showFlightDividers && (index === 0 || view.roster[index - 1].flightName !== flightName);
                 return (
-                  <tr key={entry.id} className={banded ? ROW_BAND : ''}>
-                    <td
-                      className={`sticky left-0 z-10 whitespace-nowrap border-l ${banded ? ROW_BAND : 'bg-white'} ${CELL}`}
-                    >
-                      <span className="font-semibold text-neutral-900">{entry.lifterName}</span>
-                    </td>
+                  <Fragment key={entry.id}>
+                    {showDivider ? (
+                      <tr>
+                        <td colSpan={FULL_WIDTH_COLSPAN} className={SEPARATOR_CELL}>
+                          {view.sessionName ? `${view.sessionName} — ${flightName}` : flightName}
+                        </td>
+                      </tr>
+                    ) : null}
+                    <tr className={banded ? ROW_BAND : ''}>
+                      <td
+                        className={`sticky left-0 z-10 whitespace-nowrap border-l ${banded ? ROW_BAND : 'bg-white'} ${CELL}`}
+                      >
+                        <span className="font-semibold text-neutral-900">{entry.lifterName}</span>
+                      </td>
                     {showTeam ? (
                       <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.teamName ?? '—'}</td>
+                    ) : null}
+                    {showSession ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{view.sessionName ?? '—'}</td>
                     ) : null}
                     {showFlight ? (
                       <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{flightName}</td>
@@ -638,7 +676,8 @@ export function WarmUpDisplay({
                         {teamStanding && teamStanding.predictedTotal > 0 ? teamStanding.predictedTotal.toFixed(2) : '—'}
                       </td>
                     ) : null}
-                  </tr>
+                    </tr>
+                  </Fragment>
                 );
               })}
             </tbody>
