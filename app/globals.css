@@ -18,6 +18,45 @@
   }
 }
 
+/* Warm-up board table zoom. The board's header zoom control scales just the scoresheet table (in
+   discrete steps) so an operator who has hidden columns can enlarge what's left. `zoom` is used rather
+   than `transform: scale()` because it reflows — the scroll container scrolls the enlarged table and
+   the sticky column header keeps working, which a transform would break. Discrete classes (rather than
+   an inline style) keep to the project's no-inline-styles rule. Chromium-first (the operators' and OBS
+   browser); Firefox 126+ and Safari also support `zoom`. Steps of 5% from 100% to 250% — keep the
+   range in sync with ZOOM_MIN/ZOOM_MAX/ZOOM_STEP in components/warm-up/warm-up-display.tsx. */
+.warmup-zoom-100 { zoom: 100%; }
+.warmup-zoom-105 { zoom: 105%; }
+.warmup-zoom-110 { zoom: 110%; }
+.warmup-zoom-115 { zoom: 115%; }
+.warmup-zoom-120 { zoom: 120%; }
+.warmup-zoom-125 { zoom: 125%; }
+.warmup-zoom-130 { zoom: 130%; }
+.warmup-zoom-135 { zoom: 135%; }
+.warmup-zoom-140 { zoom: 140%; }
+.warmup-zoom-145 { zoom: 145%; }
+.warmup-zoom-150 { zoom: 150%; }
+.warmup-zoom-155 { zoom: 155%; }
+.warmup-zoom-160 { zoom: 160%; }
+.warmup-zoom-165 { zoom: 165%; }
+.warmup-zoom-170 { zoom: 170%; }
+.warmup-zoom-175 { zoom: 175%; }
+.warmup-zoom-180 { zoom: 180%; }
+.warmup-zoom-185 { zoom: 185%; }
+.warmup-zoom-190 { zoom: 190%; }
+.warmup-zoom-195 { zoom: 195%; }
+.warmup-zoom-200 { zoom: 200%; }
+.warmup-zoom-205 { zoom: 205%; }
+.warmup-zoom-210 { zoom: 210%; }
+.warmup-zoom-215 { zoom: 215%; }
+.warmup-zoom-220 { zoom: 220%; }
+.warmup-zoom-225 { zoom: 225%; }
+.warmup-zoom-230 { zoom: 230%; }
+.warmup-zoom-235 { zoom: 235%; }
+.warmup-zoom-240 { zoom: 240%; }
+.warmup-zoom-245 { zoom: 245%; }
+.warmup-zoom-250 { zoom: 250%; }
+
 /* Backup print sheets (the weigh-in and rack-heights screens): when printing, drop the app chrome from
    the flow entirely (display:none, not just hidden) so it leaves no trailing blank pages, and show
    only the sheet. Scoped with :has so every other page still prints normally; the sheet is portalled

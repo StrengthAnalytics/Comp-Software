@@ -74,3 +74,13 @@ export function formatPlatesPerSide(plates: readonly PlateCount[]): string {
     .map((plate) => (plate.count > 1 ? `${plate.weightKg} ×${plate.count}` : String(plate.weightKg)))
     .join(' · ');
 }
+
+// Expands the grouped per-side plates into one entry per physical plate, largest first (mirroring the
+// loaded bar), each tagged with a stable index so a repeated denomination still gets a distinct React
+// key. Shared by the loading-crew display and the warm-up board's plate diagrams so they fan a
+// breakdown out into plates identically.
+export function expandPlatesToBars(plates: readonly PlateCount[]): { weightKg: number; index: number }[] {
+  return plates.flatMap((plate) =>
+    Array.from({ length: plate.count }, (_, index) => ({ weightKg: plate.weightKg, index })),
+  );
+}

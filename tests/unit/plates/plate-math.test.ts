@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPlatesPerSide, platesPerSide } from '@/lib/plates/plate-math';
+import { expandPlatesToBars, formatPlatesPerSide, platesPerSide } from '@/lib/plates/plate-math';
 
 // Shorthand: the per-side denomination list (largest first), dropping counts.
 function denominations(totalKg: number): number[] {
@@ -80,5 +80,24 @@ describe('formatPlatesPerSide', () => {
 
   it('is empty when no plates are loaded', () => {
     expect(formatPlatesPerSide(platesPerSide(25).plates)).toBe('');
+  });
+});
+
+describe('expandPlatesToBars', () => {
+  it('emits one entry per physical plate, largest first, with stable per-denomination indices', () => {
+    expect(
+      expandPlatesToBars([
+        { weightKg: 25, count: 2 },
+        { weightKg: 2.5, count: 1 },
+      ]),
+    ).toEqual([
+      { weightKg: 25, index: 0 },
+      { weightKg: 25, index: 1 },
+      { weightKg: 2.5, index: 0 },
+    ]);
+  });
+
+  it('is empty for no plates', () => {
+    expect(expandPlatesToBars([])).toEqual([]);
   });
 });
