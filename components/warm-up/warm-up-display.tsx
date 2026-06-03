@@ -30,9 +30,11 @@ const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => 
 
 // Gridlines use a border-separate model — right+bottom on every cell, top on the header row, left on
 // the frozen first column — so the lines stay attached to the sticky header and frozen lifter column
-// when the table scrolls (matching the run screen's scoresheet ruling).
+// when the table scrolls (matching the run screen's scoresheet ruling). The opaque background plus a
+// soft bottom shadow make the pinned header read as a solid static bar that roster rows scroll cleanly
+// under, rather than appearing to slide behind it.
 const HEAD =
-  'border-b-2 border-r border-t border-neutral-300 bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600';
+  'border-b-2 border-r border-t border-neutral-300 bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600 shadow-[0_3px_4px_rgba(0,0,0,0.1)]';
 const CELL = 'border-b border-r border-neutral-300 px-2 py-1 align-middle';
 // Zebra band for alternate roster rows, single-sourced so the row and its opaque sticky first column
 // can never drift to different shades.
@@ -294,9 +296,13 @@ export function WarmUpDisplay({
         <PositionCard label="In the hole" card={view.positions.inTheHole} />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      {/* No top padding on the scroll area: the sticky column header pins flush to the top of the
+          scroll region so rows disappear straight under it (top padding would leave a strip where
+          scrolled rows stay visible above the header). The not-scrolled breathing room is a table
+          margin instead, which scrolls away cleanly under the pinned header. */}
+      <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         {view.roster.length > 0 ? (
-          <table className="w-full min-w-max border-separate border-spacing-0 text-base">
+          <table className="mt-4 w-full min-w-max border-separate border-spacing-0 text-base">
             <thead className="sticky top-0 z-20">
               <tr>
                 <th scope="col" className={`sticky left-0 z-30 min-w-[12rem] border-l text-left ${HEAD}`}>
