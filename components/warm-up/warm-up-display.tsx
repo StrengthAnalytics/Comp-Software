@@ -39,7 +39,7 @@ const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => 
 // soft bottom shadow make the pinned header read as a solid static bar that roster rows scroll cleanly
 // under, rather than appearing to slide behind it.
 const HEAD =
-  'border-b-2 border-r border-t border-neutral-300 bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600 shadow-[0_3px_4px_rgba(0,0,0,0.1)]';
+  'whitespace-nowrap border-b-2 border-r border-t border-neutral-300 bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600 shadow-[0_3px_4px_rgba(0,0,0,0.1)]';
 const CELL = 'border-b border-r border-neutral-300 px-2 py-1 align-middle';
 // Zebra band for alternate roster rows, single-sourced so the row and its opaque sticky first column
 // can never drift to different shades.
@@ -221,8 +221,8 @@ export function WarmUpDisplay({
   const showFlightDividers = flightDividersPref && !isTeamCompetition;
   // Columns shrink-wrap to their content (w-max) when on; off fills the width (w-full). On by default.
   const [narrowColumns, toggleNarrowColumns] = usePersistentToggle('warmup:narrowcols');
-  // Lifter name order: "Surname, First" (default) or, when on, "First Surname".
-  const [nameFirstLast, toggleNameFirstLast] = usePersistentToggle('warmup:namefirstlast', false);
+  // Lifter name order: "First Surname" (default) or, when off, "Surname, First".
+  const [nameFirstLast, toggleNameFirstLast] = usePersistentToggle('warmup:namefirstlast');
   const formatName = (name: string): string => (nameFirstLast ? flipLifterName(name) : name);
 
   // Table zoom (percent), persisted per browser. Scales only the scoresheet table (via a .warmup-zoom-*
@@ -386,7 +386,6 @@ export function WarmUpDisplay({
           { id: 'predtotal', label: 'Predicted total', checked: showPredTotal, onToggle: togglePredTotal },
           { id: 'predgl', label: 'Predicted GL points', checked: showPredGl, onToggle: togglePredGl },
         ]),
-    { id: 'namefirstlast', label: 'First name first', checked: nameFirstLast, onToggle: toggleNameFirstLast },
     { id: 'narrow', label: 'Narrow columns', checked: narrowColumns, onToggle: toggleNarrowColumns },
     ...(isTeamCompetition
       ? []
@@ -704,6 +703,7 @@ export function WarmUpDisplay({
       <DisplayOptionsDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        nameOrder={{ checked: nameFirstLast, onToggle: toggleNameFirstLast }}
         showCards={{ checked: showCardsPref, onToggle: toggleShowCards }}
         flightCount={{ checked: flightCountPref, onToggle: toggleFlightCount }}
         upNextOptions={UP_NEXT_OPTIONS}

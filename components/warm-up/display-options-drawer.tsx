@@ -17,6 +17,8 @@ type SwitchControl = { checked: boolean; onToggle: () => void };
 type DisplayOptionsDrawerProps = {
   open: boolean;
   onClose: () => void;
+  // Lifter name order: on = "First Surname", off = "Surname, First".
+  nameOrder: SwitchControl;
   // Master toggle for the whole up-next card strip.
   showCards: SwitchControl;
   // "Lifts to next flight" mode: a fixed current + next + count three-card strip.
@@ -43,6 +45,7 @@ const ZOOM_BUTTON =
 export function DisplayOptionsDrawer({
   open,
   onClose,
+  nameOrder,
   showCards,
   flightCount,
   upNextOptions,
@@ -122,6 +125,10 @@ export function DisplayOptionsDrawer({
         </header>
 
         <div className="min-h-0 flex-1 overflow-auto p-4">
+          <Section title="Lifter names">
+            <SwitchRow label="First name first" checked={nameOrder.checked} onToggle={nameOrder.onToggle} />
+          </Section>
+
           <Section title="Up next cards">
             <SwitchRow label="Show up-next cards" checked={showCards.checked} onToggle={showCards.onToggle} />
             {showCards.checked ? (
