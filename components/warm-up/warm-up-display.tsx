@@ -15,6 +15,7 @@ import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
 import type { BoardOptionToggle } from '@/components/scorekeeper/board-options';
 import { DisplayOptionsDrawer } from '@/components/warm-up/display-options-drawer';
+import { UpNextDetail } from '@/components/warm-up/up-next-detail';
 import { usePersistentToggle } from '@/lib/use-persistent-toggle';
 import { usePersistentString } from '@/lib/use-persistent-string';
 import type {
@@ -83,13 +84,15 @@ type WarmUpDisplayProps = {
   attempts: BoardAttempt[];
 };
 
-// One of the three framed lifters (on platform / on deck / in the hole).
+// One of the framed up-next lifters. Carries the entry so the optional plate/rack detail can render the
+// lifter's rack settings.
 type PositionCardData = {
   lifterName: string;
   flightName: string;
   lift: LiftType;
   attemptNumber: number;
   weightKg: number | null;
+  entry: BoardEntry;
 } | null;
 
 // Projects a live running-order row (or null) into the up-next card shape.
@@ -101,6 +104,7 @@ function toCard(row: PlatformLiveRow | null): PositionCardData {
         lift: row.lift,
         attemptNumber: row.attemptNumber,
         weightKg: row.weightKg,
+        entry: row.entry,
       }
     : null;
 }
@@ -211,6 +215,13 @@ export function WarmUpDisplay({
   const [upNextPref, setUpNextPref] = usePersistentString('warmup:upnext', '3');
   const upNextCount = UP_NEXT_OPTIONS.includes(Number(upNextPref)) ? Number(upNextPref) : 3;
   const upNextCards = Array.from({ length: upNextCount }, (_, index) => view.upNext[index] ?? null);
+
+  // Optional plate-loading + rack-height detail on the up-next cards (a smaller echo of the loading
+  // display). Only offered for 1 or 3 cards — at 5 the cards are too narrow for the diagram — so a 5-up
+  // board never shows it even if the preference is on.
+  const [detailPref, toggleDetail] = usePersistentToggle('warmup:upnext:detail', false);
+  const upNextDetailAvailable = upNextCount !== MAX_UP_NEXT;
+  const showUpNextDetail = detailPref && upNextDetailAvailable;
 
   // All view controls (up-next count, zoom, columns) live in a right-side slide-out drawer, so the
   // header stays a clean status bar with a single trigger rather than a crowded row of controls.
@@ -371,7 +382,13 @@ export function WarmUpDisplay({
         className={`grid shrink-0 gap-3 border-b border-neutral-200 p-4 ${UP_NEXT_GRID[upNextCount]}`}
       >
         {upNextCards.map((card, index) => (
-          <PositionCard key={UP_NEXT_LABELS[index]} label={UP_NEXT_LABELS[index]} card={card} highlight={index === 0} />
+          <PositionCard
+            key={UP_NEXT_LABELS[index]}
+            label={UP_NEXT_LABELS[index]}
+            card={card}
+            highlight={index === 0}
+            showDetail={showUpNextDetail}
+          />
         ))}
       </div>
 
@@ -591,6 +608,7 @@ export function WarmUpDisplay({
         upNextOptions={UP_NEXT_OPTIONS}
         upNextCount={upNextCount}
         onUpNextChange={(count) => setUpNextPref(String(count))}
+        upNextDetail={upNextDetailAvailable ? { checked: detailPref, onToggle: toggleDetail } : null}
         zoom={{
           level: zoomLevel,
           canZoomIn,
@@ -686,7 +704,17 @@ function buildView({
   };
 }
 
-function PositionCard({ label, card, highlight }: { label: string; card: PositionCardData; highlight?: boolean }) {
+function PositionCard({
+  label,
+  card,
+  highlight,
+  showDetail,
+}: {
+  label: string;
+  card: PositionCardData;
+  highlight?: boolean;
+  showDetail?: boolean;
+}) {
   return (
     <div
       className={
@@ -703,6 +731,7 @@ function PositionCard({ label, card, highlight }: { label: string; card: Positio
             {card.weightKg === null ? '' : `${card.weightKg} kg · `}
             {LIFT_LABELS[card.lift]} {card.attemptNumber} · {card.flightName}
           </p>
+          {showDetail ? <UpNextDetail entry={card.entry} lift={card.lift} weightKg={card.weightKg} /> : null}
         </>
       ) : (
         <p className="mt-1 text-base text-neutral-400">—</p>

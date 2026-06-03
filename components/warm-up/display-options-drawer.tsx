@@ -18,6 +18,9 @@ type DisplayOptionsDrawerProps = {
   upNextOptions: readonly number[];
   upNextCount: number;
   onUpNextChange: (count: number) => void;
+  // The optional plate/rack detail toggle for the up-next cards, or null when it doesn't apply (5-up,
+  // where the cards are too narrow for the diagram).
+  upNextDetail: { checked: boolean; onToggle: () => void } | null;
   zoom: ZoomControl;
   columnToggles: BoardOptionToggle[];
 };
@@ -37,6 +40,7 @@ export function DisplayOptionsDrawer({
   upNextOptions,
   upNextCount,
   onUpNextChange,
+  upNextDetail,
   zoom,
   columnToggles,
 }: DisplayOptionsDrawerProps) {
@@ -123,6 +127,17 @@ export function DisplayOptionsDrawer({
                 );
               })}
             </div>
+            {upNextDetail ? (
+              <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100">
+                <span>Plate loading &amp; rack heights</span>
+                <input
+                  type="checkbox"
+                  checked={upNextDetail.checked}
+                  onChange={upNextDetail.onToggle}
+                  className="h-4 w-4 accent-neutral-800"
+                />
+              </label>
+            ) : null}
           </Section>
 
           <Section title="Table zoom">

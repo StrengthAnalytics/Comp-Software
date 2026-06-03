@@ -10,6 +10,7 @@ import {
   type IpfPlateWeight,
 } from '@/lib/constants';
 import { formatPlatesPerSide, platesPerSide, type PlateBreakdown } from '@/lib/plates/plate-math';
+import { PLATE_STYLE } from '@/components/plates/plate-style';
 import {
   compareRunningOrder,
   selectLiveSession,
@@ -36,20 +37,6 @@ type LoadingDisplayProps = {
   attempts: BoardAttempt[];
 };
 
-// IPF plate colours for the visual breakdown, keyed by denomination (kg). Typed against the canonical
-// plate list, so adding/removing a plate in IPF_PLATE_WEIGHTS_KG is a compile error here until this
-// map is updated — no silent fallback colour.
-const PLATE_STYLE: Record<IpfPlateWeight, string> = {
-  25: 'bg-red-600 text-white',
-  20: 'bg-blue-600 text-white',
-  15: 'bg-yellow-400 text-neutral-900',
-  10: 'bg-green-600 text-white',
-  5: 'bg-white text-neutral-900 ring-1 ring-inset ring-neutral-400',
-  2.5: 'bg-neutral-900 text-white ring-1 ring-inset ring-neutral-500',
-  1.25: 'bg-neutral-400 text-neutral-900',
-  0.5: 'bg-neutral-500 text-white',
-  0.25: 'bg-neutral-600 text-white',
-};
 // The three rows are sized unevenly: the previous lifter (done) is compact, on deck is normal, and
 // the lifter being loaded for is large. Each tier scales its own type and plate sizes so content fits
 // its band rather than overflowing.
