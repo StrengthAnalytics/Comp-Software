@@ -14,6 +14,7 @@ import { computeBoardTeamStandings } from '@/lib/scorekeeper/team-board-standing
 import type { TeamStanding } from '@/lib/scoring/team-standings';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
+import { flipLifterName } from '@/lib/lifters/name';
 import type { BoardOptionToggle } from '@/components/scorekeeper/board-options';
 import { DisplayOptionsDrawer } from '@/components/warm-up/display-options-drawer';
 import { UpNextDetail } from '@/components/warm-up/up-next-detail';
@@ -38,17 +39,23 @@ const ATTEMPT_NUMBERS = Array.from({ length: ATTEMPTS_PER_LIFT }, (_, index) => 
 // soft bottom shadow make the pinned header read as a solid static bar that roster rows scroll cleanly
 // under, rather than appearing to slide behind it.
 const HEAD =
-  'border-b-2 border-r border-t border-neutral-300 bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600 shadow-[0_3px_4px_rgba(0,0,0,0.1)]';
+  'whitespace-nowrap border-b-2 border-r border-t border-neutral-300 bg-neutral-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-600 shadow-[0_3px_4px_rgba(0,0,0,0.1)]';
 const CELL = 'border-b border-r border-neutral-300 px-2 py-1 align-middle';
 // Zebra band for alternate roster rows, single-sourced so the row and its opaque sticky first column
 // can never drift to different shades.
 const ROW_BAND = 'bg-neutral-50';
+// Flight divider row: a single cell spanning every column (the browser clamps the colSpan to the real
+// count) that bands the boundary between flight groups. Sticky-left so the session/flight label stays
+// visible when the table is scrolled sideways.
+const FULL_WIDTH_COLSPAN = 64;
+const SEPARATOR_CELL =
+  'sticky left-0 z-10 border-b-2 border-t-2 border-r border-neutral-300 bg-neutral-200 px-3 py-1.5 text-left text-sm font-bold uppercase tracking-wide text-neutral-700';
 // Options-dropdown trigger styling for the dark header (the shared BoardOptions defaults to a
 // light-toolbar trigger).
 const DARK_TRIGGER = 'rounded border border-neutral-600 px-2 py-1 text-xs font-medium text-neutral-100 hover:bg-neutral-800';
-// Table-zoom steps in 5% increments from 100% to 250%; each maps to a .warmup-zoom-* class in
+// Table-zoom steps in 5% increments from 50% to 250%; each maps to a .warmup-zoom-* class in
 // globals.css that scales the scoresheet table. Keep the range in sync with those classes.
-const ZOOM_MIN = 100;
+const ZOOM_MIN = 50;
 const ZOOM_MAX = 250;
 const ZOOM_STEP = 5;
 const ZOOM_LEVELS: number[] = Array.from(
@@ -179,6 +186,12 @@ export function WarmUpDisplay({
   // per lift — is optional. Lot/BW/class/div/rack/attempts/best/total default on (the full view); the
   // sub-total and IPF GL columns are extras, so they default off.
   const [teamPref, toggleTeam] = usePersistentToggle('warmup:col:team');
+  // Flight has its own column now (no longer appended to the lifter name); on by default so the flight
+  // stays visible as before. Session and Platform are uniform on a per-platform, single-session board,
+  // so they default off.
+  const [showSession, toggleSession] = usePersistentToggle('warmup:col:session', false);
+  const [showFlight, toggleFlight] = usePersistentToggle('warmup:col:flight');
+  const [showPlatform, togglePlatform] = usePersistentToggle('warmup:col:platform', false);
   const [showLot, toggleLot] = usePersistentToggle('warmup:col:lot');
   const [showBw, toggleBw] = usePersistentToggle('warmup:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('warmup:col:class');
@@ -201,6 +214,16 @@ export function WarmUpDisplay({
   const [teamActualPref, toggleTeamActual] = usePersistentToggle('warmup:col:teamactual', false);
   const [teamPredPref, toggleTeamPred] = usePersistentToggle('warmup:col:teampred', false);
   const [striped, toggleStriping] = usePersistentToggle('warmup:striping');
+  // LiftingCast-style divider rows between flight groups, labelled with the session and flight, so the
+  // start/end of each flight reads clearly. Individual comps only: a team comp groups the roster by lift
+  // rather than flight, so flight dividers wouldn't line up with the grouping. On by default.
+  const [flightDividersPref, toggleFlightDividers] = usePersistentToggle('warmup:flightdividers');
+  const showFlightDividers = flightDividersPref && !isTeamCompetition;
+  // Columns shrink-wrap to their content (w-max) when on; off fills the width (w-full). On by default.
+  const [narrowColumns, toggleNarrowColumns] = usePersistentToggle('warmup:narrowcols');
+  // Lifter name order: "First Surname" (default) or, when off, "Surname, First".
+  const [nameFirstLast, toggleNameFirstLast] = usePersistentToggle('warmup:namefirstlast');
+  const formatName = (name: string): string => (nameFirstLast ? flipLifterName(name) : name);
 
   // Table zoom (percent), persisted per browser. Scales only the scoresheet table (via a .warmup-zoom-*
   // class) so an operator who has hidden columns can enlarge what remains. A stored value not in the
@@ -335,6 +358,9 @@ export function WarmUpDisplay({
 
   const columnToggles: BoardOptionToggle[] = [
     ...(isTeamCompetition ? [{ id: 'team', label: 'Team', checked: showTeam, onToggle: toggleTeam }] : []),
+    { id: 'session', label: 'Session', checked: showSession, onToggle: toggleSession },
+    { id: 'flight', label: 'Flight', checked: showFlight, onToggle: toggleFlight },
+    { id: 'platform', label: 'Platform', checked: showPlatform, onToggle: togglePlatform },
     { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
     { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
     { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
@@ -360,6 +386,10 @@ export function WarmUpDisplay({
           { id: 'predtotal', label: 'Predicted total', checked: showPredTotal, onToggle: togglePredTotal },
           { id: 'predgl', label: 'Predicted GL points', checked: showPredGl, onToggle: togglePredGl },
         ]),
+    { id: 'narrow', label: 'Narrow columns', checked: narrowColumns, onToggle: toggleNarrowColumns },
+    ...(isTeamCompetition
+      ? []
+      : [{ id: 'dividers', label: 'Flight dividers', checked: flightDividersPref, onToggle: toggleFlightDividers }]),
     { id: 'striping', label: 'Row striping', checked: striped, onToggle: toggleStriping },
   ];
 
@@ -399,8 +429,8 @@ export function WarmUpDisplay({
         >
           {countMode ? (
             <>
-              <PositionCard label={UP_NEXT_LABELS[0]} card={view.upNext[0] ?? null} highlight />
-              <PositionCard label={UP_NEXT_LABELS[1]} card={view.upNext[1] ?? null} />
+              <PositionCard label={UP_NEXT_LABELS[0]} card={view.upNext[0] ?? null} flipName={nameFirstLast} highlight />
+              <PositionCard label={UP_NEXT_LABELS[1]} card={view.upNext[1] ?? null} flipName={nameFirstLast} />
               <FlightCountCard data={view.flightCount} />
             </>
           ) : (
@@ -411,6 +441,7 @@ export function WarmUpDisplay({
                 card={card}
                 highlight={index === 0}
                 showDetail={showUpNextDetail}
+                flipName={nameFirstLast}
               />
             ))
           )}
@@ -423,34 +454,54 @@ export function WarmUpDisplay({
           margin instead, which scrolls away cleanly under the pinned header. */}
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         {view.roster.length > 0 ? (
-          <table className={`mt-4 w-full min-w-max border-separate border-spacing-0 text-base ${zoomClass}`}>
+          // With auto table layout and no fixed column widths, w-max sizes every column to the wider of
+          // its header and cells (shrink-wrap to content); w-full instead fills the width, distributing
+          // the slack across columns. The scroll container scrolls when the content exceeds the viewport.
+          <table
+            className={`mt-4 border-separate border-spacing-0 text-base ${narrowColumns ? 'w-max' : 'w-full'} ${zoomClass}`}
+          >
             <thead className="sticky top-0 z-20">
               <tr>
-                <th scope="col" className={`sticky left-0 z-30 min-w-[12rem] border-l text-left ${HEAD}`}>
+                <th scope="col" className={`sticky left-0 z-30 border-l text-left ${HEAD}`}>
                   Lifter
                 </th>
                 {showTeam ? (
-                  <th scope="col" className={`w-32 text-left ${HEAD}`}>
+                  <th scope="col" className={`text-left ${HEAD}`}>
                     Team
                   </th>
                 ) : null}
+                {showSession ? (
+                  <th scope="col" className={`text-left ${HEAD}`}>
+                    Session
+                  </th>
+                ) : null}
+                {showFlight ? (
+                  <th scope="col" className={`text-left ${HEAD}`}>
+                    Flight
+                  </th>
+                ) : null}
+                {showPlatform ? (
+                  <th scope="col" className={`text-left ${HEAD}`}>
+                    Platform
+                  </th>
+                ) : null}
                 {showLot ? (
-                  <th scope="col" className={`w-12 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Lot
                   </th>
                 ) : null}
                 {showBw ? (
-                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     BW
                   </th>
                 ) : null}
                 {showClass ? (
-                  <th scope="col" className={`w-28 text-left ${HEAD}`}>
+                  <th scope="col" className={`text-left ${HEAD}`}>
                     Class
                   </th>
                 ) : null}
                 {showDiv ? (
-                  <th scope="col" className={`w-24 text-left ${HEAD}`}>
+                  <th scope="col" className={`text-left ${HEAD}`}>
                     Div
                   </th>
                 ) : null}
@@ -458,49 +509,49 @@ export function WarmUpDisplay({
                   <Fragment key={lift}>
                     <LiftHeader lift={lift} showRack={showRack} showAttempts={attemptsByLift[lift]} showBest={showBest} />
                     {showSubTotal && lift === 'bench' ? (
-                      <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                      <th scope="col" className={`text-center ${HEAD}`}>
                         S+B
                       </th>
                     ) : null}
                   </Fragment>
                 ))}
                 {showTotal ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Total
                   </th>
                 ) : null}
                 {showGl ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     IPF GL
                   </th>
                 ) : null}
                 {showCurPlace ? (
-                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Place
                   </th>
                 ) : null}
                 {showPredPlace ? (
-                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Pred place
                   </th>
                 ) : null}
                 {showPredTotal ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Pred total
                   </th>
                 ) : null}
                 {showPredGl ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Pred GL
                   </th>
                 ) : null}
                 {showTeamActual ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Team pts
                   </th>
                 ) : null}
                 {showTeamPred ? (
-                  <th scope="col" className={`w-24 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Pred team pts
                   </th>
                 ) : null}
@@ -530,16 +581,41 @@ export function WarmUpDisplay({
                 // sticky first column needs its own opaque background, so it carries the same band
                 // (white otherwise, to mask content scrolling beneath it).
                 const banded = striped && index % 2 === 1;
+                // A divider precedes the first row of each flight group (and the very first row), so
+                // each flight's start/end is obvious. Keyed on flightId (not the display name) so two
+                // flights that share a name still get a boundary between them. The flight is contiguous
+                // in the individual-comp ordering this is gated to, so one divider per flight.
+                const showDivider =
+                  showFlightDividers &&
+                  (index === 0 || view.roster[index - 1].entry.flightId !== entry.flightId);
                 return (
-                  <tr key={entry.id} className={banded ? ROW_BAND : ''}>
-                    <td
-                      className={`sticky left-0 z-10 whitespace-nowrap border-l ${banded ? ROW_BAND : 'bg-white'} ${CELL}`}
-                    >
-                      <span className="font-semibold text-neutral-900">{entry.lifterName}</span>
-                      <span className="ml-2 text-xs text-neutral-400">{flightName}</span>
-                    </td>
+                  <Fragment key={entry.id}>
+                    {showDivider ? (
+                      <tr>
+                        {/* A spanning th (scope=colgroup) rather than a td, so assistive tech announces
+                            the session/flight band as a group heading, not a blank data cell. */}
+                        <th scope="colgroup" colSpan={FULL_WIDTH_COLSPAN} className={SEPARATOR_CELL}>
+                          {view.sessionName ? `${view.sessionName} — ${flightName}` : flightName}
+                        </th>
+                      </tr>
+                    ) : null}
+                    <tr className={banded ? ROW_BAND : ''}>
+                      <td
+                        className={`sticky left-0 z-10 whitespace-nowrap border-l ${banded ? ROW_BAND : 'bg-white'} ${CELL}`}
+                      >
+                        <span className="font-semibold text-neutral-900">{formatName(entry.lifterName)}</span>
+                      </td>
                     {showTeam ? (
                       <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.teamName ?? '—'}</td>
+                    ) : null}
+                    {showSession ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{view.sessionName ?? '—'}</td>
+                    ) : null}
+                    {showFlight ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{flightName}</td>
+                    ) : null}
+                    {showPlatform ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{platformName}</td>
                     ) : null}
                     {showLot ? (
                       <td className={`text-center tabular-nums text-neutral-600 ${CELL}`}>{entry.lotNumber ?? '—'}</td>
@@ -617,7 +693,8 @@ export function WarmUpDisplay({
                         {teamStanding && teamStanding.predictedTotal > 0 ? teamStanding.predictedTotal.toFixed(2) : '—'}
                       </td>
                     ) : null}
-                  </tr>
+                    </tr>
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -630,6 +707,7 @@ export function WarmUpDisplay({
       <DisplayOptionsDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        nameOrder={{ checked: nameFirstLast, onToggle: toggleNameFirstLast }}
         showCards={{ checked: showCardsPref, onToggle: toggleShowCards }}
         flightCount={{ checked: flightCountPref, onToggle: toggleFlightCount }}
         upNextOptions={UP_NEXT_OPTIONS}
@@ -793,11 +871,13 @@ function PositionCard({
   card,
   highlight,
   showDetail,
+  flipName,
 }: {
   label: string;
   card: PositionCardData;
   highlight?: boolean;
   showDetail?: boolean;
+  flipName?: boolean;
 }) {
   return (
     <div
@@ -815,7 +895,9 @@ function PositionCard({
         // at 3-up — rather than the viewport.
         <div className="mt-1 flex flex-col gap-2 @sm:flex-row @sm:items-start @sm:gap-4">
           <div className="min-w-0 @sm:flex-1">
-            <p className="truncate text-2xl font-bold text-neutral-900">{card.lifterName}</p>
+            <p className="truncate text-2xl font-bold text-neutral-900">
+              {flipName ? flipLifterName(card.lifterName) : card.lifterName}
+            </p>
             <p className="text-base text-neutral-600">
               {card.weightKg === null ? '' : `${card.weightKg} kg · `}
               {LIFT_LABELS[card.lift]} {card.attemptNumber} · {card.flightName}
@@ -844,19 +926,19 @@ function LiftHeader({
   return (
     <>
       {showRack && liftHasRack(lift) ? (
-        <th scope="col" className={`w-24 text-center ${HEAD}`}>
+        <th scope="col" className={`text-center ${HEAD}`}>
           {LIFT_LABELS[lift]} rack
         </th>
       ) : null}
       {showAttempts
         ? ATTEMPT_NUMBERS.map((attemptNumber) => (
-            <th key={`${lift}-${attemptNumber}`} scope="col" className={`w-16 text-center ${HEAD}`}>
+            <th key={`${lift}-${attemptNumber}`} scope="col" className={`text-center ${HEAD}`}>
               {attemptNumber === 1 ? `${LIFT_LABELS[lift]} ${attemptNumber}` : String(attemptNumber)}
             </th>
           ))
         : null}
       {showBest ? (
-        <th scope="col" className={`w-16 text-center ${HEAD}`}>
+        <th scope="col" className={`text-center ${HEAD}`}>
           {/* Without the attempt columns the plain "Best" header can't be told apart from the other
               lifts' Best columns, so name the lift when attempts are hidden. */}
           {showAttempts ? 'Best' : `${LIFT_LABELS[lift]} best`}

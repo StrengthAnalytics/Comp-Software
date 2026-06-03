@@ -23,8 +23,18 @@
    than `transform: scale()` because it reflows — the scroll container scrolls the enlarged table and
    the sticky column header keeps working, which a transform would break. Discrete classes (rather than
    an inline style) keep to the project's no-inline-styles rule. Chromium-first (the operators' and OBS
-   browser); Firefox 126+ and Safari also support `zoom`. Steps of 5% from 100% to 250% — keep the
+   browser); Firefox 126+ and Safari also support `zoom`. Steps of 5% from 50% to 250% — keep the
    range in sync with ZOOM_MIN/ZOOM_MAX/ZOOM_STEP in components/warm-up/warm-up-display.tsx. */
+.warmup-zoom-50 { zoom: 50%; }
+.warmup-zoom-55 { zoom: 55%; }
+.warmup-zoom-60 { zoom: 60%; }
+.warmup-zoom-65 { zoom: 65%; }
+.warmup-zoom-70 { zoom: 70%; }
+.warmup-zoom-75 { zoom: 75%; }
+.warmup-zoom-80 { zoom: 80%; }
+.warmup-zoom-85 { zoom: 85%; }
+.warmup-zoom-90 { zoom: 90%; }
+.warmup-zoom-95 { zoom: 95%; }
 .warmup-zoom-100 { zoom: 100%; }
 .warmup-zoom-105 { zoom: 105%; }
 .warmup-zoom-110 { zoom: 110%; }
