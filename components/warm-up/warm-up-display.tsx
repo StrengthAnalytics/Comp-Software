@@ -14,6 +14,7 @@ import { computeBoardTeamStandings } from '@/lib/scorekeeper/team-board-standing
 import type { TeamStanding } from '@/lib/scoring/team-standings';
 import { attemptKey, useBoardState } from '@/lib/realtime/use-board-state';
 import { cellTint, liftHasRack, rackText } from '@/lib/scorekeeper/board-format';
+import { flipLifterName } from '@/lib/lifters/name';
 import type { BoardOptionToggle } from '@/components/scorekeeper/board-options';
 import { DisplayOptionsDrawer } from '@/components/warm-up/display-options-drawer';
 import { UpNextDetail } from '@/components/warm-up/up-next-detail';
@@ -218,6 +219,11 @@ export function WarmUpDisplay({
   // rather than flight, so flight dividers wouldn't line up with the grouping. On by default.
   const [flightDividersPref, toggleFlightDividers] = usePersistentToggle('warmup:flightdividers');
   const showFlightDividers = flightDividersPref && !isTeamCompetition;
+  // Columns shrink-wrap to their content (w-max) when on; off fills the width (w-full). On by default.
+  const [narrowColumns, toggleNarrowColumns] = usePersistentToggle('warmup:narrowcols');
+  // Lifter name order: "Surname, First" (default) or, when on, "First Surname".
+  const [nameFirstLast, toggleNameFirstLast] = usePersistentToggle('warmup:namefirstlast', false);
+  const formatName = (name: string): string => (nameFirstLast ? flipLifterName(name) : name);
 
   // Table zoom (percent), persisted per browser. Scales only the scoresheet table (via a .warmup-zoom-*
   // class) so an operator who has hidden columns can enlarge what remains. A stored value not in the
@@ -380,6 +386,8 @@ export function WarmUpDisplay({
           { id: 'predtotal', label: 'Predicted total', checked: showPredTotal, onToggle: togglePredTotal },
           { id: 'predgl', label: 'Predicted GL points', checked: showPredGl, onToggle: togglePredGl },
         ]),
+    { id: 'namefirstlast', label: 'First name first', checked: nameFirstLast, onToggle: toggleNameFirstLast },
+    { id: 'narrow', label: 'Narrow columns', checked: narrowColumns, onToggle: toggleNarrowColumns },
     ...(isTeamCompetition
       ? []
       : [{ id: 'dividers', label: 'Flight dividers', checked: flightDividersPref, onToggle: toggleFlightDividers }]),
@@ -422,8 +430,8 @@ export function WarmUpDisplay({
         >
           {countMode ? (
             <>
-              <PositionCard label={UP_NEXT_LABELS[0]} card={view.upNext[0] ?? null} highlight />
-              <PositionCard label={UP_NEXT_LABELS[1]} card={view.upNext[1] ?? null} />
+              <PositionCard label={UP_NEXT_LABELS[0]} card={view.upNext[0] ?? null} flipName={nameFirstLast} highlight />
+              <PositionCard label={UP_NEXT_LABELS[1]} card={view.upNext[1] ?? null} flipName={nameFirstLast} />
               <FlightCountCard data={view.flightCount} />
             </>
           ) : (
@@ -434,6 +442,7 @@ export function WarmUpDisplay({
                 card={card}
                 highlight={index === 0}
                 showDetail={showUpNextDetail}
+                flipName={nameFirstLast}
               />
             ))
           )}
@@ -446,10 +455,12 @@ export function WarmUpDisplay({
           margin instead, which scrolls away cleanly under the pinned header. */}
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         {view.roster.length > 0 ? (
-          // w-max + auto table layout (no fixed column widths below) sizes every column to the wider of
-          // its header and cells, so columns shrink-wrap to their content; the scroll container scrolls
-          // if the content is wider than the viewport.
-          <table className={`mt-4 w-max border-separate border-spacing-0 text-base ${zoomClass}`}>
+          // With auto table layout and no fixed column widths, w-max sizes every column to the wider of
+          // its header and cells (shrink-wrap to content); w-full instead fills the width, distributing
+          // the slack across columns. The scroll container scrolls when the content exceeds the viewport.
+          <table
+            className={`mt-4 border-separate border-spacing-0 text-base ${narrowColumns ? 'w-max' : 'w-full'} ${zoomClass}`}
+          >
             <thead className="sticky top-0 z-20">
               <tr>
                 <th scope="col" className={`sticky left-0 z-30 border-l text-left ${HEAD}`}>
@@ -589,7 +600,7 @@ export function WarmUpDisplay({
                       <td
                         className={`sticky left-0 z-10 whitespace-nowrap border-l ${banded ? ROW_BAND : 'bg-white'} ${CELL}`}
                       >
-                        <span className="font-semibold text-neutral-900">{entry.lifterName}</span>
+                        <span className="font-semibold text-neutral-900">{formatName(entry.lifterName)}</span>
                       </td>
                     {showTeam ? (
                       <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.teamName ?? '—'}</td>
@@ -856,11 +867,13 @@ function PositionCard({
   card,
   highlight,
   showDetail,
+  flipName,
 }: {
   label: string;
   card: PositionCardData;
   highlight?: boolean;
   showDetail?: boolean;
+  flipName?: boolean;
 }) {
   return (
     <div
@@ -878,7 +891,9 @@ function PositionCard({
         // at 3-up — rather than the viewport.
         <div className="mt-1 flex flex-col gap-2 @sm:flex-row @sm:items-start @sm:gap-4">
           <div className="min-w-0 @sm:flex-1">
-            <p className="truncate text-2xl font-bold text-neutral-900">{card.lifterName}</p>
+            <p className="truncate text-2xl font-bold text-neutral-900">
+              {flipName ? flipLifterName(card.lifterName) : card.lifterName}
+            </p>
             <p className="text-base text-neutral-600">
               {card.weightKg === null ? '' : `${card.weightKg} kg · `}
               {LIFT_LABELS[card.lift]} {card.attemptNumber} · {card.flightName}
