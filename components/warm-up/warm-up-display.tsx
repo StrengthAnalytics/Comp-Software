@@ -446,49 +446,52 @@ export function WarmUpDisplay({
           margin instead, which scrolls away cleanly under the pinned header. */}
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         {view.roster.length > 0 ? (
-          <table className={`mt-4 w-full min-w-max border-separate border-spacing-0 text-base ${zoomClass}`}>
+          // w-max + auto table layout (no fixed column widths below) sizes every column to the wider of
+          // its header and cells, so columns shrink-wrap to their content; the scroll container scrolls
+          // if the content is wider than the viewport.
+          <table className={`mt-4 w-max border-separate border-spacing-0 text-base ${zoomClass}`}>
             <thead className="sticky top-0 z-20">
               <tr>
-                <th scope="col" className={`sticky left-0 z-30 min-w-[12rem] border-l text-left ${HEAD}`}>
+                <th scope="col" className={`sticky left-0 z-30 border-l text-left ${HEAD}`}>
                   Lifter
                 </th>
                 {showTeam ? (
-                  <th scope="col" className={`w-32 text-left ${HEAD}`}>
+                  <th scope="col" className={`text-left ${HEAD}`}>
                     Team
                   </th>
                 ) : null}
                 {showSession ? (
-                  <th scope="col" className={`w-24 text-left ${HEAD}`}>
+                  <th scope="col" className={`text-left ${HEAD}`}>
                     Session
                   </th>
                 ) : null}
                 {showFlight ? (
-                  <th scope="col" className={`w-24 text-left ${HEAD}`}>
+                  <th scope="col" className={`text-left ${HEAD}`}>
                     Flight
                   </th>
                 ) : null}
                 {showPlatform ? (
-                  <th scope="col" className={`w-28 text-left ${HEAD}`}>
+                  <th scope="col" className={`text-left ${HEAD}`}>
                     Platform
                   </th>
                 ) : null}
                 {showLot ? (
-                  <th scope="col" className={`w-12 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Lot
                   </th>
                 ) : null}
                 {showBw ? (
-                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     BW
                   </th>
                 ) : null}
                 {showClass ? (
-                  <th scope="col" className={`w-28 text-left ${HEAD}`}>
+                  <th scope="col" className={`text-left ${HEAD}`}>
                     Class
                   </th>
                 ) : null}
                 {showDiv ? (
-                  <th scope="col" className={`w-24 text-left ${HEAD}`}>
+                  <th scope="col" className={`text-left ${HEAD}`}>
                     Div
                   </th>
                 ) : null}
@@ -496,49 +499,49 @@ export function WarmUpDisplay({
                   <Fragment key={lift}>
                     <LiftHeader lift={lift} showRack={showRack} showAttempts={attemptsByLift[lift]} showBest={showBest} />
                     {showSubTotal && lift === 'bench' ? (
-                      <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                      <th scope="col" className={`text-center ${HEAD}`}>
                         S+B
                       </th>
                     ) : null}
                   </Fragment>
                 ))}
                 {showTotal ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Total
                   </th>
                 ) : null}
                 {showGl ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     IPF GL
                   </th>
                 ) : null}
                 {showCurPlace ? (
-                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Place
                   </th>
                 ) : null}
                 {showPredPlace ? (
-                  <th scope="col" className={`w-16 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Pred place
                   </th>
                 ) : null}
                 {showPredTotal ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Pred total
                   </th>
                 ) : null}
                 {showPredGl ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Pred GL
                   </th>
                 ) : null}
                 {showTeamActual ? (
-                  <th scope="col" className={`w-20 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Team pts
                   </th>
                 ) : null}
                 {showTeamPred ? (
-                  <th scope="col" className={`w-24 text-center ${HEAD}`}>
+                  <th scope="col" className={`text-center ${HEAD}`}>
                     Pred team pts
                   </th>
                 ) : null}
@@ -904,19 +907,19 @@ function LiftHeader({
   return (
     <>
       {showRack && liftHasRack(lift) ? (
-        <th scope="col" className={`w-24 text-center ${HEAD}`}>
+        <th scope="col" className={`text-center ${HEAD}`}>
           {LIFT_LABELS[lift]} rack
         </th>
       ) : null}
       {showAttempts
         ? ATTEMPT_NUMBERS.map((attemptNumber) => (
-            <th key={`${lift}-${attemptNumber}`} scope="col" className={`w-16 text-center ${HEAD}`}>
+            <th key={`${lift}-${attemptNumber}`} scope="col" className={`text-center ${HEAD}`}>
               {attemptNumber === 1 ? `${LIFT_LABELS[lift]} ${attemptNumber}` : String(attemptNumber)}
             </th>
           ))
         : null}
       {showBest ? (
-        <th scope="col" className={`w-16 text-center ${HEAD}`}>
+        <th scope="col" className={`text-center ${HEAD}`}>
           {/* Without the attempt columns the plain "Best" header can't be told apart from the other
               lifts' Best columns, so name the lift when attempts are hidden. */}
           {showAttempts ? 'Best' : `${LIFT_LABELS[lift]} best`}
