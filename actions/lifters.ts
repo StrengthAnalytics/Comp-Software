@@ -10,12 +10,12 @@ import type { Database } from '@/types/database.types';
 
 export type LifterSearchResult = Pick<
   Database['public']['Tables']['lifters']['Row'],
-  'id' | 'first_name' | 'surname' | 'gender' | 'ipf_member_id' | 'club' | 'country'
+  'id' | 'first_name' | 'surname' | 'gender' | 'date_of_birth' | 'ipf_member_id' | 'club' | 'country'
 >;
 
 const SEARCH_LIMIT = 20;
 
-const LIFTER_FIELDS = 'id, first_name, surname, gender, ipf_member_id, club, country';
+const LIFTER_FIELDS = 'id, first_name, surname, gender, date_of_birth, ipf_member_id, club, country';
 
 function toRow(input: LifterInput) {
   return {

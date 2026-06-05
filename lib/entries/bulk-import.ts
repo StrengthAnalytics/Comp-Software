@@ -269,9 +269,13 @@ export function parseBulkImport(text: string, lifts: Lifts): ParsedImportRow[] {
       errors.push(`Unrecognised gender "${genderRaw.trim()}".`);
     }
 
+    // Date of birth is required: the age category is assigned from (competition year − birth year),
+    // so a lifter cannot be registered without it.
     const dateOfBirth = parseFlexibleDate(cellAt(cells, indexByKey, 'dateOfBirth'));
     if (!dateOfBirth.ok) {
       errors.push('Invalid date of birth.');
+    } else if (dateOfBirth.value === null) {
+      errors.push('Date of birth is required.');
     }
 
     const lot = parsePositiveInt(cellAt(cells, indexByKey, 'lot'));

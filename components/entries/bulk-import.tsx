@@ -122,8 +122,9 @@ export function BulkImport({ competitionId, lifts }: { competitionId: string; li
           </button>
         </div>
         <p className="text-xs text-neutral-500">
-          Gender accepts M/F or Male/Female. Dates accept YYYY-MM-DD or DD/MM/YYYY. Division and weight class are matched
-          by name; openers and bodyweight are optional.
+          Gender accepts M/F or Male/Female. Date of birth is required (YYYY-MM-DD or DD/MM/YYYY) — the age category is
+          set from it. Division and weight class are matched by name; leave Division blank to assign the age category
+          automatically. Openers and bodyweight are optional.
         </p>
       </div>
 

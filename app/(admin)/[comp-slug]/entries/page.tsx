@@ -69,6 +69,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
         competitionId={comp.id}
         competitionName={comp.name}
         competitionStatus={comp.status}
+        competitionStartsOn={comp.starts_on}
         lifts={LIFTS_FOR_EVENT[comp.event_type]}
         divisions={divisions ?? []}
         weightClasses={weightClasses ?? []}

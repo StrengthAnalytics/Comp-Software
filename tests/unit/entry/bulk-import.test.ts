@@ -80,11 +80,23 @@ describe('parseBulkImport', () => {
   });
 
   it('accepts a row with a first name and no surname', () => {
-    const text = 'Madonna\t\tF\t\t\t\t\t\t\t\t\t\t\t';
+    const text = 'Madonna\t\tF\t1958-08-16\t\t\t\t\t\t\t\t\t\t';
     const [row] = parseBulkImport(text, FULL_POWER);
     expect(row.errors).toEqual([]);
     expect(row.firstName).toBe('Madonna');
     expect(row.surname).toBe('');
+  });
+
+  it('requires a date of birth', () => {
+    const text = 'Dana\tSmith\tF\t\t\t\t\t\t\t\t\t\t\t';
+    expect(parseBulkImport(text, FULL_POWER)[0].errors).toContain('Date of birth is required.');
+  });
+
+  it('flags an unparseable date of birth without also reporting it missing', () => {
+    const text = 'Dana\tSmith\tF\t32/13/1995\t\t\t\t\t\t\t\t\t\t';
+    const [row] = parseBulkImport(text, FULL_POWER);
+    expect(row.errors).toContain('Invalid date of birth.');
+    expect(row.errors).not.toContain('Date of birth is required.');
   });
 
   it('flags a non-numeric bodyweight', () => {

@@ -611,7 +611,7 @@ function NewLifterForm({
         <TextField label="Club" value={club} onChange={setClub} />
         <TextField label="Country" value={country} onChange={setCountry} />
         <label className="flex flex-col gap-1">
-          <span className={LABEL_CLASS}>Date of birth</span>
+          <span className={LABEL_CLASS}>Date of birth (required)</span>
           <input
             type="date"
             value={dateOfBirth}
@@ -624,7 +624,7 @@ function NewLifterForm({
         <button
           type="button"
           onClick={submit}
-          disabled={pending || firstName.trim() === ''}
+          disabled={pending || firstName.trim() === '' || dateOfBirth.trim() === ''}
           className={PRIMARY_BUTTON}
         >
           {pending ? 'Registering…' : 'Create & register'}
@@ -733,6 +733,9 @@ function AddEntry({
               ) : (
                 results.map((lifter) => {
                   const alreadyEntered = registeredLifterIds.has(lifter.id);
+                  // The age category is assigned from the date of birth, so a lifter without one on
+                  // file can't be registered until it's added (e.g. via a bulk import that carries it).
+                  const missingDob = !lifter.date_of_birth;
                   return (
                     <div key={lifter.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                       <div>
@@ -746,14 +749,18 @@ function AddEntry({
                       {alreadyEntered ? (
                         <span className="text-xs text-neutral-400">Already entered</span>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => register(lifter.id)}
-                          disabled={pending}
-                          className={GHOST_BUTTON}
-                        >
-                          Register
-                        </button>
+                        missingDob ? (
+                          <span className="text-xs text-amber-700">Add a date of birth to register</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => register(lifter.id)}
+                            disabled={pending}
+                            className={GHOST_BUTTON}
+                          >
+                            Register
+                          </button>
+                        )
                       )}
                     </div>
                   );
@@ -842,6 +849,7 @@ export function EntriesManager({
   competitionId,
   competitionName,
   competitionStatus,
+  competitionStartsOn,
   lifts,
   divisions,
   weightClasses,
@@ -850,6 +858,7 @@ export function EntriesManager({
   competitionId: string;
   competitionName: string;
   competitionStatus: Database['public']['Enums']['comp_status'];
+  competitionStartsOn: string | null;
   lifts: Lifts;
   divisions: DivisionOption[];
   weightClasses: WeightClassOption[];
@@ -876,11 +885,28 @@ export function EntriesManager({
     [entries, normalizedQuery],
   );
 
+  const hasDate = competitionStartsOn !== null;
+
   return (
     <div className="space-y-6">
-      <AddEntry competitionId={competitionId} registeredLifterIds={registeredLifterIds} />
-
-      <BulkImport competitionId={competitionId} lifts={lifts} />
+      {hasDate ? (
+        <>
+          <AddEntry competitionId={competitionId} registeredLifterIds={registeredLifterIds} />
+          <BulkImport competitionId={competitionId} lifts={lifts} />
+        </>
+      ) : (
+        <section className="rounded-lg border border-amber-300 bg-amber-50 p-6">
+          <h2 className="text-lg font-semibold tracking-tight text-amber-900">Set a competition date first</h2>
+          <p className="mt-1 text-sm text-amber-800">
+            Lifters are assigned an age category automatically from the competition date and each lifter&rsquo;s date
+            of birth, so adding lifters is disabled until this competition has a date. Add one on the{' '}
+            <a className="font-medium underline" href={`/comps/${competitionId}/edit`}>
+              Setup screen
+            </a>
+            , then come back to register lifters.
+          </p>
+        </section>
+      )}
 
       <div>
         <div className="flex flex-wrap items-center justify-between gap-3">

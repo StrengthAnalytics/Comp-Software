@@ -8,6 +8,7 @@ import { adminGuard } from '@/lib/auth/guard';
 import { canRecordMeetResults } from '@/lib/comps/meet-status';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
+import { matchDivisionByName, resolveAgeCategory } from '@/lib/divisions/age-category';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
 import { formatLifterName } from '@/lib/lifters/name';
 import {
@@ -149,8 +150,10 @@ function mapEntryWriteError(error: PostgrestError): ActionResult<never> {
   return fail('Could not save the entry. Please try again.');
 }
 
-// Registers a lifter for a comp. Class, division, lot and weigh-in details are added afterwards
-// via updateEntryAction, so this only needs the comp and lifter link.
+// Registers a lifter for a comp. Weight class, lot and weigh-in details are added afterwards via
+// updateEntryAction; the age division is assigned here from (competition year − birth year), so the
+// comp must have a date and the lifter a date of birth. The entries screen also gates on both, so
+// these checks are backstops. The operator can still change the division afterwards.
 export async function createEntryAction(input: {
   competitionId: string;
   lifterId: string;
@@ -165,9 +168,59 @@ export async function createEntryAction(input: {
     }
 
     const supabase = await createClient();
+
+    const { data: comp, error: compError } = await supabase
+      .from('competitions')
+      .select('starts_on')
+      .eq('id', parsed.data.competitionId)
+      .maybeSingle();
+    if (compError) {
+      Sentry.captureException(compError);
+      return fail('Could not register the lifter. Please try again.');
+    }
+    if (!comp) {
+      return fail('Could not find that competition.');
+    }
+    if (!comp.starts_on) {
+      return fail('Set a competition date before adding lifters — the age category is worked out from it.');
+    }
+
+    const { data: lifter, error: lifterError } = await supabase
+      .from('lifters')
+      .select('date_of_birth')
+      .eq('id', parsed.data.lifterId)
+      .maybeSingle();
+    if (lifterError) {
+      Sentry.captureException(lifterError);
+      return fail('Could not register the lifter. Please try again.');
+    }
+    if (!lifter) {
+      return fail('Could not find that lifter.');
+    }
+    if (!lifter.date_of_birth) {
+      return fail("Add the lifter's date of birth before registering them — the age category needs it.");
+    }
+
+    // Auto-select the age division from the comp year and birth year, resolved to one of this comp's
+    // division rows by name. A comp missing that division leaves it null for the operator to fill in.
+    const categoryName = resolveAgeCategory(comp.starts_on, lifter.date_of_birth);
+    let divisionId: string | null = null;
+    if (categoryName) {
+      const { data: divisions, error: divisionsError } = await supabase
+        .from('divisions')
+        .select('id, name')
+        .eq('competition_id', parsed.data.competitionId);
+      if (divisionsError) {
+        Sentry.captureException(divisionsError);
+        return fail('Could not register the lifter. Please try again.');
+      }
+      divisionId = matchDivisionByName(divisions ?? [], categoryName)?.id ?? null;
+    }
+
     const { error } = await supabase.from('entries').insert({
       competition_id: parsed.data.competitionId,
       lifter_id: parsed.data.lifterId,
+      division_id: divisionId,
     });
 
     if (error) {
@@ -705,7 +758,7 @@ export async function bulkImportEntriesAction(input: {
 
     const { data: comp, error: compError } = await supabase
       .from('competitions')
-      .select('id, event_type, is_team_competition, status')
+      .select('id, event_type, is_team_competition, status, starts_on')
       .eq('id', parsedInput.data.competitionId)
       .maybeSingle();
     if (compError) {
@@ -714,6 +767,9 @@ export async function bulkImportEntriesAction(input: {
     }
     if (!comp) {
       return fail('Could not find that competition.');
+    }
+    if (!comp.starts_on) {
+      return fail('Set a competition date before importing lifters — the age category is worked out from it.');
     }
 
     const rows = parseBulkImport(parsedInput.data.text, LIFTS_FOR_EVENT[comp.event_type]);
@@ -765,6 +821,9 @@ export async function bulkImportEntriesAction(input: {
 
       const warnings: string[] = [];
 
+      // A division named in the sheet wins; otherwise auto-assign the age category from the comp year
+      // and the lifter's birth year (the row is guaranteed a date of birth — the parser errors any row
+      // without one before we reach here). A derived category the comp doesn't have is a soft warning.
       let divisionId: string | null = null;
       if (row.divisionName) {
         const division = divisionByName.get(row.divisionName.toLowerCase());
@@ -772,6 +831,16 @@ export async function bulkImportEntriesAction(input: {
           divisionId = division.id;
         } else {
           warnings.push(`Division "${row.divisionName}" not found — left blank.`);
+        }
+      } else {
+        const categoryName = resolveAgeCategory(comp.starts_on, row.dateOfBirth);
+        if (categoryName) {
+          const division = divisionByName.get(categoryName.toLowerCase());
+          if (division) {
+            divisionId = division.id;
+          } else {
+            warnings.push(`Age category "${categoryName}" has no matching division — left blank.`);
+          }
         }
       }
 
