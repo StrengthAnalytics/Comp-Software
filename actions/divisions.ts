@@ -10,7 +10,7 @@ import { isUniqueViolation } from '@/lib/supabase/errors';
 import { divisionInputSchema, divisionUpdateSchema } from '@/types/competition';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
-import { DEFAULT_DIVISIONS } from '@/lib/constants';
+import { defaultDivisionRows } from '@/lib/comps/seed-defaults';
 
 function mapDivisionWriteError(error: PostgrestError): ActionResult<never> {
   if (isUniqueViolation(error)) {
@@ -124,14 +124,9 @@ export async function seedDefaultDivisionsAction(competitionId: string): Promise
     }
 
     const supabase = await createClient();
-    const rows = DEFAULT_DIVISIONS.map((name, index) => ({
-      competition_id: id.data,
-      name,
-      sort_order: index,
-    }));
     const { error } = await supabase
       .from('divisions')
-      .upsert(rows, { onConflict: 'competition_id,name', ignoreDuplicates: true });
+      .upsert(defaultDivisionRows(id.data), { onConflict: 'competition_id,name', ignoreDuplicates: true });
 
     if (error) {
       Sentry.captureException(error);
