@@ -146,32 +146,35 @@ export const DEFAULT_DIVISIONS: readonly string[] = [
 export type WeightClassSeed = {
   name: string;
   gender: Gender;
-  // lower_kg is an exclusive lower bound, upper_kg an inclusive upper bound. upper_kg null = unlimited.
+  // Bounds are inclusive on both ends, stored to 2 dp. Each class's lower bound is the class below's
+  // upper bound + 0.01 kg, so a boundary is unambiguous (83.00 kg is -83, 83.01 kg is -93). The
+  // lightest class has a lower bound of 0 (it catches every lighter lifter); upper_kg null = unlimited.
   lower_kg: number;
   upper_kg: number | null;
 };
 
 // Default IPF classic weight classes, in running order per gender. Includes the sub-junior/junior
-// lightest classes (53 kg men, 43 kg women) below the eight open classes.
+// lightest classes (53 kg men, 43 kg women) below the eight open classes. Lower bounds sit 0.01 kg
+// above the class below's upper bound so the bands don't share a boundary value.
 export const DEFAULT_WEIGHT_CLASSES: readonly WeightClassSeed[] = [
   { name: '-53 kg', gender: 'male', lower_kg: 0, upper_kg: 53 },
-  { name: '-59 kg', gender: 'male', lower_kg: 53, upper_kg: 59 },
-  { name: '-66 kg', gender: 'male', lower_kg: 59, upper_kg: 66 },
-  { name: '-74 kg', gender: 'male', lower_kg: 66, upper_kg: 74 },
-  { name: '-83 kg', gender: 'male', lower_kg: 74, upper_kg: 83 },
-  { name: '-93 kg', gender: 'male', lower_kg: 83, upper_kg: 93 },
-  { name: '-105 kg', gender: 'male', lower_kg: 93, upper_kg: 105 },
-  { name: '-120 kg', gender: 'male', lower_kg: 105, upper_kg: 120 },
-  { name: '120 kg+', gender: 'male', lower_kg: 120, upper_kg: null },
+  { name: '-59 kg', gender: 'male', lower_kg: 53.01, upper_kg: 59 },
+  { name: '-66 kg', gender: 'male', lower_kg: 59.01, upper_kg: 66 },
+  { name: '-74 kg', gender: 'male', lower_kg: 66.01, upper_kg: 74 },
+  { name: '-83 kg', gender: 'male', lower_kg: 74.01, upper_kg: 83 },
+  { name: '-93 kg', gender: 'male', lower_kg: 83.01, upper_kg: 93 },
+  { name: '-105 kg', gender: 'male', lower_kg: 93.01, upper_kg: 105 },
+  { name: '-120 kg', gender: 'male', lower_kg: 105.01, upper_kg: 120 },
+  { name: '120 kg+', gender: 'male', lower_kg: 120.01, upper_kg: null },
   { name: '-43 kg', gender: 'female', lower_kg: 0, upper_kg: 43 },
-  { name: '-47 kg', gender: 'female', lower_kg: 43, upper_kg: 47 },
-  { name: '-52 kg', gender: 'female', lower_kg: 47, upper_kg: 52 },
-  { name: '-57 kg', gender: 'female', lower_kg: 52, upper_kg: 57 },
-  { name: '-63 kg', gender: 'female', lower_kg: 57, upper_kg: 63 },
-  { name: '-69 kg', gender: 'female', lower_kg: 63, upper_kg: 69 },
-  { name: '-76 kg', gender: 'female', lower_kg: 69, upper_kg: 76 },
-  { name: '-84 kg', gender: 'female', lower_kg: 76, upper_kg: 84 },
-  { name: '84 kg+', gender: 'female', lower_kg: 84, upper_kg: null },
+  { name: '-47 kg', gender: 'female', lower_kg: 43.01, upper_kg: 47 },
+  { name: '-52 kg', gender: 'female', lower_kg: 47.01, upper_kg: 52 },
+  { name: '-57 kg', gender: 'female', lower_kg: 52.01, upper_kg: 57 },
+  { name: '-63 kg', gender: 'female', lower_kg: 57.01, upper_kg: 63 },
+  { name: '-69 kg', gender: 'female', lower_kg: 63.01, upper_kg: 69 },
+  { name: '-76 kg', gender: 'female', lower_kg: 69.01, upper_kg: 76 },
+  { name: '-84 kg', gender: 'female', lower_kg: 76.01, upper_kg: 84 },
+  { name: '84 kg+', gender: 'female', lower_kg: 84.01, upper_kg: null },
 ];
 
 // UK records vocabulary -------------------------------------------------------------------------

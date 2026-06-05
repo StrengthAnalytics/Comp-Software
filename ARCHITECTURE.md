@@ -49,7 +49,7 @@ erDiagram
 
 - **competitions**: the meet. Slug, name, federation, kit_type (classic/equipped), event_type (full_power/bench_only/deadlift_only), date range, status (draft/published/active/completed), is_team_competition (team-format flag, full power only).
 - **divisions**: age categories per comp. The seed defaults follow British Powerlifting (U16, U18, U23, Open, M1-M6); each comp owns its own set.
-- **weight_classes**: bodyweight categories per comp with gender, lower_kg, upper_kg.
+- **weight_classes**: bodyweight categories per comp with gender, lower_kg, upper_kg (both 2 dp, inclusive bounds — each class's lower bound is the class below's upper + 0.01 kg, so a boundary is unambiguous: 83.00 kg is -83, 83.01 kg is -93).
 - **platforms**: physical lifting platforms (one per comp normally, two for bigger meets).
 - **sessions**: a chunk of lifting tied to a date, time, and platform.
 - **flights**: a group of ~8-14 lifters within a session who lift together.

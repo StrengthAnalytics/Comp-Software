@@ -10,7 +10,7 @@ import { isUniqueViolation } from '@/lib/supabase/errors';
 import { weightClassInputSchema, weightClassUpdateSchema } from '@/types/competition';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
-import { DEFAULT_WEIGHT_CLASSES } from '@/lib/constants';
+import { defaultWeightClassRows } from '@/lib/comps/seed-defaults';
 
 function mapWeightClassWriteError(error: PostgrestError): ActionResult<never> {
   if (isUniqueViolation(error)) {
@@ -140,17 +140,9 @@ export async function seedDefaultWeightClassesAction(competitionId: string): Pro
     }
 
     const supabase = await createClient();
-    const rows = DEFAULT_WEIGHT_CLASSES.map((weightClass, index) => ({
-      competition_id: id.data,
-      name: weightClass.name,
-      gender: weightClass.gender,
-      lower_kg: weightClass.lower_kg,
-      upper_kg: weightClass.upper_kg,
-      sort_order: index,
-    }));
     const { error } = await supabase
       .from('weight_classes')
-      .upsert(rows, { onConflict: 'competition_id,name', ignoreDuplicates: true });
+      .upsert(defaultWeightClassRows(id.data), { onConflict: 'competition_id,name', ignoreDuplicates: true });
 
     if (error) {
       Sentry.captureException(error);

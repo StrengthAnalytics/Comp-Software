@@ -8,6 +8,7 @@ import { adminGuard } from '@/lib/auth/guard';
 import { canRecordMeetResults } from '@/lib/comps/meet-status';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
+import { matchDivisionByName, planAgeCategoryRecalc, resolveAgeCategory } from '@/lib/divisions/age-category';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
 import { formatLifterName } from '@/lib/lifters/name';
 import {
@@ -149,8 +150,10 @@ function mapEntryWriteError(error: PostgrestError): ActionResult<never> {
   return fail('Could not save the entry. Please try again.');
 }
 
-// Registers a lifter for a comp. Class, division, lot and weigh-in details are added afterwards
-// via updateEntryAction, so this only needs the comp and lifter link.
+// Registers a lifter for a comp. Weight class, lot and weigh-in details are added afterwards via
+// updateEntryAction; the age division is assigned here from (competition year − birth year), so the
+// comp must have a date and the lifter a date of birth. The entries screen also gates on both, so
+// these checks are backstops. The operator can still change the division afterwards.
 export async function createEntryAction(input: {
   competitionId: string;
   lifterId: string;
@@ -165,9 +168,59 @@ export async function createEntryAction(input: {
     }
 
     const supabase = await createClient();
+
+    const { data: comp, error: compError } = await supabase
+      .from('competitions')
+      .select('starts_on')
+      .eq('id', parsed.data.competitionId)
+      .maybeSingle();
+    if (compError) {
+      Sentry.captureException(compError);
+      return fail('Could not register the lifter. Please try again.');
+    }
+    if (!comp) {
+      return fail('Could not find that competition.');
+    }
+    if (!comp.starts_on) {
+      return fail('Set a competition date before adding lifters — the age category is worked out from it.');
+    }
+
+    const { data: lifter, error: lifterError } = await supabase
+      .from('lifters')
+      .select('date_of_birth')
+      .eq('id', parsed.data.lifterId)
+      .maybeSingle();
+    if (lifterError) {
+      Sentry.captureException(lifterError);
+      return fail('Could not register the lifter. Please try again.');
+    }
+    if (!lifter) {
+      return fail('Could not find that lifter.');
+    }
+    if (!lifter.date_of_birth) {
+      return fail("Add the lifter's date of birth before registering them — the age category needs it.");
+    }
+
+    // Auto-select the age division from the comp year and birth year, resolved to one of this comp's
+    // division rows by name. A comp missing that division leaves it null for the operator to fill in.
+    const categoryName = resolveAgeCategory(comp.starts_on, lifter.date_of_birth);
+    let divisionId: string | null = null;
+    if (categoryName) {
+      const { data: divisions, error: divisionsError } = await supabase
+        .from('divisions')
+        .select('id, name')
+        .eq('competition_id', parsed.data.competitionId);
+      if (divisionsError) {
+        Sentry.captureException(divisionsError);
+        return fail('Could not register the lifter. Please try again.');
+      }
+      divisionId = matchDivisionByName(divisions ?? [], categoryName)?.id ?? null;
+    }
+
     const { error } = await supabase.from('entries').insert({
       competition_id: parsed.data.competitionId,
       lifter_id: parsed.data.lifterId,
+      division_id: divisionId,
     });
 
     if (error) {
@@ -179,6 +232,129 @@ export async function createEntryAction(input: {
     }
 
     return ok();
+  });
+}
+
+// Cap on entry ids per bulk update, so a large single-division field stays well under the PostgREST
+// query-string length limit (each id is a 36-char UUID). Mirrors the duplicate-comp insert chunking.
+const ENTRY_UPDATE_CHUNK_SIZE = 200;
+
+export type AgeCategoryRecalcSummary = {
+  updated: number;
+  unchanged: number;
+  noDateOfBirth: number;
+  noMatchingDivision: number;
+};
+
+// Re-derives every entry's age division from the comp date and the lifter's current date of birth,
+// for when a date of birth is corrected after registration (the division is otherwise only assigned
+// at registration time). Sets each lifter to their age-category division by name; an entry with no
+// date of birth, or whose computed category isn't a division in this comp, is reported and left as-is
+// (never blanked). This overrides any manual division change, which the operator confirms in the UI.
+// A setup-side write (no attempts/results touched), so it is not status-gated.
+export async function recalculateAgeCategoriesAction(input: {
+  competitionId: string;
+}): Promise<ActionResult<AgeCategoryRecalcSummary>> {
+  return Sentry.withServerActionInstrumentation('recalculateAgeCategories', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = z.object({ competitionId: z.uuid() }).safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not recalculate age categories. Please try again.');
+    }
+
+    const supabase = await createClient();
+
+    const { data: comp, error: compError } = await supabase
+      .from('competitions')
+      .select('starts_on, status')
+      .eq('id', parsed.data.competitionId)
+      .maybeSingle();
+    if (compError) {
+      Sentry.captureException(compError);
+      return fail('Could not recalculate age categories. Please try again.');
+    }
+    if (!comp) {
+      return fail('Could not find that competition.');
+    }
+    if (!comp.starts_on) {
+      return fail('Set a competition date before recalculating age categories.');
+    }
+    // A bulk re-home of divisions changes placement groupings, so it is blocked once a comp is
+    // completed to protect the final record — matching deleteAllEntriesAction. Single-entry division
+    // edits stay allowed at any status (a setup write, ARCHITECTURE.md §7).
+    if (comp.status === 'completed') {
+      return fail('This competition is completed, so its age categories cannot be recalculated in bulk.');
+    }
+
+    const { data: entries, error: entriesError } = await supabase
+      .from('entries')
+      .select('id, lifter_id, division_id')
+      .eq('competition_id', parsed.data.competitionId);
+    if (entriesError) {
+      Sentry.captureException(entriesError);
+      return fail('Could not recalculate age categories. Please try again.');
+    }
+
+    const entryRows = entries ?? [];
+    if (entryRows.length === 0) {
+      return ok({ updated: 0, unchanged: 0, noDateOfBirth: 0, noMatchingDivision: 0 });
+    }
+
+    const lifterIds = [...new Set(entryRows.map((entry) => entry.lifter_id))];
+    const [{ data: lifters, error: liftersError }, { data: divisions, error: divisionsError }] = await Promise.all([
+      supabase.from('lifters').select('id, date_of_birth').in('id', lifterIds),
+      supabase.from('divisions').select('id, name').eq('competition_id', parsed.data.competitionId),
+    ]);
+    if (liftersError) {
+      Sentry.captureException(liftersError);
+      return fail('Could not recalculate age categories. Please try again.');
+    }
+    if (divisionsError) {
+      Sentry.captureException(divisionsError);
+      return fail('Could not recalculate age categories. Please try again.');
+    }
+
+    const dobByLifter = new Map((lifters ?? []).map((lifter) => [lifter.id, lifter.date_of_birth]));
+    const plan = planAgeCategoryRecalc(
+      comp.starts_on,
+      entryRows.map((entry) => ({
+        id: entry.id,
+        dateOfBirth: dobByLifter.get(entry.lifter_id) ?? null,
+        divisionId: entry.division_id,
+      })),
+      divisions ?? [],
+    );
+
+    // Group updates by target division: a few hundred entries become at most one request per division
+    // instead of one per lifter. A re-run is idempotent, so a mid-way failure is safe to retry.
+    const entryIdsByDivision = new Map<string, string[]>();
+    for (const update of plan.updates) {
+      const list = entryIdsByDivision.get(update.divisionId) ?? [];
+      list.push(update.entryId);
+      entryIdsByDivision.set(update.divisionId, list);
+    }
+
+    // Chunk each division's ids so a large field (e.g. a hundred-plus Open lifters) can't blow the
+    // PostgREST filter past the URL length limit — the same guard the duplicate-comp path applies.
+    for (const [divisionId, entryIds] of entryIdsByDivision) {
+      for (let index = 0; index < entryIds.length; index += ENTRY_UPDATE_CHUNK_SIZE) {
+        const chunk = entryIds.slice(index, index + ENTRY_UPDATE_CHUNK_SIZE);
+        const { error } = await supabase.from('entries').update({ division_id: divisionId }).in('id', chunk);
+        if (error) {
+          Sentry.captureException(error);
+          return fail('Could not recalculate age categories. Please try again.');
+        }
+      }
+    }
+
+    return ok({
+      updated: plan.updated,
+      unchanged: plan.unchanged,
+      noDateOfBirth: plan.noDateOfBirth,
+      noMatchingDivision: plan.noMatchingDivision,
+    });
   });
 }
 
@@ -705,7 +881,7 @@ export async function bulkImportEntriesAction(input: {
 
     const { data: comp, error: compError } = await supabase
       .from('competitions')
-      .select('id, event_type, is_team_competition, status')
+      .select('id, event_type, is_team_competition, status, starts_on')
       .eq('id', parsedInput.data.competitionId)
       .maybeSingle();
     if (compError) {
@@ -714,6 +890,9 @@ export async function bulkImportEntriesAction(input: {
     }
     if (!comp) {
       return fail('Could not find that competition.');
+    }
+    if (!comp.starts_on) {
+      return fail('Set a competition date before importing lifters — the age category is worked out from it.');
     }
 
     const rows = parseBulkImport(parsedInput.data.text, LIFTS_FOR_EVENT[comp.event_type]);
@@ -765,13 +944,28 @@ export async function bulkImportEntriesAction(input: {
 
       const warnings: string[] = [];
 
+      // A matched division named in the sheet wins. Otherwise — no name given, or a name the comp
+      // doesn't have — fall back to the age category derived from the comp year and the lifter's birth
+      // year (the row is guaranteed a date of birth; the parser errors any row without one first), so a
+      // mistyped Division still gets the right category rather than being left blank.
       let divisionId: string | null = null;
       if (row.divisionName) {
-        const division = divisionByName.get(row.divisionName.toLowerCase());
-        if (division) {
-          divisionId = division.id;
+        const named = divisionByName.get(row.divisionName.toLowerCase());
+        if (named) {
+          divisionId = named.id;
         } else {
-          warnings.push(`Division "${row.divisionName}" not found — left blank.`);
+          warnings.push(`Division "${row.divisionName}" not found — using the age category instead.`);
+        }
+      }
+      if (divisionId === null) {
+        const categoryName = resolveAgeCategory(comp.starts_on, row.dateOfBirth);
+        if (categoryName) {
+          const derived = divisionByName.get(categoryName.toLowerCase());
+          if (derived) {
+            divisionId = derived.id;
+          } else {
+            warnings.push(`Age category "${categoryName}" has no matching division — left blank.`);
+          }
         }
       }
 

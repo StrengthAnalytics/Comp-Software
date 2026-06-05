@@ -9,6 +9,7 @@ import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
+import { seedCompetitionDefaults } from '@/lib/comps/seed-defaults';
 import { competitionInputSchema } from '@/types/competition';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
@@ -65,8 +66,17 @@ export async function createCompetitionAction(
       return mapCompetitionWriteError(error);
     }
 
+    // Every comp is created with the canonical IPF age divisions and weight classes, so it is never
+    // empty. Best-effort: the comp already exists, so a seed failure is logged and surfaced on the edit
+    // screen (via ?setup=seed-failed) with the manual "Seed defaults" buttons as the idempotent
+    // recovery, rather than losing the creation or leaving the operator unaware the seed didn't run.
+    const seedError = await seedCompetitionDefaults(supabase, data.id);
+    if (seedError) {
+      Sentry.captureException(seedError);
+    }
+
     revalidatePath('/comps');
-    redirect(`/comps/${data.id}/edit`);
+    redirect(seedError ? `/comps/${data.id}/edit?setup=seed-failed` : `/comps/${data.id}/edit`);
   });
 }
 

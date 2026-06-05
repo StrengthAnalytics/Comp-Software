@@ -2,12 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createEntryAction, deleteEntryAction, updateEntryAction } from '@/actions/entries';
+import {
+  createEntryAction,
+  deleteEntryAction,
+  recalculateAgeCategoriesAction,
+  updateEntryAction,
+} from '@/actions/entries';
 import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { reconcileForm, type EntryFormValues } from '@/lib/entries/form-sync';
 import {
   createLifterAction,
+  deleteLifterAction,
   searchLiftersAction,
   updateLifterAction,
   type LifterSearchResult,
@@ -428,7 +434,7 @@ function EntryCard({
           label="Bodyweight (kg)"
           value={form.bodyweight}
           onChange={(value) => update('bodyweight', value)}
-          step="0.1"
+          step="0.01"
         />
 
         {lifts.squat ? (
@@ -583,6 +589,10 @@ function NewLifterForm({
 
       const registered = await createEntryAction({ competitionId, lifterId: created.data.id });
       if (registered.status === 'error') {
+        // Registration failed after the lifter was created — roll the lifter back so a retry doesn't
+        // leave an orphaned (entry-less) duplicate. Best-effort: the registration error is what the
+        // operator needs to see and fix.
+        await deleteLifterAction({ id: created.data.id });
         setError(readError(registered));
         return;
       }
@@ -611,7 +621,7 @@ function NewLifterForm({
         <TextField label="Club" value={club} onChange={setClub} />
         <TextField label="Country" value={country} onChange={setCountry} />
         <label className="flex flex-col gap-1">
-          <span className={LABEL_CLASS}>Date of birth</span>
+          <span className={LABEL_CLASS}>Date of birth (required)</span>
           <input
             type="date"
             value={dateOfBirth}
@@ -624,7 +634,7 @@ function NewLifterForm({
         <button
           type="button"
           onClick={submit}
-          disabled={pending || firstName.trim() === ''}
+          disabled={pending || firstName.trim() === '' || dateOfBirth.trim() === ''}
           className={PRIMARY_BUTTON}
         >
           {pending ? 'Registering…' : 'Create & register'}
@@ -733,6 +743,9 @@ function AddEntry({
               ) : (
                 results.map((lifter) => {
                   const alreadyEntered = registeredLifterIds.has(lifter.id);
+                  // The age category is assigned from the date of birth, so a lifter without one on
+                  // file can't be registered until it's added (e.g. via a bulk import that carries it).
+                  const missingDob = !lifter.date_of_birth;
                   return (
                     <div key={lifter.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                       <div>
@@ -746,14 +759,18 @@ function AddEntry({
                       {alreadyEntered ? (
                         <span className="text-xs text-neutral-400">Already entered</span>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => register(lifter.id)}
-                          disabled={pending}
-                          className={GHOST_BUTTON}
-                        >
-                          Register
-                        </button>
+                        missingDob ? (
+                          <span className="text-xs text-amber-700">Add a date of birth to register</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => register(lifter.id)}
+                            disabled={pending}
+                            className={GHOST_BUTTON}
+                          >
+                            Register
+                          </button>
+                        )
                       )}
                     </div>
                   );
@@ -838,10 +855,71 @@ function CopyEntriesButton({
   );
 }
 
+// Re-derives every registered lifter's age division from the comp date and their current date of
+// birth. The division is otherwise only assigned at registration, so this is the way to pick up a
+// date-of-birth correction made afterwards. Confirms first (it overrides any manual division change)
+// and reports a one-line summary of what changed.
+function RecalculateAgeCategories({
+  competitionId,
+  entryCount,
+}: {
+  competitionId: string;
+  entryCount: number;
+}) {
+  const router = useRouter();
+  const [message, setMessage] = useState<string | null>(null);
+  const [isError, setIsError] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function run() {
+    const confirmed = globalThis.confirm(
+      `Recalculate age categories for all ${entryCount} lifter${entryCount === 1 ? '' : 's'} from their date of birth? ` +
+        "This sets each lifter's division to their age category and overrides any manual division change.",
+    );
+    if (!confirmed) {
+      return;
+    }
+    setMessage(null);
+    setIsError(false);
+    startTransition(async () => {
+      const result = await recalculateAgeCategoriesAction({ competitionId });
+      if (result.status === 'error') {
+        setIsError(true);
+        setMessage(readError(result));
+        return;
+      }
+      const { updated, unchanged, noDateOfBirth, noMatchingDivision } = result.data;
+      const parts = [`${updated} updated`, `${unchanged} unchanged`];
+      if (noDateOfBirth > 0) {
+        parts.push(`${noDateOfBirth} no date of birth`);
+      }
+      if (noMatchingDivision > 0) {
+        parts.push(`${noMatchingDivision} no matching division`);
+      }
+      setMessage(parts.join(' · '));
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {message ? (
+        <span role={isError ? 'alert' : 'status'} className={`text-xs ${isError ? 'text-red-600' : 'text-neutral-600'}`}>
+          {message}
+        </span>
+      ) : null}
+      <button type="button" onClick={run} disabled={pending} className={GHOST_BUTTON}>
+        {pending ? 'Recalculating…' : 'Recalculate age categories'}
+      </button>
+    </div>
+  );
+}
+
 export function EntriesManager({
   competitionId,
   competitionName,
   competitionStatus,
+  competitionStartsOn,
   lifts,
   divisions,
   weightClasses,
@@ -850,6 +928,7 @@ export function EntriesManager({
   competitionId: string;
   competitionName: string;
   competitionStatus: Database['public']['Enums']['comp_status'];
+  competitionStartsOn: string | null;
   lifts: Lifts;
   divisions: DivisionOption[];
   weightClasses: WeightClassOption[];
@@ -876,11 +955,28 @@ export function EntriesManager({
     [entries, normalizedQuery],
   );
 
+  const hasDate = competitionStartsOn !== null;
+
   return (
     <div className="space-y-6">
-      <AddEntry competitionId={competitionId} registeredLifterIds={registeredLifterIds} />
-
-      <BulkImport competitionId={competitionId} lifts={lifts} />
+      {hasDate ? (
+        <>
+          <AddEntry competitionId={competitionId} registeredLifterIds={registeredLifterIds} />
+          <BulkImport competitionId={competitionId} lifts={lifts} />
+        </>
+      ) : (
+        <section className="rounded-lg border border-amber-300 bg-amber-50 p-6">
+          <h2 className="text-lg font-semibold tracking-tight text-amber-900">Set a competition date first</h2>
+          <p className="mt-1 text-sm text-amber-800">
+            Lifters are assigned an age category automatically from the competition date and each lifter&rsquo;s date
+            of birth, so adding lifters is disabled until this competition has a date. Add one on the{' '}
+            <a className="font-medium underline" href={`/comps/${competitionId}/edit`}>
+              Setup screen
+            </a>
+            , then come back to register lifters.
+          </p>
+        </section>
+      )}
 
       <div>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -897,6 +993,9 @@ export function EntriesManager({
                 onChange={(event) => setQuery(event.target.value)}
                 className={`${INPUT_CLASS} w-56`}
               />
+            ) : null}
+            {hasDate && competitionStatus !== 'completed' && entries.length > 0 ? (
+              <RecalculateAgeCategories competitionId={competitionId} entryCount={entries.length} />
             ) : null}
             <CopyEntriesButton
               entries={entries}

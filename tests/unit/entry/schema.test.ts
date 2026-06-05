@@ -110,11 +110,19 @@ describe('entryUpdateSchema', () => {
     expect(entryUpdateSchema.safeParse({ ...base, benchSpotting: 'liftoff' }).success).toBe(false);
   });
 
-  it('rounds weights to one decimal place', () => {
-    const result = entryUpdateSchema.safeParse({ ...base, bodyweightKg: 83.06 });
+  it('rounds bodyweight to two decimal places (IPF weigh-in precision)', () => {
+    const result = entryUpdateSchema.safeParse({ ...base, bodyweightKg: 83.066 });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.bodyweightKg).toBe(83.1);
+      expect(result.data.bodyweightKg).toBe(83.07);
+    }
+  });
+
+  it('keeps openers at one decimal place', () => {
+    const result = entryUpdateSchema.safeParse({ ...base, openerSquatKg: 83.06 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.openerSquatKg).toBe(83.1);
     }
   });
 

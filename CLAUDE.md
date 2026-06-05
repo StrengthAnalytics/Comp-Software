@@ -158,7 +158,7 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 - Federation: IPF-affiliated (other federations deferred).
 - Kit type: classic or equipped, set per comp.
 - Event type: full power (SBD), bench only, or deadlift only.
-- Weights and bodyweights stored in kg with one decimal place.
+- Lift weights stored in kg to one decimal place (0.5 kg increments). Bodyweights and weight-class bounds stored to two decimal places (IPF weigh-in precision, 0.01 kg). Weight-class bounds are inclusive on both ends, each class's lower bound sitting 0.01 kg above the class below's upper, so a boundary is unambiguous (83.00 kg is the -83 class, 83.01 kg is -93).
 - Each comp owns its own divisions and weight classes (rule sets change year to year).
 - A comp can be a team competition (`is_team_competition`, full power only) — see Team competitions below.
 

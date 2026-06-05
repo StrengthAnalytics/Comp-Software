@@ -126,11 +126,11 @@ describe('weightClassInputSchema', () => {
     expect(weightClassInputSchema.safeParse({ ...base, upperKg: 70 }).success).toBe(false);
   });
 
-  it('rounds weights to one decimal place', () => {
-    const result = weightClassInputSchema.safeParse({ ...base, upperKg: 83.06 });
+  it('rounds bounds to two decimal places (so a lower bound can sit 0.01 above the class below)', () => {
+    const result = weightClassInputSchema.safeParse({ ...base, upperKg: 83.066 });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.upperKg).toBe(83.1);
+      expect(result.data.upperKg).toBe(83.07);
     }
   });
 });

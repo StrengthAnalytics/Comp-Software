@@ -80,16 +80,35 @@ describe('parseBulkImport', () => {
   });
 
   it('accepts a row with a first name and no surname', () => {
-    const text = 'Madonna\t\tF\t\t\t\t\t\t\t\t\t\t\t';
+    const text = 'Madonna\t\tF\t1958-08-16\t\t\t\t\t\t\t\t\t\t';
     const [row] = parseBulkImport(text, FULL_POWER);
     expect(row.errors).toEqual([]);
     expect(row.firstName).toBe('Madonna');
     expect(row.surname).toBe('');
   });
 
+  it('requires a date of birth', () => {
+    const text = 'Dana\tSmith\tF\t\t\t\t\t\t\t\t\t\t\t';
+    expect(parseBulkImport(text, FULL_POWER)[0].errors).toContain('Date of birth is required.');
+  });
+
+  it('flags an unparseable date of birth without also reporting it missing', () => {
+    const text = 'Dana\tSmith\tF\t32/13/1995\t\t\t\t\t\t\t\t\t\t';
+    const [row] = parseBulkImport(text, FULL_POWER);
+    expect(row.errors).toContain('Invalid date of birth.');
+    expect(row.errors).not.toContain('Date of birth is required.');
+  });
+
   it('flags a non-numeric bodyweight', () => {
     const text = 'Dana\tSmith\tF\t\t\t\t\t\t\tx\tabc\t\t\t';
     expect(parseBulkImport(text, FULL_POWER)[0].errors).toContain('Bodyweight must be a positive number.');
+  });
+
+  it('keeps bodyweight to two decimal places (IPF weigh-in precision)', () => {
+    const text = 'Dana\tSmith\tF\t1995-04-02\t\t\t\t\t\t\t82.95\t\t\t';
+    const [row] = parseBulkImport(text, FULL_POWER);
+    expect(row.errors).toEqual([]);
+    expect(row.bodyweight).toBe(82.95);
   });
 
   it('falls back to comma separation when there are no tabs', () => {
