@@ -14,6 +14,9 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 
 ## [Unreleased]
 
+### Changed
+- **One warm-up board, sign-in-free, at `/[comp-slug]/warm-up`.** The two warm-up boards — the admin-gated `/(display)/[comp-slug]/warm-up` and its public twin at `/(public)/[comp-slug]/live/warm-up` — rendered the same read-only `WarmUpDisplay` and differed only in auth/data source, so they are collapsed into a single sign-in-free board. The surviving board is the public one, moved up from `/live/warm-up` to **`/[comp-slug]/warm-up`** (taking over the URL the deleted admin board vacated) and relabelled in the comp nav from "Warm-up (public)" to just **"Warm-up board"** (the separate "Warm-up board" nav item that pointed at the admin board is gone). This is safe because the board is read-only and the **run screen remains the sole data-mutation gate** (`requireAdmin()`); the board only ever reads, via the PII-free `public_lifters` view and the publicly-visible-comp anon RLS policies. One practical consequence: the warm-up board now only renders for a published/active/completed comp (it shows the "appears once published" notice for a still-draft comp), where the old admin board could render a draft — acceptable, since the comp is `active` during a meet. The `(display)` route group keeps the loading-crew display; no schema, RLS or real-time change. CLAUDE.md route map and ARCHITECTURE.md §1 (Display, Public) and §4 (real-time map) updated.
+
 ### Fixed
 - **Pre-merge code-review fixes on the age-category / 2 dp work.**
   - **Recalculate age categories is blocked on a completed comp.** A bulk division re-home changes placement groupings, so `recalculateAgeCategoriesAction` now rejects a `completed` comp (matching `deleteAllEntriesAction`), and the button is hidden once the comp is completed — protecting the final record. Single-entry division edits stay allowed at any status.

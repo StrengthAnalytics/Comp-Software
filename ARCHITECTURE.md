@@ -9,9 +9,9 @@ This document captures the system design. Read it alongside `CLAUDE.md` before s
 Four front-end surfaces share one backend.
 
 - **Admin** (`/(admin)`): staff interfaces with full chrome. Auth required. Admins set up comps, run flights, and manage declarations. Gated server-side via `requireAdmin()` and at the database via RLS.
-- **Display** (`/(display)`): full-screen venue display screens (e.g. the loading-crew display and the warm-up board), admin-gated like Admin via the same `requireAdminPage()` gate, but with no chrome — the display owns the whole viewport, so no nav/header sits behind its full-screen overlay. Read-only, real-time.
+- **Display** (`/(display)`): full-screen venue display screens (e.g. the loading-crew display), admin-gated like Admin via the same `requireAdminPage()` gate, but with no chrome — the display owns the whole viewport, so no nav/header sits behind its full-screen overlay. Read-only, real-time. (The warm-up board previously lived here too; it is now a single sign-in-free Public board — see below — since it is read-only and the run screen is the sole data-mutation gate.)
 - **Overlay** (`/(overlay)`): OBS browser sources. Transparent background, fixed pixel dimensions (typically 1920×1080 or sub-regions). No chrome, no navigation. An OBS Browser Source renders the page's alpha natively, so transparency needs no chroma key. Each overlay subscribes to real-time and renders one piece of data. Read anonymously via the public-comp RLS policies (like the public live views), not the admin session — an OBS Browser Source is a headless browser with its own cookie jar and does not inherit the operator's admin session, so an admin-gated overlay would render empty. See the ADR in section 7.
-- **Public** (`/(public)`): comp landing pages, a public **live scoreboard** (planned, at `/[comp]/live`) for venue TVs and social shares, final results, the **public warm-up board** (`/[comp]/live/warm-up`) — a sign-in-free copy of the Display warm-up board for sharing with lifters/spectators — and the **UK records browser** (`/records`), an app-global, sign-in-free table of regional/national records (not tied to any comp). Read-only, no auth gate; comp-scoped anon reads are gated by RLS to publicly-visible comps with lifter names from the PII-free `public_lifters` view, while the records browser reads the always-public `records` table (see §3 and the ADR in §7).
+- **Public** (`/(public)`): comp landing pages, a public **live scoreboard** (planned, at `/[comp]/live`) for venue TVs and social shares, final results, the **warm-up board** (`/[comp]/warm-up`) — a sign-in-free read-only mirror of the run-screen scoresheet for the warm-up room and for sharing with lifters/spectators — and the **UK records browser** (`/records`), an app-global, sign-in-free table of regional/national records (not tied to any comp). Read-only, no auth gate; comp-scoped anon reads are gated by RLS to publicly-visible comps with lifter names from the PII-free `public_lifters` view, while the records browser reads the always-public `records` table (see §3 and the ADR in §7).
 
 Backend services:
 
@@ -83,8 +83,7 @@ Which screens subscribe to which tables.
 |--------|---------------|--------|
 | `/(admin)/[comp]/run` | attempts, entries, flights | `competition_id` |
 | `/(display)/[comp]/loading` | attempts, entries, flights | `competition_id` (display scoped to one platform via `?platform`) |
-| `/(display)/[comp]/warm-up` | attempts, entries, flights | `competition_id` (display scoped to one platform via `?platform`) |
-| `/(public)/[comp]/live/warm-up` | attempts, entries, flights | `competition_id` (public warm-up board, scoped to one platform via `?platform`; anon, RLS-gated to public comps) |
+| `/(public)/[comp]/warm-up` | attempts, entries, flights | `competition_id` (warm-up board, scoped to one platform via `?platform`; sign-in-free, anon, RLS-gated to public comps) |
 | `/(admin)/[comp]/rack-heights` | entries, flights | `competition_id` |
 | `/(admin)/[comp]/flights` | flights, entries | `competition_id` |
 | `/(overlay)/[comp]/scoreboard` | attempts, entries | `competition_id` + current session |

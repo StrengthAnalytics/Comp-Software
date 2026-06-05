@@ -28,10 +28,9 @@ export function CompNav({ slug, compId, compName, isTeamCompetition }: CompNavPr
     { label: 'Run', href: `/${slug}/run`, newTab: true },
     // The loading-crew display is a full-screen, per-platform venue screen — its own tab too.
     { label: 'Loading crew', href: `/${slug}/loading`, newTab: true },
-    // The warm-up board is a full-screen, per-platform venue screen (read-only run scoresheet) — its own tab too.
+    // The warm-up board is a full-screen, per-platform venue screen (read-only run scoresheet) —
+    // sign-in-free so it can be shared with lifters/spectators. Opens in its own tab.
     { label: 'Warm-up board', href: `/${slug}/warm-up`, newTab: true },
-    // The public, sign-in-free warm-up board — same screen, shareable to lifters/spectators. Own tab.
-    { label: 'Warm-up (public)', href: `/${slug}/live/warm-up`, newTab: true },
     ...(isTeamCompetition
       ? [
           { label: 'Teams', href: `/${slug}/teams` },
