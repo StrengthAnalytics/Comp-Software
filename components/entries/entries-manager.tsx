@@ -13,6 +13,7 @@ import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { reconcileForm, type EntryFormValues } from '@/lib/entries/form-sync';
 import {
   createLifterAction,
+  deleteLifterAction,
   searchLiftersAction,
   updateLifterAction,
   type LifterSearchResult,
@@ -588,6 +589,10 @@ function NewLifterForm({
 
       const registered = await createEntryAction({ competitionId, lifterId: created.data.id });
       if (registered.status === 'error') {
+        // Registration failed after the lifter was created — roll the lifter back so a retry doesn't
+        // leave an orphaned (entry-less) duplicate. Best-effort: the registration error is what the
+        // operator needs to see and fix.
+        await deleteLifterAction({ id: created.data.id });
         setError(readError(registered));
         return;
       }
@@ -989,7 +994,7 @@ export function EntriesManager({
                 className={`${INPUT_CLASS} w-56`}
               />
             ) : null}
-            {hasDate && entries.length > 0 ? (
+            {hasDate && competitionStatus !== 'completed' && entries.length > 0 ? (
               <RecalculateAgeCategories competitionId={competitionId} entryCount={entries.length} />
             ) : null}
             <CopyEntriesButton

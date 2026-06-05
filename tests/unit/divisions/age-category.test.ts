@@ -40,8 +40,8 @@ describe('ipfAgeCategory', () => {
     });
   }
 
-  it('falls through to the youngest category for a nonsensical future birth year', () => {
-    expect(ipfAgeCategory(2026, 2030)).toBe('U16');
+  it('returns null for a nonsensical future birth year (birth year after the comp year)', () => {
+    expect(ipfAgeCategory(2026, 2030)).toBeNull();
   });
 });
 
@@ -74,6 +74,10 @@ describe('resolveAgeCategory', () => {
 
   it('returns null when the lifter has no date of birth', () => {
     expect(resolveAgeCategory('2026-03-14', null)).toBeNull();
+  });
+
+  it('returns null for a date of birth after the competition (a typo), not the youngest band', () => {
+    expect(resolveAgeCategory('2026-03-14', '2030-01-01')).toBeNull();
   });
 });
 

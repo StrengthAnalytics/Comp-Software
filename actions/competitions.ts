@@ -67,15 +67,16 @@ export async function createCompetitionAction(
     }
 
     // Every comp is created with the canonical IPF age divisions and weight classes, so it is never
-    // empty. Best-effort: the comp already exists, so a seed failure is logged and the operator can
-    // re-seed from the edit screen (the seed is idempotent) rather than losing the creation.
+    // empty. Best-effort: the comp already exists, so a seed failure is logged and surfaced on the edit
+    // screen (via ?setup=seed-failed) with the manual "Seed defaults" buttons as the idempotent
+    // recovery, rather than losing the creation or leaving the operator unaware the seed didn't run.
     const seedError = await seedCompetitionDefaults(supabase, data.id);
     if (seedError) {
       Sentry.captureException(seedError);
     }
 
     revalidatePath('/comps');
-    redirect(`/comps/${data.id}/edit`);
+    redirect(seedError ? `/comps/${data.id}/edit?setup=seed-failed` : `/comps/${data.id}/edit`);
   });
 }
 

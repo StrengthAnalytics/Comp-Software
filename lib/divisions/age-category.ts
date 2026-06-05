@@ -29,11 +29,17 @@ const AGE_CATEGORY_BANDS: readonly { readonly maxAge: number; readonly name: str
 // The oldest band is open-ended (90 and over).
 const OLDEST_CATEGORY = 'M6';
 
-// The age-category name for a lifter at a meet. Takes the difference of the two years (so a lifter
-// turning 40 anywhere in the competition year is M1 for the whole year, per IPF). A nonsensical
-// difference below the youngest band's bound falls through to the youngest category.
-export function ipfAgeCategory(competitionYear: number, birthYear: number): string {
+// The age-category name for a lifter at a meet, or null when the years can't yield a real category.
+// Takes the difference of the two years (so a lifter turning 40 anywhere in the competition year is M1
+// for the whole year, per IPF). A negative difference means the birth year is after the competition
+// year — a data error (e.g. a transposed/typo'd date of birth) — so it returns null rather than
+// silently classifying the lifter as the youngest band; the caller then leaves the division unset and
+// the bad date surfaces instead of being masked.
+export function ipfAgeCategory(competitionYear: number, birthYear: number): string | null {
   const age = competitionYear - birthYear;
+  if (age < 0) {
+    return null;
+  }
   const band = AGE_CATEGORY_BANDS.find((entry) => age <= entry.maxAge);
   return band ? band.name : OLDEST_CATEGORY;
 }

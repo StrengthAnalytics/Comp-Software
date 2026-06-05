@@ -1,6 +1,7 @@
 'use server';
 
 import * as Sentry from '@sentry/nextjs';
+import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { lifterInputSchema, lifterSearchSchema, lifterUpdateSchema, type LifterInput } from '@/types/entry';
@@ -78,6 +79,32 @@ export async function createLifterAction(input: LifterInput): Promise<ActionResu
     }
 
     return ok({ id: data.id });
+  });
+}
+
+// Deletes a lifter. Used to roll back a just-created lifter when registering them for a comp fails, so
+// the New-lifter flow can't leave an orphaned (entry-less) lifter behind. The lifters → entries FK is
+// ON DELETE RESTRICT, so this only succeeds while the lifter has no entries — exactly the rollback
+// case; a lifter with registrations is protected by that constraint.
+export async function deleteLifterAction(input: { id: string }): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('deleteLifter', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = z.object({ id: z.uuid() }).safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not remove the lifter. Please try again.');
+    }
+
+    const supabase = await createClient();
+    const { error } = await supabase.from('lifters').delete().eq('id', parsed.data.id);
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not remove the lifter. Please try again.');
+    }
+
+    return ok();
   });
 }
 

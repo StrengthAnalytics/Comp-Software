@@ -8,8 +8,16 @@ import { DivisionsEditor } from '@/components/comps/divisions-editor';
 import { OverlayLinks } from '@/components/comps/overlay-links';
 import { WeightClassesEditor } from '@/components/comps/weight-classes-editor';
 
-export default async function EditCompPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditCompPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ setup?: string }>;
+}) {
   const { id } = await params;
+  const { setup } = await searchParams;
+  const seedFailed = setup === 'seed-failed';
   const supabase = await createClient();
 
   const { data: comp } = await supabase
@@ -59,6 +67,16 @@ export default async function EditCompPage({ params }: { params: Promise<{ id: s
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">{comp.name}</h1>
           <p className="mt-1 text-sm text-neutral-600">/{comp.slug}</p>
         </div>
+
+        {seedFailed ? (
+          <p
+            role="alert"
+            className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          >
+            The standard IPF divisions and weight classes couldn&rsquo;t be added automatically when this
+            competition was created. Use the <strong>Seed IPF defaults</strong> buttons below to add them.
+          </p>
+        ) : null}
 
         <div className="rounded-lg border border-neutral-200 bg-white p-6">
           <CompForm

@@ -235,6 +235,10 @@ export async function createEntryAction(input: {
   });
 }
 
+// Cap on entry ids per bulk update, so a large single-division field stays well under the PostgREST
+// query-string length limit (each id is a 36-char UUID). Mirrors the duplicate-comp insert chunking.
+const ENTRY_UPDATE_CHUNK_SIZE = 200;
+
 export type AgeCategoryRecalcSummary = {
   updated: number;
   unchanged: number;
@@ -264,7 +268,7 @@ export async function recalculateAgeCategoriesAction(input: {
 
     const { data: comp, error: compError } = await supabase
       .from('competitions')
-      .select('starts_on')
+      .select('starts_on, status')
       .eq('id', parsed.data.competitionId)
       .maybeSingle();
     if (compError) {
@@ -276,6 +280,12 @@ export async function recalculateAgeCategoriesAction(input: {
     }
     if (!comp.starts_on) {
       return fail('Set a competition date before recalculating age categories.');
+    }
+    // A bulk re-home of divisions changes placement groupings, so it is blocked once a comp is
+    // completed to protect the final record — matching deleteAllEntriesAction. Single-entry division
+    // edits stay allowed at any status (a setup write, ARCHITECTURE.md §7).
+    if (comp.status === 'completed') {
+      return fail('This competition is completed, so its age categories cannot be recalculated in bulk.');
     }
 
     const { data: entries, error: entriesError } = await supabase
@@ -326,11 +336,16 @@ export async function recalculateAgeCategoriesAction(input: {
       entryIdsByDivision.set(update.divisionId, list);
     }
 
+    // Chunk each division's ids so a large field (e.g. a hundred-plus Open lifters) can't blow the
+    // PostgREST filter past the URL length limit — the same guard the duplicate-comp path applies.
     for (const [divisionId, entryIds] of entryIdsByDivision) {
-      const { error } = await supabase.from('entries').update({ division_id: divisionId }).in('id', entryIds);
-      if (error) {
-        Sentry.captureException(error);
-        return fail('Could not recalculate age categories. Please try again.');
+      for (let index = 0; index < entryIds.length; index += ENTRY_UPDATE_CHUNK_SIZE) {
+        const chunk = entryIds.slice(index, index + ENTRY_UPDATE_CHUNK_SIZE);
+        const { error } = await supabase.from('entries').update({ division_id: divisionId }).in('id', chunk);
+        if (error) {
+          Sentry.captureException(error);
+          return fail('Could not recalculate age categories. Please try again.');
+        }
       }
     }
 
@@ -929,23 +944,25 @@ export async function bulkImportEntriesAction(input: {
 
       const warnings: string[] = [];
 
-      // A division named in the sheet wins; otherwise auto-assign the age category from the comp year
-      // and the lifter's birth year (the row is guaranteed a date of birth — the parser errors any row
-      // without one before we reach here). A derived category the comp doesn't have is a soft warning.
+      // A matched division named in the sheet wins. Otherwise — no name given, or a name the comp
+      // doesn't have — fall back to the age category derived from the comp year and the lifter's birth
+      // year (the row is guaranteed a date of birth; the parser errors any row without one first), so a
+      // mistyped Division still gets the right category rather than being left blank.
       let divisionId: string | null = null;
       if (row.divisionName) {
-        const division = divisionByName.get(row.divisionName.toLowerCase());
-        if (division) {
-          divisionId = division.id;
+        const named = divisionByName.get(row.divisionName.toLowerCase());
+        if (named) {
+          divisionId = named.id;
         } else {
-          warnings.push(`Division "${row.divisionName}" not found — left blank.`);
+          warnings.push(`Division "${row.divisionName}" not found — using the age category instead.`);
         }
-      } else {
+      }
+      if (divisionId === null) {
         const categoryName = resolveAgeCategory(comp.starts_on, row.dateOfBirth);
         if (categoryName) {
-          const division = divisionByName.get(categoryName.toLowerCase());
-          if (division) {
-            divisionId = division.id;
+          const derived = divisionByName.get(categoryName.toLowerCase());
+          if (derived) {
+            divisionId = derived.id;
           } else {
             warnings.push(`Age category "${categoryName}" has no matching division — left blank.`);
           }
