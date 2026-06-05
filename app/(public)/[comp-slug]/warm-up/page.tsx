@@ -1,15 +1,20 @@
 import { notFound } from 'next/navigation';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
+import { isCompPubliclyVisible } from '@/lib/comps/meet-status';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { loadBoardData } from '@/lib/scorekeeper/load-board-data';
 import { resolveDisplayPlatform } from '@/lib/scorekeeper/display-platforms';
 import { DisplayPlatformChooser } from '@/components/display/platform-chooser';
 import { WarmUpDisplay } from '@/components/warm-up/warm-up-display';
 
-// The warm-up room display is scoped to one platform via the ?platform=<id> query (per-platform URL).
-// With a single platform it auto-selects; with several and none chosen it renders a chooser. It mirrors
-// the run-screen scoresheet read-only (no result buttons, so rows compress) so warming-up lifters can
-// see the comp's live state and who is up next.
+// The warm-up room board. A sign-in-free, publicly-shareable, read-only mirror of the run-screen
+// scoresheet (no result buttons, so rows compress) plus the up-next cards, scoped to one platform via
+// the ?platform=<id> query. With a single platform it auto-selects; with several and none chosen it
+// renders a chooser. It lives in the (public) route group (no admin gate) and loads its snapshot with
+// `publicView`, so lifter names come from the PII-free `public_lifters` view rather than the admin-only
+// base table. Everything else is read straight from the tables' anon read policies, which only return
+// rows for a publicly-visible comp; hence the published-status guard below. The run screen remains the
+// only screen that can mutate data, so this read-only board needs no auth gate.
 export default async function WarmUpPage({
   params,
   searchParams,
@@ -24,8 +29,25 @@ export default async function WarmUpPage({
     notFound();
   }
 
+  // Anon reads (and the public_lifters view) only return rows for a publicly-visible comp. Until the
+  // comp is published the board would render with no lifter names, so guide the operator instead —
+  // mirroring the public results page. (Anon can't load a non-public comp at all; this notice is
+  // reached when an admin previews a still-draft comp.)
+  if (!isCompPubliclyVisible(comp.status)) {
+    return (
+      <main className="mx-auto max-w-2xl p-8">
+        <h1 className="text-2xl font-semibold tracking-tight">{comp.name}</h1>
+        <p className="mt-2 text-sm text-neutral-600">
+          The warm-up board appears once this competition is published. Set the status to Published (or Active during
+          the meet) on the competition details.
+        </p>
+      </main>
+    );
+  }
+
   const { platforms, sessions, flights, weightClasses, divisions, teams, entries, attempts } = await loadBoardData(
     comp.id,
+    { publicView: true },
   );
 
   const { platform: requested } = await searchParams;
