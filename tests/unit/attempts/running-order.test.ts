@@ -546,7 +546,7 @@ describe('completedSessionLifts', () => {
       attempt('a', 'deadlift', 1, 140, 'pending'),
       attempt('b', 'deadlift', 1, 150, 'pending'),
     ];
-    expect(lifts(completedSessionLifts(roster, attempts))).toEqual([]);
+    expect(lifts(completedSessionLifts(roster, attempts, false))).toEqual([]);
   });
 
   it('marks squat finished once every round is resolved, before bench has started', () => {
@@ -562,7 +562,7 @@ describe('completedSessionLifts', () => {
       attempt('a', 'bench', 1, 60, 'pending'),
       attempt('b', 'bench', 1, 70, 'pending'),
     ];
-    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['squat']);
+    expect(lifts(completedSessionLifts(roster, attempts, false))).toEqual(['squat']);
   });
 
   it('does NOT mark squat finished during the gap between rounds (round 1 decided, round 2 not declared)', () => {
@@ -575,7 +575,7 @@ describe('completedSessionLifts', () => {
       attempt('a', 'bench', 1, 60, 'pending'),
       attempt('b', 'bench', 1, 70, 'pending'),
     ];
-    expect(lifts(completedSessionLifts(roster, attempts))).toEqual([]);
+    expect(lifts(completedSessionLifts(roster, attempts, false))).toEqual([]);
   });
 
   it('does NOT mark squat finished while another flight is still squatting', () => {
@@ -588,7 +588,7 @@ describe('completedSessionLifts', () => {
       // …but flight B has only just started squatting.
       attempt('b', 'squat', 1, 90, 'pending'),
     ];
-    expect(lifts(completedSessionLifts(roster, attempts))).toEqual([]);
+    expect(lifts(completedSessionLifts(roster, attempts, false))).toEqual([]);
   });
 
   it('marks squat finished once it is done in every flight', () => {
@@ -603,7 +603,7 @@ describe('completedSessionLifts', () => {
       // Bench started in flight A only.
       attempt('a', 'bench', 1, 60, 'pending'),
     ];
-    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['squat']);
+    expect(lifts(completedSessionLifts(roster, attempts, false))).toEqual(['squat']);
   });
 
   it('marks squat finished once bench has started even if no third squat was taken', () => {
@@ -618,7 +618,7 @@ describe('completedSessionLifts', () => {
       attempt('a', 'bench', 1, 70, 'good_lift'),
       attempt('b', 'bench', 1, 90, 'pending'),
     ];
-    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['squat']);
+    expect(lifts(completedSessionLifts(roster, attempts, false))).toEqual(['squat']);
   });
 
   it('marks both squat and bench finished once the session is on deadlifts', () => {
@@ -633,7 +633,7 @@ describe('completedSessionLifts', () => {
       // Deadlift opener pending — in progress.
       attempt('a', 'deadlift', 1, 140, 'pending'),
     ];
-    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['bench', 'squat']);
+    expect(lifts(completedSessionLifts(roster, attempts, false))).toEqual(['bench', 'squat']);
   });
 
   it('marks every lift finished once the whole session is done', () => {
@@ -643,11 +643,39 @@ describe('completedSessionLifts', () => {
       attempt('a', lift, 2, 110, 'good_lift'),
       attempt('a', lift, 3, 120, 'good_lift'),
     ]);
-    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['bench', 'deadlift', 'squat']);
+    expect(lifts(completedSessionLifts(roster, attempts, false))).toEqual(['bench', 'deadlift', 'squat']);
   });
 
   it('returns nothing for an empty session', () => {
-    expect(lifts(completedSessionLifts([], []))).toEqual([]);
-    expect(lifts(completedSessionLifts([lifter('a', 1)], []))).toEqual([]);
+    expect(lifts(completedSessionLifts([], [], false))).toEqual([]);
+    expect(lifts(completedSessionLifts([lifter('a', 1)], [], false))).toEqual([]);
+  });
+
+  it("team comp: a member's later discipline does not finish another member's earlier lift", () => {
+    // One flight, two members of the same team: a squatter and a bencher. The squatter has taken two
+    // squats and not declared a third; the bencher has started benching. In a team comp each member
+    // contests a single lift, so the bencher's activity must NOT collapse the squat — the squatter may
+    // still take a third. (Mirrors orderTeamSessionRoster passing laterStarted = false.)
+    const roster = [member('s', 'squat'), member('b', 'bench')];
+    const attempts = [
+      attempt('s', 'squat', 1, 100, 'good_lift'),
+      attempt('s', 'squat', 2, 110, 'good_lift'),
+      attempt('b', 'bench', 1, 80, 'good_lift'),
+    ];
+    expect(lifts(completedSessionLifts(roster, attempts, true))).toEqual([]);
+    // The same rows in an individual flight would: a later lift starting means squat is done there.
+    expect(lifts(completedSessionLifts(roster, attempts, false))).toEqual(['squat']);
+  });
+
+  it('team comp: a lift finishes once its contesting members reach their final round', () => {
+    const roster = [member('s', 'squat'), member('b', 'bench')];
+    const attempts = [
+      attempt('s', 'squat', 1, 100, 'good_lift'),
+      attempt('s', 'squat', 2, 110, 'good_lift'),
+      attempt('s', 'squat', 3, 120, 'good_lift'),
+      // The bencher is mid-bench; bench is not finished.
+      attempt('b', 'bench', 1, 80, 'pending'),
+    ];
+    expect(lifts(completedSessionLifts(roster, attempts, true))).toEqual(['squat']);
   });
 });

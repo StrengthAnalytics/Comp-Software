@@ -806,7 +806,7 @@ function buildView({
     flightSortOrder: flight.sortOrder,
     lotNumber: entry.lotNumber,
   }));
-  const completedLifts = completedSessionLifts(rosterFields, liveRows);
+  const completedLifts = completedSessionLifts(rosterFields, liveRows, isTeamCompetition);
 
   // The upcoming lifters in running order (up to the max the strip can show); the first is on the
   // platform. Sliced to the chosen count in the component.

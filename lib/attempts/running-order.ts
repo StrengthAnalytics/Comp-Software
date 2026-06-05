@@ -229,6 +229,19 @@ function isFlightLiftComplete(state: FlightLiftState, laterStarted: boolean): bo
   return state.pendingRounds.length === 0 && (state.maxRound >= ATTEMPTS_PER_LIFT || laterStarted);
 }
 
+// Whether a lift ordered AFTER `lift` has begun lifting in this flight (any later lift has activity).
+// This is the "later-lift" signal isFlightLiftComplete takes: it distinguishes a flight merely paused
+// between rounds of `lift` (next round not yet declared) from one that has genuinely moved on. Shared by
+// the individual roster lead selection and the session-completion test so the two apply one rule. It is
+// NOT meaningful for a single-lift team member — each contests one lift, so a different member's later
+// lift starting says nothing about this member's — so the team paths pass laterStarted = false directly
+// rather than calling this.
+function laterLiftStarted(liftStates: Map<LiftType, FlightLiftState>, lift: LiftType): boolean {
+  return LIFTS_IN_ORDER.some(
+    (later) => LIFT_ORDER[later] > LIFT_ORDER[lift] && (liftStates.get(later)?.hasActivity ?? false),
+  );
+}
+
 // Tie-break for roster rows with nothing live to lift (a finished flight, or a not-weighed-in lifter):
 // flight order, then lot. Shared by both roster orderings so the bottom-of-board order can't drift.
 function compareInactiveRoster(a: RosterEntryFields, b: RosterEntryFields): number {
@@ -262,10 +275,7 @@ function leadRoundByFlight(
       if (!state) {
         continue;
       }
-      const laterStarted = LIFTS_IN_ORDER.some(
-        (later) => LIFT_ORDER[later] > LIFT_ORDER[lift] && (liftStates.get(later)?.hasActivity ?? false),
-      );
-      if (!isFlightLiftComplete(state, laterStarted)) {
+      if (!isFlightLiftComplete(state, laterLiftStarted(liftStates, lift))) {
         leadLift = lift;
         break;
       }
@@ -328,33 +338,39 @@ export function orderSessionRoster<E extends RosterEntryFields>(
 // (isFlightLiftComplete, the same test the roster ordering uses, so the two can't disagree) and at
 // least one flight has actually lifted it (state.hasActivity) — so a lift that has not started, whose
 // only rows are seeded-and-pending openers, never reads as finished. Because every weighed-in lifter
-// carries a seeded opener for each lift, a flight that has weighed in but not yet reached a lift keeps a
-// pending declared opener there, so that flight reads incomplete and the lift stays "in progress" until
-// all flights are genuinely through it. A flight with no attempt rows at all (e.g. not weighed in) is
-// not represented, so it cannot hold a lift open; in practice the seeded openers mean a flight appears
-// for all three lifts from weigh-in. The warm-up board's "collapse finished lifts" option reads this to
-// drop a discipline's attempt columns and leave only its best once the session is past it. Pure;
-// unit-tested.
+// carries a seeded opener for each contested lift, a flight that has weighed in but not yet reached a
+// lift keeps a pending declared opener there, so that flight reads incomplete and the lift stays "in
+// progress" until all flights are genuinely through it. A flight with no attempt rows at all (e.g. not
+// weighed in) is not represented, so it cannot hold a lift open; in practice the seeded openers mean a
+// flight appears for all three lifts from weigh-in.
+//
+// `isTeamCompetition` selects the same completion semantics the matching roster ordering uses, so the
+// two never disagree: an individual flight rolls one lift straight into the next, so a later lift
+// gaining activity means this lift is done (laterLiftStarted); a team flight pools members who each
+// contest a single lift, so a different member's later lift says nothing about this one — exactly why
+// orderTeamSessionRoster passes laterStarted = false — and we do the same here (a team lift is finished
+// only once its contesting members have reached their final round). The warm-up board's "collapse
+// finished lifts" option reads this to drop a discipline's attempt columns and leave only its best once
+// the session is past it. Pure; unit-tested.
 export function completedSessionLifts(
   roster: readonly RosterEntryFields[],
   attempts: readonly SessionAttempt[],
+  isTeamCompetition: boolean,
 ): Set<LiftType> {
   const flightByEntry = new Map(roster.map((entry) => [entry.entryId, entry.flightId]));
   const byFlight = buildFlightLiftStates(attempts, flightByEntry);
 
   const completed = new Set<LiftType>();
   for (const lift of LIFTS_IN_ORDER) {
-    // Every flight that has reached this lift (squat/bench/deadlift), with whether a later lift has
-    // begun lifting in that flight — the same laterStarted clause leadRoundByFlight uses, so a flight
+    // Every flight that has reached this lift, with its later-lift signal — false for a team comp (each
+    // member contests one lift; mirrors orderTeamSessionRoster), otherwise laterLiftStarted, so a flight
     // merely paused between rounds is not mistaken for finished.
     const flightStates = [...byFlight.values()].flatMap((liftStates) => {
       const state = liftStates.get(lift);
       if (!state) {
         return [];
       }
-      const laterStarted = LIFTS_IN_ORDER.some(
-        (later) => LIFT_ORDER[later] > LIFT_ORDER[lift] && (liftStates.get(later)?.hasActivity ?? false),
-      );
+      const laterStarted = isTeamCompetition ? false : laterLiftStarted(liftStates, lift);
       return [{ state, laterStarted }];
     });
     if (flightStates.length === 0) {
