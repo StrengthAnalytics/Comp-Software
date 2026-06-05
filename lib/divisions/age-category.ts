@@ -75,3 +75,60 @@ export function matchDivisionByName<T extends { name: string }>(
   const target = categoryName.trim().toLowerCase();
   return divisions.find((division) => division.name.trim().toLowerCase() === target) ?? null;
 }
+
+export type AgeCategoryRecalcEntry = {
+  id: string;
+  dateOfBirth: string | null;
+  divisionId: string | null;
+};
+
+export type AgeCategoryRecalcPlan = {
+  // Entries whose division should change, paired with the division to set them to.
+  updates: { entryId: string; divisionId: string }[];
+  updated: number; // entries whose division changes
+  unchanged: number; // already on their age-category division
+  noDateOfBirth: number; // can't classify — left as-is
+  noMatchingDivision: number; // computed category isn't a division in this comp — left as-is
+};
+
+// Works out which entries' divisions need changing to match their current age category, given the
+// comp's start date and each entry's date of birth. Pure so the recalc action and its tests share one
+// rule. An entry with no date of birth, or whose computed category has no matching division in the
+// comp, is counted and left untouched (never cleared) rather than overwritten with a blank.
+export function planAgeCategoryRecalc(
+  competitionStartsOn: string | null,
+  entries: readonly AgeCategoryRecalcEntry[],
+  divisions: readonly { id: string; name: string }[],
+): AgeCategoryRecalcPlan {
+  const plan: AgeCategoryRecalcPlan = {
+    updates: [],
+    updated: 0,
+    unchanged: 0,
+    noDateOfBirth: 0,
+    noMatchingDivision: 0,
+  };
+
+  for (const entry of entries) {
+    const categoryName = resolveAgeCategory(competitionStartsOn, entry.dateOfBirth);
+    if (categoryName === null) {
+      plan.noDateOfBirth++;
+      continue;
+    }
+
+    const division = matchDivisionByName(divisions, categoryName);
+    if (!division) {
+      plan.noMatchingDivision++;
+      continue;
+    }
+
+    if (division.id === entry.divisionId) {
+      plan.unchanged++;
+      continue;
+    }
+
+    plan.updates.push({ entryId: entry.id, divisionId: division.id });
+    plan.updated++;
+  }
+
+  return plan;
+}

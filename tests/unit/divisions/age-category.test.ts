@@ -3,6 +3,7 @@ import {
   ipfAgeCategory,
   isoYear,
   matchDivisionByName,
+  planAgeCategoryRecalc,
   resolveAgeCategory,
 } from '@/lib/divisions/age-category';
 
@@ -91,5 +92,81 @@ describe('matchDivisionByName', () => {
   it('returns null when no division matches or the category is null', () => {
     expect(matchDivisionByName(divisions, 'M6')).toBeNull();
     expect(matchDivisionByName(divisions, null)).toBeNull();
+  });
+});
+
+describe('planAgeCategoryRecalc', () => {
+  const divisions = [
+    { id: 'open', name: 'Open' },
+    { id: 'm1', name: 'M1' },
+    { id: 'u23', name: 'U23' },
+  ];
+  const startsOn = '2026-03-14';
+
+  it('queues an update when an entry is on the wrong age division', () => {
+    // Born 1986 → age 40 in 2026 → M1, currently on Open.
+    const plan = planAgeCategoryRecalc(
+      startsOn,
+      [{ id: 'e1', dateOfBirth: '1986-05-01', divisionId: 'open' }],
+      divisions,
+    );
+    expect(plan.updates).toEqual([{ entryId: 'e1', divisionId: 'm1' }]);
+    expect(plan).toMatchObject({ updated: 1, unchanged: 0, noDateOfBirth: 0, noMatchingDivision: 0 });
+  });
+
+  it('leaves an entry already on its age division unchanged', () => {
+    const plan = planAgeCategoryRecalc(
+      startsOn,
+      [{ id: 'e1', dateOfBirth: '1986-05-01', divisionId: 'm1' }],
+      divisions,
+    );
+    expect(plan.updates).toEqual([]);
+    expect(plan).toMatchObject({ updated: 0, unchanged: 1 });
+  });
+
+  it('counts an entry with no date of birth and leaves it untouched', () => {
+    const plan = planAgeCategoryRecalc(
+      startsOn,
+      [{ id: 'e1', dateOfBirth: null, divisionId: 'open' }],
+      divisions,
+    );
+    expect(plan.updates).toEqual([]);
+    expect(plan).toMatchObject({ noDateOfBirth: 1, updated: 0, unchanged: 0 });
+  });
+
+  it('counts an entry whose category has no matching division and leaves it untouched', () => {
+    // Born 1956 → age 70 → M4, which this comp does not have.
+    const plan = planAgeCategoryRecalc(
+      startsOn,
+      [{ id: 'e1', dateOfBirth: '1956-05-01', divisionId: 'open' }],
+      divisions,
+    );
+    expect(plan.updates).toEqual([]);
+    expect(plan).toMatchObject({ noMatchingDivision: 1, updated: 0 });
+  });
+
+  it('assigns a previously blank division', () => {
+    const plan = planAgeCategoryRecalc(
+      startsOn,
+      [{ id: 'e1', dateOfBirth: '2005-05-01', divisionId: null }],
+      divisions,
+    );
+    expect(plan.updates).toEqual([{ entryId: 'e1', divisionId: 'u23' }]);
+    expect(plan.updated).toBe(1);
+  });
+
+  it('tallies a mixed roster', () => {
+    const plan = planAgeCategoryRecalc(
+      startsOn,
+      [
+        { id: 'a', dateOfBirth: '1986-05-01', divisionId: 'open' }, // → M1 (update)
+        { id: 'b', dateOfBirth: '2002-05-01', divisionId: 'open' }, // age 24 → Open (unchanged)
+        { id: 'c', dateOfBirth: null, divisionId: 'open' }, // no DOB
+        { id: 'd', dateOfBirth: '1956-05-01', divisionId: null }, // → M4, absent (no division)
+      ],
+      divisions,
+    );
+    expect(plan).toMatchObject({ updated: 1, unchanged: 1, noDateOfBirth: 1, noMatchingDivision: 1 });
+    expect(plan.updates).toEqual([{ entryId: 'a', divisionId: 'm1' }]);
   });
 });

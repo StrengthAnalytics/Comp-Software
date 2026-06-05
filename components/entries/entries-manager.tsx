@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createEntryAction, deleteEntryAction, updateEntryAction } from '@/actions/entries';
+import {
+  createEntryAction,
+  deleteEntryAction,
+  recalculateAgeCategoriesAction,
+  updateEntryAction,
+} from '@/actions/entries';
 import { useEntriesSubscription } from '@/lib/realtime/use-entries-subscription';
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { reconcileForm, type EntryFormValues } from '@/lib/entries/form-sync';
@@ -845,6 +850,66 @@ function CopyEntriesButton({
   );
 }
 
+// Re-derives every registered lifter's age division from the comp date and their current date of
+// birth. The division is otherwise only assigned at registration, so this is the way to pick up a
+// date-of-birth correction made afterwards. Confirms first (it overrides any manual division change)
+// and reports a one-line summary of what changed.
+function RecalculateAgeCategories({
+  competitionId,
+  entryCount,
+}: {
+  competitionId: string;
+  entryCount: number;
+}) {
+  const router = useRouter();
+  const [message, setMessage] = useState<string | null>(null);
+  const [isError, setIsError] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  function run() {
+    const confirmed = globalThis.confirm(
+      `Recalculate age categories for all ${entryCount} lifter${entryCount === 1 ? '' : 's'} from their date of birth? ` +
+        "This sets each lifter's division to their age category and overrides any manual division change.",
+    );
+    if (!confirmed) {
+      return;
+    }
+    setMessage(null);
+    setIsError(false);
+    startTransition(async () => {
+      const result = await recalculateAgeCategoriesAction({ competitionId });
+      if (result.status === 'error') {
+        setIsError(true);
+        setMessage(readError(result));
+        return;
+      }
+      const { updated, unchanged, noDateOfBirth, noMatchingDivision } = result.data;
+      const parts = [`${updated} updated`, `${unchanged} unchanged`];
+      if (noDateOfBirth > 0) {
+        parts.push(`${noDateOfBirth} no date of birth`);
+      }
+      if (noMatchingDivision > 0) {
+        parts.push(`${noMatchingDivision} no matching division`);
+      }
+      setMessage(parts.join(' · '));
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {message ? (
+        <span role={isError ? 'alert' : 'status'} className={`text-xs ${isError ? 'text-red-600' : 'text-neutral-600'}`}>
+          {message}
+        </span>
+      ) : null}
+      <button type="button" onClick={run} disabled={pending} className={GHOST_BUTTON}>
+        {pending ? 'Recalculating…' : 'Recalculate age categories'}
+      </button>
+    </div>
+  );
+}
+
 export function EntriesManager({
   competitionId,
   competitionName,
@@ -923,6 +988,9 @@ export function EntriesManager({
                 onChange={(event) => setQuery(event.target.value)}
                 className={`${INPUT_CLASS} w-56`}
               />
+            ) : null}
+            {hasDate && entries.length > 0 ? (
+              <RecalculateAgeCategories competitionId={competitionId} entryCount={entries.length} />
             ) : null}
             <CopyEntriesButton
               entries={entries}
