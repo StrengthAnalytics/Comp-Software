@@ -2,8 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// A single view-option toggle shown in the Options dropdown.
-export type BoardOptionToggle = { id: string; label: string; checked: boolean; onToggle: () => void };
+// A single view-option toggle shown in the Options dropdown. `disabled` greys it out and blocks input —
+// used when another option controls it (e.g. the warm-up board's "collapse finished lifts" takes over
+// the per-lift attempt and Best toggles).
+export type BoardOptionToggle = {
+  id: string;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+};
 
 // Default light-toolbar trigger styling (matches the run screen's ghost buttons). A dark header can
 // override it via `triggerClassName`.
@@ -68,14 +76,19 @@ export function BoardOptions({
           {toggles.map((toggle) => (
             <label
               key={toggle.id}
-              className="flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+              className={`flex items-center justify-between gap-3 rounded px-2 py-1.5 text-sm ${
+                toggle.disabled
+                  ? 'cursor-not-allowed text-neutral-400'
+                  : 'cursor-pointer text-neutral-700 hover:bg-neutral-100'
+              }`}
             >
               <span>{toggle.label}</span>
               <input
                 type="checkbox"
                 checked={toggle.checked}
                 onChange={toggle.onToggle}
-                className="h-4 w-4 accent-neutral-800"
+                disabled={toggle.disabled}
+                className="h-4 w-4 accent-neutral-800 disabled:opacity-50"
               />
             </label>
           ))}

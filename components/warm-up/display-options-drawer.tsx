@@ -17,6 +17,10 @@ type SwitchControl = { checked: boolean; onToggle: () => void };
 type DisplayOptionsDrawerProps = {
   open: boolean;
   onClose: () => void;
+  // "Collapse finished lifts to best": once a session has finished a lift across all flights, hide its
+  // attempt columns and show only its best. While on, it controls the per-lift attempt and Best lift
+  // column toggles (which render greyed out).
+  autoCollapse: SwitchControl;
   // Lifter name order: on = "First Surname", off = "Surname, First".
   nameOrder: SwitchControl;
   // Master toggle for the whole up-next card strip.
@@ -45,6 +49,7 @@ const ZOOM_BUTTON =
 export function DisplayOptionsDrawer({
   open,
   onClose,
+  autoCollapse,
   nameOrder,
   showCards,
   flightCount,
@@ -125,6 +130,18 @@ export function DisplayOptionsDrawer({
         </header>
 
         <div className="min-h-0 flex-1 overflow-auto p-4">
+          <Section title="Attempts">
+            <SwitchRow
+              label="Collapse finished lifts to best"
+              checked={autoCollapse.checked}
+              onToggle={autoCollapse.onToggle}
+            />
+            <p className="px-2 text-xs text-neutral-500">
+              Once a lift is finished across every flight, its attempt columns hide and only the best lift shows. While
+              on, the per-lift attempt and Best lift toggles below are set automatically.
+            </p>
+          </Section>
+
           <Section title="Lifter names">
             <SwitchRow label="First name first" checked={nameOrder.checked} onToggle={nameOrder.onToggle} />
           </Section>
@@ -212,7 +229,12 @@ export function DisplayOptionsDrawer({
             <ul className="space-y-1">
               {columnToggles.map((toggle) => (
                 <li key={toggle.id}>
-                  <SwitchRow label={toggle.label} checked={toggle.checked} onToggle={toggle.onToggle} />
+                  <SwitchRow
+                    label={toggle.label}
+                    checked={toggle.checked}
+                    onToggle={toggle.onToggle}
+                    disabled={toggle.disabled}
+                  />
                 </li>
               ))}
             </ul>
@@ -232,12 +254,33 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-// A labelled checkbox row, used for every on/off control in the drawer.
-function SwitchRow({ label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void }) {
+// A labelled checkbox row, used for every on/off control in the drawer. `disabled` greys it out and
+// blocks input (used when another option controls this toggle).
+function SwitchRow({
+  label,
+  checked,
+  onToggle,
+  disabled = false,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-3 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100">
+    <label
+      className={`flex items-center justify-between gap-3 rounded px-2 py-1.5 text-sm ${
+        disabled ? 'cursor-not-allowed text-neutral-400' : 'cursor-pointer text-neutral-700 hover:bg-neutral-100'
+      }`}
+    >
       <span>{label}</span>
-      <input type="checkbox" checked={checked} onChange={onToggle} className="h-4 w-4 accent-neutral-800" />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        disabled={disabled}
+        className="h-4 w-4 accent-neutral-800 disabled:opacity-50"
+      />
     </label>
   );
 }

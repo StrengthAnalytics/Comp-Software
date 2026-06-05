@@ -4,7 +4,12 @@ import { Fragment, useMemo, useState } from 'react';
 import type { Database } from '@/types/database.types';
 import { ATTEMPTS_PER_LIFT, LIFT_LABELS, type Lifts } from '@/lib/constants';
 import type { KitType } from '@/lib/scoring/ipf-gl';
-import { compareRunningOrder, selectUpcomingLifters } from '@/lib/attempts/running-order';
+import {
+  compareRunningOrder,
+  completedSessionLifts,
+  selectUpcomingLifters,
+  type RosterEntryFields,
+} from '@/lib/attempts/running-order';
 import { orderRosterForSession } from '@/lib/scorekeeper/order-roster';
 import { buildPlatformLiveView, type PlatformLiveRow } from '@/lib/scorekeeper/platform-live-view';
 import { computeLiftsToNextFlight } from '@/lib/scorekeeper/flight-count';
@@ -129,6 +134,9 @@ type WarmUpView = {
   // for the optional "lifts to next flight" count card. Null when no lifter is on the platform.
   flightCount: { count: number; nextFlightName: string | null; lift: LiftType } | null;
   roster: { entry: BoardEntry; flightName: string }[];
+  // The lifts the live session has finished across every flight, for the "collapse finished lifts"
+  // option — those lifts drop their attempt columns and show only the best.
+  completedLifts: Set<LiftType>;
 };
 
 // Warm-up room display for one platform: a read-only mirror of the run-screen scoresheet (no result
@@ -202,6 +210,11 @@ export function WarmUpDisplay({
   const [showBenchAttempts, toggleBenchAttempts] = usePersistentToggle('warmup:col:attempts:bench');
   const [showDeadliftAttempts, toggleDeadliftAttempts] = usePersistentToggle('warmup:col:attempts:deadlift');
   const [showBest, toggleBest] = usePersistentToggle('warmup:col:best');
+  // "Collapse finished lifts to best" (default off): once the session has finished a lift across every
+  // flight, that lift's attempt columns hide and only its best shows. While on it takes over the per-lift
+  // attempt toggles and the Best lift toggle (which grey out), so the board self-collapses as the meet
+  // moves from squat to bench to deadlift.
+  const [autoCollapse, toggleAutoCollapse] = usePersistentToggle('warmup:autocollapse', false);
   const [showTotal, toggleTotal] = usePersistentToggle('warmup:col:total');
   const [subTotalPref, toggleSubTotal] = usePersistentToggle('warmup:col:subtotal', false);
   const [showGl, toggleGl] = usePersistentToggle('warmup:col:gl', false);
@@ -349,11 +362,19 @@ export function WarmUpDisplay({
     bench: toggleBenchAttempts,
     deadlift: toggleDeadliftAttempts,
   };
+  // With "collapse finished lifts" on, a lift's attempt columns show only while it is still in progress
+  // and its best shows only once finished; otherwise the manual per-lift attempt and Best toggles drive
+  // both. Resolved per lift so a finished squat can collapse while bench attempts still show.
+  const liftShowsAttempts = (lift: LiftType): boolean =>
+    autoCollapse ? !view.completedLifts.has(lift) : attemptsByLift[lift];
+  const liftShowsBest = (lift: LiftType): boolean =>
+    autoCollapse ? view.completedLifts.has(lift) : showBest;
   const liftAttemptToggles: BoardOptionToggle[] = columnLifts.map((lift) => ({
     id: `attempts-${lift}`,
     label: `${LIFT_LABELS[lift]} attempts`,
     checked: attemptsByLift[lift],
     onToggle: attemptsToggleByLift[lift],
+    disabled: autoCollapse,
   }));
 
   const columnToggles: BoardOptionToggle[] = [
@@ -367,7 +388,7 @@ export function WarmUpDisplay({
     { id: 'div', label: 'Division', checked: showDiv, onToggle: toggleDiv },
     { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
     ...liftAttemptToggles,
-    { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest },
+    { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest, disabled: autoCollapse },
     ...(canSubTotal
       ? [{ id: 'subtotal', label: 'Sub-total (S+B)', checked: showSubTotal, onToggle: toggleSubTotal }]
       : []),
@@ -507,7 +528,12 @@ export function WarmUpDisplay({
                 ) : null}
                 {columnLifts.map((lift) => (
                   <Fragment key={lift}>
-                    <LiftHeader lift={lift} showRack={showRack} showAttempts={attemptsByLift[lift]} showBest={showBest} />
+                    <LiftHeader
+                      lift={lift}
+                      showRack={showRack}
+                      showAttempts={liftShowsAttempts(lift)}
+                      showBest={liftShowsBest(lift)}
+                    />
                     {showSubTotal && lift === 'bench' ? (
                       <th scope="col" className={`text-center ${HEAD}`}>
                         S+B
@@ -642,8 +668,8 @@ export function WarmUpDisplay({
                             attempts={attempts}
                             current={view.current}
                             showRack={showRack}
-                            showAttempts={attemptsByLift[lift]}
-                            showBest={showBest}
+                            showAttempts={liftShowsAttempts(lift)}
+                            showBest={liftShowsBest(lift)}
                           />
                           {showSubTotal && lift === 'bench' ? (
                             <td className={`text-center font-semibold tabular-nums text-neutral-800 ${CELL}`}>
@@ -707,6 +733,7 @@ export function WarmUpDisplay({
       <DisplayOptionsDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        autoCollapse={{ checked: autoCollapse, onToggle: toggleAutoCollapse }}
         nameOrder={{ checked: nameFirstLast, onToggle: toggleNameFirstLast }}
         showCards={{ checked: showCardsPref, onToggle: toggleShowCards }}
         flightCount={{ checked: flightCountPref, onToggle: toggleFlightCount }}
@@ -753,6 +780,7 @@ function buildView({
     upNext: [],
     flightCount: null,
     roster: [],
+    completedLifts: new Set<LiftType>(),
   };
 
   const { liveSession, rosterItems, liveRows } = buildPlatformLiveView({
@@ -769,6 +797,16 @@ function buildView({
   // A team comp groups by lift across the whole session (each member contests one assigned lift)
   // instead of by the flight's single current lift; otherwise order by the round in progress.
   const roster = orderRosterForSession(rosterItems, liveRows, isTeamCompetition);
+
+  // Which lifts the whole session has finished (every flight through them), for the collapse option.
+  // liveRows satisfy SessionAttempt; the roster rows supply the flight each lifter sits in.
+  const rosterFields: RosterEntryFields[] = rosterItems.map(({ entry, flight }) => ({
+    entryId: entry.id,
+    flightId: flight.id,
+    flightSortOrder: flight.sortOrder,
+    lotNumber: entry.lotNumber,
+  }));
+  const completedLifts = completedSessionLifts(rosterFields, liveRows);
 
   // The upcoming lifters in running order (up to the max the strip can show); the first is on the
   // platform. Sliced to the chosen count in the component.
@@ -834,6 +872,7 @@ function buildView({
     upNext: upcomingRows.map((row) => toCard(row)),
     flightCount,
     roster,
+    completedLifts,
   };
 }
 

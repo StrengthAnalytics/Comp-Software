@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Database } from '@/types/database.types';
 import {
   compareRunningOrder,
+  completedSessionLifts,
   orderSessionRoster,
   orderTeamSessionRoster,
   selectLiveSession,
@@ -524,5 +525,129 @@ describe('orderTeamSessionRoster', () => {
     const roster = [member('a', 'squat'), member('none', null)];
     const attempts = [attempt('a', 'squat', 1, 100, 'pending')];
     expect(ids(orderTeamSessionRoster(roster, attempts))).toEqual(['a', 'none']);
+  });
+});
+
+// Sorted lift list for stable comparison of a completed-lift set.
+function lifts(set: Set<LiftType>): LiftType[] {
+  return [...set].toSorted();
+}
+
+describe('completedSessionLifts', () => {
+  const flightB = { flightId: 'B', flightSortOrder: 1 };
+
+  it('returns nothing at the very start when only openers are seeded pending', () => {
+    const roster = [lifter('a', 1), lifter('b', 2)];
+    const attempts = [
+      attempt('a', 'squat', 1, 100, 'pending'),
+      attempt('b', 'squat', 1, 120, 'pending'),
+      attempt('a', 'bench', 1, 60, 'pending'),
+      attempt('b', 'bench', 1, 70, 'pending'),
+      attempt('a', 'deadlift', 1, 140, 'pending'),
+      attempt('b', 'deadlift', 1, 150, 'pending'),
+    ];
+    expect(lifts(completedSessionLifts(roster, attempts))).toEqual([]);
+  });
+
+  it('marks squat finished once every round is resolved, before bench has started', () => {
+    const roster = [lifter('a', 1), lifter('b', 2)];
+    const attempts = [
+      attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('a', 'squat', 2, 110, 'good_lift'),
+      attempt('a', 'squat', 3, 120, 'no_lift'),
+      attempt('b', 'squat', 1, 120, 'good_lift'),
+      attempt('b', 'squat', 2, 130, 'good_lift'),
+      attempt('b', 'squat', 3, 140, 'good_lift'),
+      // Bench/deadlift openers seeded pending — not started.
+      attempt('a', 'bench', 1, 60, 'pending'),
+      attempt('b', 'bench', 1, 70, 'pending'),
+    ];
+    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['squat']);
+  });
+
+  it('does NOT mark squat finished during the gap between rounds (round 1 decided, round 2 not declared)', () => {
+    const roster = [lifter('a', 1), lifter('b', 2)];
+    const attempts = [
+      // Squat round 1 resolved; round 2 not declared yet — a normal between-rounds pause.
+      attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('b', 'squat', 1, 120, 'good_lift'),
+      // Bench openers seeded pending at weigh-in, but bench has not started.
+      attempt('a', 'bench', 1, 60, 'pending'),
+      attempt('b', 'bench', 1, 70, 'pending'),
+    ];
+    expect(lifts(completedSessionLifts(roster, attempts))).toEqual([]);
+  });
+
+  it('does NOT mark squat finished while another flight is still squatting', () => {
+    const roster = [lifter('a', 1), lifter('b', 1, { entryId: 'b', ...flightB })];
+    const attempts = [
+      // Flight A is through all three squat rounds…
+      attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('a', 'squat', 2, 110, 'good_lift'),
+      attempt('a', 'squat', 3, 120, 'good_lift'),
+      // …but flight B has only just started squatting.
+      attempt('b', 'squat', 1, 90, 'pending'),
+    ];
+    expect(lifts(completedSessionLifts(roster, attempts))).toEqual([]);
+  });
+
+  it('marks squat finished once it is done in every flight', () => {
+    const roster = [lifter('a', 1), lifter('b', 1, { entryId: 'b', ...flightB })];
+    const attempts = [
+      attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('a', 'squat', 2, 110, 'good_lift'),
+      attempt('a', 'squat', 3, 120, 'good_lift'),
+      attempt('b', 'squat', 1, 90, 'good_lift'),
+      attempt('b', 'squat', 2, 100, 'good_lift'),
+      attempt('b', 'squat', 3, 110, 'good_lift'),
+      // Bench started in flight A only.
+      attempt('a', 'bench', 1, 60, 'pending'),
+    ];
+    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['squat']);
+  });
+
+  it('marks squat finished once bench has started even if no third squat was taken', () => {
+    const roster = [lifter('a', 1), lifter('b', 2)];
+    const attempts = [
+      // Squats stopped at round 2 for both.
+      attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('a', 'squat', 2, 110, 'good_lift'),
+      attempt('b', 'squat', 1, 120, 'good_lift'),
+      attempt('b', 'squat', 2, 130, 'good_lift'),
+      // Bench has begun: a resolved, b pending.
+      attempt('a', 'bench', 1, 70, 'good_lift'),
+      attempt('b', 'bench', 1, 90, 'pending'),
+    ];
+    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['squat']);
+  });
+
+  it('marks both squat and bench finished once the session is on deadlifts', () => {
+    const roster = [lifter('a', 1)];
+    const attempts = [
+      attempt('a', 'squat', 1, 100, 'good_lift'),
+      attempt('a', 'squat', 2, 110, 'good_lift'),
+      attempt('a', 'squat', 3, 120, 'good_lift'),
+      attempt('a', 'bench', 1, 60, 'good_lift'),
+      attempt('a', 'bench', 2, 65, 'good_lift'),
+      attempt('a', 'bench', 3, 70, 'good_lift'),
+      // Deadlift opener pending — in progress.
+      attempt('a', 'deadlift', 1, 140, 'pending'),
+    ];
+    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['bench', 'squat']);
+  });
+
+  it('marks every lift finished once the whole session is done', () => {
+    const roster = [lifter('a', 1)];
+    const attempts = (['squat', 'bench', 'deadlift'] as LiftType[]).flatMap((lift) => [
+      attempt('a', lift, 1, 100, 'good_lift'),
+      attempt('a', lift, 2, 110, 'good_lift'),
+      attempt('a', lift, 3, 120, 'good_lift'),
+    ]);
+    expect(lifts(completedSessionLifts(roster, attempts))).toEqual(['bench', 'deadlift', 'squat']);
+  });
+
+  it('returns nothing for an empty session', () => {
+    expect(lifts(completedSessionLifts([], []))).toEqual([]);
+    expect(lifts(completedSessionLifts([lifter('a', 1)], []))).toEqual([]);
   });
 });

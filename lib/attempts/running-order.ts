@@ -323,6 +323,52 @@ export function orderSessionRoster<E extends RosterEntryFields>(
   return [...activeSorted, ...inactiveSorted];
 }
 
+// The lifts a live session has fully finished across every flight — squat, then bench, then deadlift.
+// A lift counts as finished once every flight that has any attempt for it has completed it
+// (isFlightLiftComplete, the same test the roster ordering uses, so the two can't disagree) and at
+// least one flight has actually lifted it (state.hasActivity) — so a lift that has not started, whose
+// only rows are seeded-and-pending openers, never reads as finished. Because every weighed-in lifter
+// carries a seeded opener for each lift, a flight that has weighed in but not yet reached a lift keeps a
+// pending declared opener there, so that flight reads incomplete and the lift stays "in progress" until
+// all flights are genuinely through it. A flight with no attempt rows at all (e.g. not weighed in) is
+// not represented, so it cannot hold a lift open; in practice the seeded openers mean a flight appears
+// for all three lifts from weigh-in. The warm-up board's "collapse finished lifts" option reads this to
+// drop a discipline's attempt columns and leave only its best once the session is past it. Pure;
+// unit-tested.
+export function completedSessionLifts(
+  roster: readonly RosterEntryFields[],
+  attempts: readonly SessionAttempt[],
+): Set<LiftType> {
+  const flightByEntry = new Map(roster.map((entry) => [entry.entryId, entry.flightId]));
+  const byFlight = buildFlightLiftStates(attempts, flightByEntry);
+
+  const completed = new Set<LiftType>();
+  for (const lift of LIFTS_IN_ORDER) {
+    // Every flight that has reached this lift (squat/bench/deadlift), with whether a later lift has
+    // begun lifting in that flight — the same laterStarted clause leadRoundByFlight uses, so a flight
+    // merely paused between rounds is not mistaken for finished.
+    const flightStates = [...byFlight.values()].flatMap((liftStates) => {
+      const state = liftStates.get(lift);
+      if (!state) {
+        return [];
+      }
+      const laterStarted = LIFTS_IN_ORDER.some(
+        (later) => LIFT_ORDER[later] > LIFT_ORDER[lift] && (liftStates.get(later)?.hasActivity ?? false),
+      );
+      return [{ state, laterStarted }];
+    });
+    if (flightStates.length === 0) {
+      continue;
+    }
+    const everyFlightDone = flightStates.every(({ state, laterStarted }) => isFlightLiftComplete(state, laterStarted));
+    const anyActivity = flightStates.some(({ state }) => state.hasActivity);
+    if (everyFlightDone && anyActivity) {
+      completed.add(lift);
+    }
+  }
+  return completed;
+}
+
 // The team-competition variant of orderSessionRoster. In a team comp each lifter contests only one
 // lift (their team_lift), so the board groups by LIFT across the whole session — every squatter
 // together, then every bencher, then every deadlifter — rather than by each flight's single current
