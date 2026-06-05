@@ -433,7 +433,7 @@ function EntryCard({
           label="Bodyweight (kg)"
           value={form.bodyweight}
           onChange={(value) => update('bodyweight', value)}
-          step="0.1"
+          step="0.01"
         />
 
         {lifts.squat ? (

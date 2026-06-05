@@ -80,7 +80,7 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
 
       <div>
         <label htmlFor="name" className={LABEL_CLASS}>
-          Name
+          Name of Competition
         </label>
         <input
           id="name"

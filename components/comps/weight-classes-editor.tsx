@@ -103,7 +103,7 @@ function WeightClassRow({
       <input
         aria-label="Lower bound kg"
         type="number"
-        step="0.1"
+        step="0.01"
         value={lowerKg}
         onChange={(event) => setLowerKg(event.target.value)}
         className={`${INPUT_CLASS} w-24`}
@@ -111,7 +111,7 @@ function WeightClassRow({
       <input
         aria-label="Upper bound kg (blank for unlimited)"
         type="number"
-        step="0.1"
+        step="0.01"
         placeholder="∞"
         value={upperKg}
         onChange={(event) => setUpperKg(event.target.value)}
@@ -233,7 +233,7 @@ export function WeightClassesEditor({
         <input
           aria-label="Lower bound kg"
           type="number"
-          step="0.1"
+          step="0.01"
           placeholder="lower"
           value={lowerKg}
           onChange={(event) => setLowerKg(event.target.value)}
@@ -242,7 +242,7 @@ export function WeightClassesEditor({
         <input
           aria-label="Upper bound kg (blank for unlimited)"
           type="number"
-          step="0.1"
+          step="0.01"
           placeholder="upper (∞)"
           value={upperKg}
           onChange={(event) => setUpperKg(event.target.value)}

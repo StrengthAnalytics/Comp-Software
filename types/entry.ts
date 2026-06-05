@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BENCH_SPOTTINGS, SQUAT_RACK_SETTINGS } from '@/lib/constants';
-import { roundToOneDecimal } from '@/lib/number-input';
+import { roundToOneDecimal, roundToTwoDecimals } from '@/lib/number-input';
 
 // Blank string → null, so optional text fields clear cleanly when the operator empties them.
 function optionalText(max: number, tooLong: string) {
@@ -19,12 +19,21 @@ const optionalDate = z.preprocess(
 );
 
 // Clients convert blank inputs to null before calling, so these accept a number or null directly.
-// numeric(5,1) in the schema: up to 9999.9, stored to one decimal place.
+// Lift weights (openers) are numeric(5,1) — up to 9999.9, one decimal place, 0.5 kg increments.
 const optionalWeightKg = z
   .number()
   .gt(0, 'Weight must be greater than zero.')
   .max(9999.9, 'Weight is too large.')
   .transform(roundToOneDecimal)
+  .nullable();
+
+// Bodyweight is numeric(5,2) — IPF weigh-in precision (0.01 kg), up to 999.99 — so a class boundary is
+// unambiguous (83.00 kg is -83, 83.01 kg is -93). Distinct from openers, which stay at one decimal.
+const optionalBodyweightKg = z
+  .number()
+  .gt(0, 'Weight must be greater than zero.')
+  .max(999.99, 'Weight is too large.')
+  .transform(roundToTwoDecimals)
   .nullable();
 
 const optionalLotNumber = z
@@ -104,7 +113,7 @@ export const entryUpdateSchema = z.object({
   weightClassId: optionalUuid,
   divisionId: optionalUuid,
   lotNumber: optionalLotNumber,
-  bodyweightKg: optionalWeightKg,
+  bodyweightKg: optionalBodyweightKg,
   openerSquatKg: optionalWeightKg,
   openerBenchKg: optionalWeightKg,
   openerDeadliftKg: optionalWeightKg,
@@ -124,7 +133,7 @@ export type EntryUpdateInput = z.infer<typeof entryUpdateSchema>;
 export const weighInSchema = z.object({
   id: z.uuid(),
   competitionId: z.uuid(),
-  bodyweightKg: optionalWeightKg,
+  bodyweightKg: optionalBodyweightKg,
   openerSquatKg: optionalWeightKg,
   openerBenchKg: optionalWeightKg,
   openerDeadliftKg: optionalWeightKg,

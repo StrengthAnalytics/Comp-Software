@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { roundToOneDecimal } from '@/lib/number-input';
+import { roundToTwoDecimals } from '@/lib/number-input';
 
 // Lowercase letters, numbers and single hyphens; no leading, trailing or doubled hyphens.
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -65,12 +65,13 @@ export const divisionUpdateSchema = z.object({
   sortOrder: z.number().int().min(0),
 });
 
-// numeric(5,1) in the schema: up to 9999.9, stored to one decimal place.
+// Weight-class bounds are numeric(5,2) — 2 dp (IPF weigh-in precision), up to 999.99 — so a class
+// lower bound can sit 0.01 kg above the class below's upper bound (e.g. -93 starts at 83.01).
 const weightKg = z
   .number()
   .min(0, 'Weight cannot be negative.')
-  .max(9999.9, 'Weight is too large.')
-  .transform(roundToOneDecimal);
+  .max(999.99, 'Weight is too large.')
+  .transform(roundToTwoDecimals);
 
 export const weightClassInputSchema = z
   .object({

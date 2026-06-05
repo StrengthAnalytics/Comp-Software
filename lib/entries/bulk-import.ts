@@ -1,5 +1,5 @@
 import type { Lifts } from '@/lib/constants';
-import { roundToOneDecimal } from '@/lib/number-input';
+import { roundToOneDecimal, roundToTwoDecimals } from '@/lib/number-input';
 
 // Bulk registration via copy-paste: the operator copies these headers into a Google Sheet, fills a
 // row per lifter, then pastes the cells back. Google Sheets copies as tab-separated text, so this
@@ -123,6 +123,19 @@ function parsePositiveNumber(raw: string): { value: number | null; ok: boolean }
     return { value: null, ok: false };
   }
   return { value: roundToOneDecimal(parsed), ok: true };
+}
+
+// Bodyweight keeps 2 dp (IPF weigh-in precision), unlike the openers which round to one decimal.
+function parseBodyweight(raw: string): { value: number | null; ok: boolean } {
+  const value = raw.trim();
+  if (value === '') {
+    return { value: null, ok: true };
+  }
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    return { value: null, ok: false };
+  }
+  return { value: roundToTwoDecimals(parsed), ok: true };
 }
 
 function parsePositiveInt(raw: string): { value: number | null; ok: boolean } {
@@ -283,7 +296,7 @@ export function parseBulkImport(text: string, lifts: Lifts): ParsedImportRow[] {
       errors.push('Lot must be a positive whole number.');
     }
 
-    const bodyweight = parsePositiveNumber(cellAt(cells, indexByKey, 'bodyweight'));
+    const bodyweight = parseBodyweight(cellAt(cells, indexByKey, 'bodyweight'));
     if (!bodyweight.ok) {
       errors.push('Bodyweight must be a positive number.');
     }

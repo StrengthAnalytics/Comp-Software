@@ -104,6 +104,13 @@ describe('parseBulkImport', () => {
     expect(parseBulkImport(text, FULL_POWER)[0].errors).toContain('Bodyweight must be a positive number.');
   });
 
+  it('keeps bodyweight to two decimal places (IPF weigh-in precision)', () => {
+    const text = 'Dana\tSmith\tF\t1995-04-02\t\t\t\t\t\t\t82.95\t\t\t';
+    const [row] = parseBulkImport(text, FULL_POWER);
+    expect(row.errors).toEqual([]);
+    expect(row.bodyweight).toBe(82.95);
+  });
+
   it('falls back to comma separation when there are no tabs', () => {
     const text = 'Dana,Smith,F,1995-04-02,,,,Open,-72 kg,5,71.5,100,60,130';
     const [row] = parseBulkImport(text, FULL_POWER);

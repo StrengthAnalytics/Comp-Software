@@ -575,7 +575,7 @@ const WeighInCard = memo(function WeighInCard({
           value={form.bodyweight}
           onChange={form.setBodyweight}
           onBlur={form.flushSave}
-          step="0.1"
+          step="0.01"
           required
           invalid={form.bodyweightValue === null}
         />
@@ -862,7 +862,7 @@ function WeighInRow({
           value={form.bodyweight}
           onChange={form.setBodyweight}
           onBlur={form.flushSave}
-          step="0.1"
+          step="0.01"
           invalid={form.bodyweightValue === null}
         />
       </td>
