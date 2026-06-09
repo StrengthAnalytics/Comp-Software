@@ -1,9 +1,10 @@
-import Link from 'next/link';
+import * as Sentry from '@sentry/nextjs';
 import type { ReactNode } from 'react';
 import { isSupabaseConfigured } from '@/lib/supabase/config';
+import { createClient } from '@/lib/supabase/server';
 import { requireAdminPage } from '@/lib/auth/require-admin-page';
 import { ConfigNotice } from '@/components/config-notice';
-import { signOutAction } from '@/actions/auth';
+import { AppShell, type ShellComp } from '@/components/shell/app-shell';
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   if (!isSupabaseConfigured()) {
@@ -12,37 +13,31 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   const user = await requireAdminPage();
 
+  // The full comp list feeds the sidebar's competition switcher (newest first). A handful of comps
+  // per year, so no pagination; on a read failure the shell still renders with app-level nav only
+  // (comp pages fetch their own data), and the error goes to Sentry rather than being swallowed.
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('competitions')
+    .select('id, slug, name, status, is_team_competition')
+    .order('starts_on', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    Sentry.captureException(error);
+  }
+
+  const comps: ShellComp[] = (data ?? []).map((comp) => ({
+    id: comp.id,
+    slug: comp.slug,
+    name: comp.name,
+    status: comp.status,
+    isTeamCompetition: comp.is_team_competition,
+  }));
+
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-      <header className="border-b border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
-          <div className="flex items-center gap-6">
-            <Link href="/comps" className="text-sm font-semibold tracking-tight">
-              Comp-Software
-            </Link>
-            <nav className="flex items-center gap-4">
-              <Link href="/comps" className="text-sm text-neutral-600 hover:text-neutral-900">
-                Competitions
-              </Link>
-              <Link href="/records/manage" className="text-sm text-neutral-600 hover:text-neutral-900">
-                Records
-              </Link>
-            </nav>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-neutral-600">
-            <span className="hidden sm:inline">{user.email}</span>
-            <form action={signOutAction}>
-              <button
-                type="submit"
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-700 hover:bg-neutral-100"
-              >
-                Sign out
-              </button>
-            </form>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
-    </div>
+    <AppShell comps={comps} userEmail={user.email ?? ''}>
+      {children}
+    </AppShell>
   );
 }

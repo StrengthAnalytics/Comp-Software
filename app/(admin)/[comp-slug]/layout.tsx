@@ -1,8 +1,10 @@
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
-import { CompShell } from '@/components/comps/comp-shell';
 
+// Validates the comp slug for every comp-scoped admin page (unknown slug → 404). The comp-scoped
+// sidebar itself lives in the (admin) layout's AppShell, which resolves the active comp from the
+// URL, so this layout adds no chrome of its own.
 export default async function CompLayout({
   children,
   params,
@@ -17,14 +19,5 @@ export default async function CompLayout({
     notFound();
   }
 
-  return (
-    <CompShell
-      slug={comp.slug}
-      compId={comp.id}
-      compName={comp.name}
-      isTeamCompetition={comp.is_team_competition}
-    >
-      {children}
-    </CompShell>
-  );
+  return <>{children}</>;
 }

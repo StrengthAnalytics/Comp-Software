@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+/* Design tokens. Registering --color-brand-* in @theme makes Tailwind v4 generate the matching
+   bg-brand-*/text-brand-*/border-brand-* utilities. `brand` is the single place the product's
+   identity colour lives — restyling the platform is a swap of this ramp, not a find-and-replace
+   of blue-* classes. The deep end (900/950) is the app-shell sidebar; the mid ramp (500-700) is
+   for primary actions and focus states; the light end (50-200) for tints and selected states. */
+@theme {
+  --color-brand-50: #eef4ff;
+  --color-brand-100: #dfe9ff;
+  --color-brand-200: #c5d7fe;
+  --color-brand-300: #a2bdfc;
+  --color-brand-400: #7d9af8;
+  --color-brand-500: #5b76f1;
+  --color-brand-600: #3f53e4;
+  --color-brand-700: #3342c9;
+  --color-brand-800: #2c39a2;
+  --color-brand-900: #283480;
+  --color-brand-950: #161d4b;
+}
+
 /* Overlay lower-third entrance. Registering --animate-* in @theme makes Tailwind v4 generate the
    matching `animate-overlay-rise` utility; the OBS lifter overlay keys its card on the on-platform
    attempt so each new lifter slides up fresh. */
