@@ -17,6 +17,7 @@ function makeEntry(overrides: Partial<BoardEntry> = {}): BoardEntry {
     weightClassName: '83',
     ageCategoryId: null,
     ageCategoryName: 'Open',
+    division: null,
     rackHeightSquat: null,
     squatRackSetting: null,
     rackHeightBench: null,

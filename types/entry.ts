@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BENCH_SPOTTINGS, SQUAT_RACK_SETTINGS } from '@/lib/constants';
+import { BENCH_SPOTTINGS, BP_DIVISIONS, SQUAT_RACK_SETTINGS } from '@/lib/constants';
 import { roundToOneDecimal, roundToTwoDecimals } from '@/lib/number-input';
 
 // Blank string → null, so optional text fields clear cleanly when the operator empties them.
@@ -52,6 +52,14 @@ const optionalRackHeight = z
 
 const optionalSquatRackSetting = z.enum(SQUAT_RACK_SETTINGS).nullable();
 const optionalBenchSpotting = z.enum(BENCH_SPOTTINGS).nullable();
+
+// The lifter's BP division (region) — an informational affiliation, not a placement dimension. Blank
+// string → null; otherwise must be one of the fixed BP_DIVISIONS values (the entry card offers them
+// as a dropdown, so only a valid value reaches here).
+const optionalDivision = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+  z.enum(BP_DIVISIONS).nullable(),
+);
 
 const optionalUuid = z.uuid().nullable();
 
@@ -112,6 +120,7 @@ export const entryUpdateSchema = z.object({
   competitionId: z.uuid(),
   weightClassId: optionalUuid,
   ageCategoryId: optionalUuid,
+  division: optionalDivision,
   lotNumber: optionalLotNumber,
   bodyweightKg: optionalBodyweightKg,
   openerSquatKg: optionalWeightKg,

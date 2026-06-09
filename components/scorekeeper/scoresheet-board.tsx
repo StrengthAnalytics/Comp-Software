@@ -250,6 +250,7 @@ export function ScoresheetBoard({
   const [showBw, toggleBw] = usePersistentToggle('scoresheet:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('scoresheet:col:class');
   const [showAgeCat, toggleAgeCat] = usePersistentToggle('scoresheet:col:agecat');
+  const [showDivision, toggleDivision] = usePersistentToggle('scoresheet:col:division', false);
   const [showRack, toggleRack] = usePersistentToggle('scoresheet:col:rack');
   const [showBest, toggleBest] = usePersistentToggle('scoresheet:col:best');
   const [showTotal, toggleTotal] = usePersistentToggle('scoresheet:col:total');
@@ -758,6 +759,7 @@ export function ScoresheetBoard({
               { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
               { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
               { id: 'agecat', label: 'Age category', checked: showAgeCat, onToggle: toggleAgeCat },
+              { id: 'division', label: 'Division', checked: showDivision, onToggle: toggleDivision },
               { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
               { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest },
               ...(canSubTotal
@@ -810,6 +812,7 @@ export function ScoresheetBoard({
               showBw={showBw}
               showClass={showClass}
               showAgeCat={showAgeCat}
+              showDivision={showDivision}
               showRack={showRack}
               showBest={showBest}
               showTotal={showTotal}
@@ -854,6 +857,7 @@ function PlatformPanel({
   showBw,
   showClass,
   showAgeCat,
+  showDivision,
   showRack,
   showBest,
   showTotal,
@@ -884,6 +888,7 @@ function PlatformPanel({
   showBw: boolean;
   showClass: boolean;
   showAgeCat: boolean;
+  showDivision: boolean;
   showRack: boolean;
   showBest: boolean;
   showTotal: boolean;
@@ -964,6 +969,11 @@ function PlatformPanel({
                 {showAgeCat ? (
                   <th scope="col" className={`w-24 text-left ${HEAD}`}>
                     Age Cat.
+                  </th>
+                ) : null}
+                {showDivision ? (
+                  <th scope="col" className={`w-28 text-left ${HEAD}`}>
+                    Division
                   </th>
                 ) : null}
                 {columnLifts.map((lift) => (
@@ -1062,6 +1072,9 @@ function PlatformPanel({
                   ) : null}
                   {showAgeCat ? (
                     <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.ageCategoryName ?? '—'}</td>
+                  ) : null}
+                  {showDivision ? (
+                    <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.division ?? '—'}</td>
                   ) : null}
                   {columnLifts.map((lift) => {
                     const active = isTeamCompetition ? entry.teamLift === lift : true;

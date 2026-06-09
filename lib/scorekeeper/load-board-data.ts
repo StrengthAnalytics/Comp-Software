@@ -69,7 +69,7 @@ export async function loadBoardData(
     supabase
       .from('entries')
       .select(
-        'id, lifter_id, flight_id, weight_class_id, age_category_id, lot_number, team_id, team_lift, bodyweight_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting',
+        'id, lifter_id, flight_id, weight_class_id, age_category_id, division, lot_number, team_id, team_lift, bodyweight_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting',
       )
       .eq('competition_id', competitionId),
     supabase
@@ -140,6 +140,7 @@ export async function loadBoardData(
       weightClassName: row.weight_class_id ? (weightClassById.get(row.weight_class_id) ?? null) : null,
       ageCategoryId: row.age_category_id,
       ageCategoryName: row.age_category_id ? (ageCategoryById.get(row.age_category_id) ?? null) : null,
+      division: row.division,
       rackHeightSquat: row.rack_height_squat,
       squatRackSetting: row.squat_rack_setting,
       rackHeightBench: row.rack_height_bench,

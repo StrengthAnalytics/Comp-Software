@@ -15,6 +15,7 @@ export type BulkImportField =
   | 'club'
   | 'country'
   | 'ageCategoryName'
+  | 'division'
   | 'weightClassName'
   | 'lot'
   | 'bodyweight'
@@ -33,6 +34,7 @@ const BASE_COLUMNS: BulkImportColumn[] = [
   { key: 'club', label: 'Club' },
   { key: 'country', label: 'Country' },
   { key: 'ageCategoryName', label: 'Age category' },
+  { key: 'division', label: 'Division' },
   { key: 'weightClassName', label: 'Weight class' },
   { key: 'lot', label: 'Lot' },
   { key: 'bodyweight', label: 'Bodyweight' },
@@ -69,6 +71,7 @@ export type ParsedImportRow = {
   club: string | null;
   country: string | null;
   ageCategoryName: string | null;
+  division: string | null;
   weightClassName: string | null;
   lot: number | null;
   bodyweight: number | null;
@@ -171,6 +174,7 @@ export type ExportRow = {
   club: string | null;
   country: string | null;
   ageCategoryName: string | null;
+  division: string | null;
   weightClassName: string | null;
   lot: number | null;
   bodyweight: number | null;
@@ -218,6 +222,9 @@ function exportValue(row: ExportRow, key: BulkImportField): string {
     }
     case 'ageCategoryName': {
       return row.ageCategoryName ?? '';
+    }
+    case 'division': {
+      return row.division ?? '';
     }
     case 'weightClassName': {
       return row.weightClassName ?? '';
@@ -324,6 +331,7 @@ export function parseBulkImport(text: string, lifts: Lifts): ParsedImportRow[] {
       club: optionalText(cellAt(cells, indexByKey, 'club')),
       country: optionalText(cellAt(cells, indexByKey, 'country')),
       ageCategoryName: optionalText(cellAt(cells, indexByKey, 'ageCategoryName')),
+      division: optionalText(cellAt(cells, indexByKey, 'division')),
       weightClassName: optionalText(cellAt(cells, indexByKey, 'weightClassName')),
       lot: lot.value,
       bodyweight: bodyweight.value,

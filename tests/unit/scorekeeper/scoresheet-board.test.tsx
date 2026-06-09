@@ -47,6 +47,7 @@ const entry: BoardEntry = {
   weightClassName: null,
   ageCategoryId: null,
   ageCategoryName: null,
+  division: null,
   rackHeightSquat: null,
   squatRackSetting: null,
   rackHeightBench: null,

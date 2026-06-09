@@ -288,6 +288,7 @@ export type Database = {
           lifter_id: string;
           weight_class_id: string | null;
           age_category_id: string | null;
+          division: string | null;
           flight_id: string | null;
           team_id: string | null;
           team_lift: Database['public']['Enums']['lift_type'] | null;
@@ -312,6 +313,7 @@ export type Database = {
           lifter_id: string;
           weight_class_id?: string | null;
           age_category_id?: string | null;
+          division?: string | null;
           flight_id?: string | null;
           team_id?: string | null;
           team_lift?: Database['public']['Enums']['lift_type'] | null;
@@ -336,6 +338,7 @@ export type Database = {
           lifter_id?: string;
           weight_class_id?: string | null;
           age_category_id?: string | null;
+          division?: string | null;
           flight_id?: string | null;
           team_id?: string | null;
           team_lift?: Database['public']['Enums']['lift_type'] | null;

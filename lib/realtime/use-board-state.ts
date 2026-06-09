@@ -89,6 +89,7 @@ export function applyEntryChange(
     weightClassName: changed.weight_class_id ? (classNameById.get(changed.weight_class_id) ?? null) : null,
     ageCategoryId: changed.age_category_id,
     ageCategoryName: changed.age_category_id ? (ageCategoryNameById.get(changed.age_category_id) ?? null) : null,
+    division: changed.division,
     rackHeightSquat: changed.rack_height_squat,
     squatRackSetting: changed.squat_rack_setting,
     rackHeightBench: changed.rack_height_bench,

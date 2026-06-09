@@ -316,7 +316,7 @@ async function copyCompetitionChildren(
   const entries = await supabase
     .from('entries')
     .select(
-      'id, lifter_id, weight_class_id, age_category_id, flight_id, team_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, racks_set, status',
+      'id, lifter_id, weight_class_id, age_category_id, division, flight_id, team_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, racks_set, status',
     )
     .eq('competition_id', sourceId);
   if (entries.error) return duplicateFailed(entries.error);
@@ -330,6 +330,7 @@ async function copyCompetitionChildren(
       lifter_id: row.lifter_id,
       weight_class_id: mappedId(weightClassIds, row.weight_class_id),
       age_category_id: mappedId(ageCategoryIds, row.age_category_id),
+      division: row.division,
       flight_id: mappedId(flightIds, row.flight_id),
       team_id: mappedId(teamIds, row.team_id),
       team_lift: row.team_lift,

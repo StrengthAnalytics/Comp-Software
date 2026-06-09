@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { canRecordMeetResults } from '@/lib/comps/meet-status';
 import { isUniqueViolation } from '@/lib/supabase/errors';
-import { LIFTS_FOR_EVENT } from '@/lib/constants';
+import { BP_DIVISIONS, LIFTS_FOR_EVENT } from '@/lib/constants';
 import { matchAgeCategoryByName, planAgeCategoryRecalc, resolveAgeCategory } from '@/lib/age-categories/age-category';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
 import { formatLifterName } from '@/lib/lifters/name';
@@ -406,6 +406,7 @@ export async function updateEntryAction(input: EntryUpdateInput): Promise<Action
       .update({
         weight_class_id: parsed.data.weightClassId,
         age_category_id: parsed.data.ageCategoryId,
+        division: parsed.data.division,
         lot_number: parsed.data.lotNumber,
         bodyweight_kg: parsed.data.bodyweightKg,
         opener_squat_kg: parsed.data.openerSquatKg,
@@ -912,6 +913,9 @@ export async function bulkImportEntriesAction(input: {
     const weightClassByName = new Map(
       (weightClasses ?? []).map((weightClass) => [weightClass.name.trim().toLowerCase(), weightClass]),
     );
+    // BP divisions are a fixed app-wide list, not per-comp rows, so a paste is matched case-insensitively
+    // against the canonical names (an unmatched, non-empty value warns and is left blank).
+    const divisionByName = new Map(BP_DIVISIONS.map((division) => [division.toLowerCase(), division]));
     const registeredLifterIds = new Set((existingEntries ?? []).map((entry) => entry.lifter_id));
     const lifterIdByName = new Map<string, string>();
 
@@ -983,6 +987,18 @@ export async function bulkImportEntriesAction(input: {
         }
       }
 
+      // Division (BP region) is optional and informational; a non-empty value not on the fixed list warns
+      // and is left blank rather than stored unrecognised.
+      let division: string | null = null;
+      if (row.division) {
+        const matched = divisionByName.get(row.division.trim().toLowerCase());
+        if (matched) {
+          division = matched;
+        } else {
+          warnings.push(`Division "${row.division}" not recognised — left blank.`);
+        }
+      }
+
       const nameKey = `${row.surname.toLowerCase()}|${row.firstName.toLowerCase()}`;
 
       // Resolve the lifter: from this run's cache, then the database, otherwise create.
@@ -1048,6 +1064,7 @@ export async function bulkImportEntriesAction(input: {
           lifter_id: lifterId,
           weight_class_id: weightClassId,
           age_category_id: ageCategoryId,
+          division,
           lot_number: row.lot,
           bodyweight_kg: row.bodyweight,
           opener_squat_kg: row.openerSquat,

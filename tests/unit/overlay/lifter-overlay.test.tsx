@@ -28,6 +28,7 @@ function entry(overrides: Partial<BoardEntry> = {}): BoardEntry {
     weightClassName: '93 kg',
     ageCategoryId: null,
     ageCategoryName: 'Open',
+    division: null,
     rackHeightSquat: null,
     squatRackSetting: null,
     rackHeightBench: null,

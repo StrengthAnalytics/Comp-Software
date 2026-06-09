@@ -11,6 +11,7 @@ type EntryStatus = Database['public']['Enums']['entry_status'];
 export type EntryFormValues = {
   weightClassId: string;
   ageCategoryId: string;
+  division: string;
   lotNumber: string;
   bodyweight: string;
   openerSquat: string;
@@ -30,6 +31,7 @@ export function sameForm(a: EntryFormValues, b: EntryFormValues): boolean {
   return (
     a.weightClassId === b.weightClassId &&
     a.ageCategoryId === b.ageCategoryId &&
+    a.division === b.division &&
     a.lotNumber === b.lotNumber &&
     a.bodyweight === b.bodyweight &&
     a.openerSquat === b.openerSquat &&

@@ -143,6 +143,32 @@ export const DEFAULT_AGE_CATEGORIES: readonly string[] = [
   'M6',
 ];
 
+// British Powerlifting divisions — the region / home nation a lifter competes on behalf of, in BP
+// order. A division is an informational affiliation on an entry, NOT a placement dimension: placement
+// stays weight class × age category × sex. The entry card offers these as a dropdown and the bulk
+// import validates against them. Deliberately a separate constant from SUGGESTED_RECORD_REGIONS even
+// though the values currently coincide — the records vocabulary is kept isolated from the comp
+// vocabulary (ARCHITECTURE.md §7) so a change to one can never silently alter the other.
+export const BP_DIVISIONS = [
+  'England',
+  'Wales',
+  'Scotland',
+  'British',
+  'British Universities',
+  'Northern Ireland',
+  'Yorkshire & North East',
+  'North West',
+  'North Midlands',
+  'East Midlands',
+  'West Midlands',
+  'Greater London',
+  'South West',
+  'South Midlands',
+  'South East',
+] as const;
+
+export type Division = (typeof BP_DIVISIONS)[number];
+
 export type WeightClassSeed = {
   name: string;
   gender: Gender;

@@ -204,6 +204,7 @@ export function WarmUpDisplay({
   const [showBw, toggleBw] = usePersistentToggle('warmup:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('warmup:col:class');
   const [showAgeCat, toggleAgeCat] = usePersistentToggle('warmup:col:agecat');
+  const [showDivision, toggleDivision] = usePersistentToggle('warmup:col:division', false);
   const [showRack, toggleRack] = usePersistentToggle('warmup:col:rack');
   // Attempt columns toggle per lift, so a board can show only the lift currently being warmed up.
   const [showSquatAttempts, toggleSquatAttempts] = usePersistentToggle('warmup:col:attempts:squat');
@@ -386,6 +387,7 @@ export function WarmUpDisplay({
     { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
     { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
     { id: 'agecat', label: 'Age category', checked: showAgeCat, onToggle: toggleAgeCat },
+    { id: 'division', label: 'Division', checked: showDivision, onToggle: toggleDivision },
     { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
     ...liftAttemptToggles,
     { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest, disabled: autoCollapse },
@@ -526,6 +528,11 @@ export function WarmUpDisplay({
                     Age Cat.
                   </th>
                 ) : null}
+                {showDivision ? (
+                  <th scope="col" className={`text-left ${HEAD}`}>
+                    Division
+                  </th>
+                ) : null}
                 {columnLifts.map((lift) => (
                   <Fragment key={lift}>
                     <LiftHeader
@@ -654,6 +661,9 @@ export function WarmUpDisplay({
                     ) : null}
                     {showAgeCat ? (
                       <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.ageCategoryName ?? '—'}</td>
+                    ) : null}
+                    {showDivision ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.division ?? '—'}</td>
                     ) : null}
                     {columnLifts.map((lift) => {
                       const active = isTeamCompetition ? entry.teamLift === lift : true;

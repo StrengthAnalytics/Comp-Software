@@ -22,12 +22,14 @@ import {
   BENCH_SPOTTING_LABELS,
   BENCH_SPOTTINGS,
   ENTRY_STATUS_LABELS,
+  BP_DIVISIONS,
   ENTRY_STATUSES,
   GENDER_LABELS,
   GENDERS,
   SQUAT_RACK_SETTING_LABELS,
   SQUAT_RACK_SETTINGS,
   type BenchSpotting,
+  type Division,
   type Gender,
   type Lifts,
   type SquatRackSetting,
@@ -58,6 +60,7 @@ export type EntryWithLifter = {
   id: string;
   weight_class_id: string | null;
   age_category_id: string | null;
+  division: string | null;
   lot_number: number | null;
   bodyweight_kg: number | null;
   opener_squat_kg: number | null;
@@ -107,6 +110,7 @@ function entryToForm(entry: EntryWithLifter): EntryFormValues {
   return {
     weightClassId: entry.weight_class_id ?? '',
     ageCategoryId: entry.age_category_id ?? '',
+    division: entry.division ?? '',
     lotNumber: numberToInput(entry.lot_number),
     bodyweight: numberToInput(entry.bodyweight_kg),
     openerSquat: numberToInput(entry.opener_squat_kg),
@@ -331,6 +335,8 @@ function EntryCard({
         competitionId,
         weightClassId: form.weightClassId === '' ? null : form.weightClassId,
         ageCategoryId: form.ageCategoryId === '' ? null : form.ageCategoryId,
+        // The Division select only offers BP_DIVISIONS values (or blank), so this narrowing is exact.
+        division: form.division === '' ? null : (form.division as Division),
         lotNumber: parseOptionalNumber(form.lotNumber),
         bodyweightKg: parseOptionalNumber(form.bodyweight),
         openerSquatKg: lifts.squat ? parseOptionalNumber(form.openerSquat) : null,
@@ -424,6 +430,22 @@ function EntryCard({
             {ageCategories.map((ageCategory) => (
               <option key={ageCategory.id} value={ageCategory.id}>
                 {ageCategory.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className={LABEL_CLASS}>Division</span>
+          <select
+            value={form.division}
+            onChange={(event) => update('division', event.target.value)}
+            className={INPUT_CLASS}
+          >
+            <option value="">—</option>
+            {BP_DIVISIONS.map((division) => (
+              <option key={division} value={division}>
+                {division}
               </option>
             ))}
           </select>
@@ -824,6 +846,7 @@ function CopyEntriesButton({
       club: entry.lifter.club,
       country: entry.lifter.country,
       ageCategoryName: entry.age_category_id ? (ageCategoryNameById.get(entry.age_category_id) ?? null) : null,
+      division: entry.division,
       weightClassName: entry.weight_class_id ? (weightClassNameById.get(entry.weight_class_id) ?? null) : null,
       lot: entry.lot_number,
       bodyweight: entry.bodyweight_kg,
