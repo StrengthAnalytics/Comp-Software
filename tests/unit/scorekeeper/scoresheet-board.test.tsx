@@ -45,8 +45,9 @@ const entry: BoardEntry = {
   bodyweightKg: 80,
   weightClassId: null,
   weightClassName: null,
-  divisionId: null,
-  divisionName: null,
+  ageCategoryId: null,
+  ageCategoryName: null,
+  division: null,
   rackHeightSquat: null,
   squatRackSetting: null,
   rackHeightBench: null,
@@ -71,7 +72,7 @@ function renderBoard(overrides: BoardOverrides = {}) {
       sessions={sessions}
       flights={flights}
       weightClasses={[]}
-      divisions={[]}
+      ageCategories={[]}
       teams={overrides.teams ?? []}
       entries={overrides.entries ?? [entry]}
       attempts={[]}

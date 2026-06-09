@@ -14,7 +14,8 @@ export type BulkImportField =
   | 'membership'
   | 'club'
   | 'country'
-  | 'divisionName'
+  | 'ageCategoryName'
+  | 'division'
   | 'weightClassName'
   | 'lot'
   | 'bodyweight'
@@ -32,7 +33,8 @@ const BASE_COLUMNS: BulkImportColumn[] = [
   { key: 'membership', label: 'Membership number' },
   { key: 'club', label: 'Club' },
   { key: 'country', label: 'Country' },
-  { key: 'divisionName', label: 'Division' },
+  { key: 'ageCategoryName', label: 'Age category' },
+  { key: 'division', label: 'Division' },
   { key: 'weightClassName', label: 'Weight class' },
   { key: 'lot', label: 'Lot' },
   { key: 'bodyweight', label: 'Bodyweight' },
@@ -68,7 +70,8 @@ export type ParsedImportRow = {
   membership: string | null;
   club: string | null;
   country: string | null;
-  divisionName: string | null;
+  ageCategoryName: string | null;
+  division: string | null;
   weightClassName: string | null;
   lot: number | null;
   bodyweight: number | null;
@@ -160,6 +163,26 @@ function cellAt(cells: string[], indexByKey: Map<BulkImportField, number>, key: 
   return columnIndex === undefined ? '' : (cells[columnIndex] ?? '');
 }
 
+// Maps each known column to the position it actually occupies in a pasted header row, by matching the
+// header label (case- and whitespace-insensitively). Lets the parser align by name rather than fixed
+// position, so a sheet whose columns are reordered — or whose layout predates a column, e.g. an older
+// export with no "Division" column — still lands each value in the right field instead of silently
+// shifting. A header column the layout doesn't know is ignored; a known column the header omits is left
+// unmapped (its cells read as blank).
+function deriveColumnIndex(
+  headerCells: string[],
+  labelToKey: Map<string, BulkImportField>,
+): Map<BulkImportField, number> {
+  const indexByKey = new Map<BulkImportField, number>();
+  for (const [columnIndex, cell] of headerCells.entries()) {
+    const key = labelToKey.get(cell.trim().toLowerCase());
+    if (key !== undefined && !indexByKey.has(key)) {
+      indexByKey.set(key, columnIndex);
+    }
+  }
+  return indexByKey;
+}
+
 // The reverse of the import: dump current registrations as the same tab-separated layout so the
 // operator can pull them back into a sheet, edit, and re-import. Round-trips with parseBulkImport.
 export type ExportRow = {
@@ -170,7 +193,8 @@ export type ExportRow = {
   membership: string | null;
   club: string | null;
   country: string | null;
-  divisionName: string | null;
+  ageCategoryName: string | null;
+  division: string | null;
   weightClassName: string | null;
   lot: number | null;
   bodyweight: number | null;
@@ -216,8 +240,11 @@ function exportValue(row: ExportRow, key: BulkImportField): string {
     case 'country': {
       return row.country ?? '';
     }
-    case 'divisionName': {
-      return row.divisionName ?? '';
+    case 'ageCategoryName': {
+      return row.ageCategoryName ?? '';
+    }
+    case 'division': {
+      return row.division ?? '';
     }
     case 'weightClassName': {
       return row.weightClassName ?? '';
@@ -249,8 +276,19 @@ export function formatBulkExport(rows: ExportRow[], lifts: Lifts): string {
 
 export function parseBulkImport(text: string, lifts: Lifts): ParsedImportRow[] {
   const columns = bulkImportColumns(lifts);
-  const indexByKey = new Map(columns.map((column, index) => [column.key, index]));
   const delimiter = detectDelimiter(text);
+
+  // Default to the fixed layout positions; if the paste includes the header row, remap columns by their
+  // actual header position so a reordered or older-layout sheet aligns by name rather than position.
+  let indexByKey = new Map<BulkImportField, number>(columns.map((column, index) => [column.key, index]));
+  const labelToKey = new Map(columns.map((column) => [column.label.trim().toLowerCase(), column.key]));
+  const headerRow = text
+    .split(/\r?\n/)
+    .find((line) => line.split(delimiter)[0]?.trim().toLowerCase() === 'first name');
+  if (headerRow) {
+    indexByKey = deriveColumnIndex(headerRow.split(delimiter), labelToKey);
+  }
+
   const rows: ParsedImportRow[] = [];
 
   for (const [index, rawLine] of text.split(/\r?\n/).entries()) {
@@ -323,7 +361,8 @@ export function parseBulkImport(text: string, lifts: Lifts): ParsedImportRow[] {
       membership: optionalText(cellAt(cells, indexByKey, 'membership')),
       club: optionalText(cellAt(cells, indexByKey, 'club')),
       country: optionalText(cellAt(cells, indexByKey, 'country')),
-      divisionName: optionalText(cellAt(cells, indexByKey, 'divisionName')),
+      ageCategoryName: optionalText(cellAt(cells, indexByKey, 'ageCategoryName')),
+      division: optionalText(cellAt(cells, indexByKey, 'division')),
       weightClassName: optionalText(cellAt(cells, indexByKey, 'weightClassName')),
       lot: lot.value,
       bodyweight: bodyweight.value,

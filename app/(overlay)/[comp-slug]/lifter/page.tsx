@@ -44,7 +44,7 @@ export default async function LifterOverlayPage({
     );
   }
 
-  const { platforms, sessions, flights, weightClasses, divisions, teams, entries, attempts } = await loadBoardData(
+  const { platforms, sessions, flights, weightClasses, ageCategories, teams, entries, attempts } = await loadBoardData(
     comp.id,
     { publicView: true },
   );
@@ -74,7 +74,7 @@ export default async function LifterOverlayPage({
       sessions={sessions}
       flights={flights}
       weightClasses={weightClasses}
-      divisions={divisions}
+      ageCategories={ageCategories}
       teams={teams}
       entries={entries}
       attempts={attempts}

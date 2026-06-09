@@ -21,14 +21,14 @@ export type BoardData = {
   sessions: BoardSession[];
   flights: BoardFlight[];
   weightClasses: NamedOption[];
-  divisions: NamedOption[];
+  ageCategories: NamedOption[];
   teams: NamedOption[];
   entries: BoardEntry[];
   attempts: BoardAttempt[];
 };
 
 // Loads the full live-scorekeeping snapshot for a competition — platforms, sessions, flights, weight
-// classes, divisions, entries (with rack settings) and attempts — mapped into the flat Board* shapes
+// classes, age categories, entries (with rack settings) and attempts — mapped into the flat Board* shapes
 // the client surfaces consume. Shared by the run screen and the loading-crew display so both seed
 // from one identical query set (and then reconcile via the same realtime subscriptions).
 //
@@ -47,7 +47,7 @@ export async function loadBoardData(
     { data: sessionRows },
     { data: flightRows },
     { data: weightClassRows },
-    { data: divisionRows },
+    { data: ageCategoryRows },
     { data: teamRows },
     { data: entryRows },
     { data: attemptRows },
@@ -64,12 +64,12 @@ export async function loadBoardData(
       .eq('competition_id', competitionId)
       .order('sort_order', { ascending: true }),
     supabase.from('weight_classes').select('id, name').eq('competition_id', competitionId),
-    supabase.from('divisions').select('id, name').eq('competition_id', competitionId),
+    supabase.from('age_categories').select('id, name').eq('competition_id', competitionId),
     supabase.from('teams').select('id, name').eq('competition_id', competitionId),
     supabase
       .from('entries')
       .select(
-        'id, lifter_id, flight_id, weight_class_id, division_id, lot_number, team_id, team_lift, bodyweight_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting',
+        'id, lifter_id, flight_id, weight_class_id, age_category_id, division, lot_number, team_id, team_lift, bodyweight_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting',
       )
       .eq('competition_id', competitionId),
     supabase
@@ -99,7 +99,7 @@ export async function loadBoardData(
     lifterRows.flatMap((lifter) => (lifter.id ? [[lifter.id, lifter] as const] : [])),
   );
   const weightClassById = new Map((weightClassRows ?? []).map((weightClass) => [weightClass.id, weightClass.name]));
-  const divisionById = new Map((divisionRows ?? []).map((division) => [division.id, division.name]));
+  const ageCategoryById = new Map((ageCategoryRows ?? []).map((ageCategory) => [ageCategory.id, ageCategory.name]));
   const teamNameById = new Map((teamRows ?? []).map((team) => [team.id, team.name]));
 
   const platforms: BoardPlatform[] = (platformRows ?? []).map((platform) => ({ id: platform.id, name: platform.name }));
@@ -119,7 +119,10 @@ export async function loadBoardData(
     id: weightClass.id,
     name: weightClass.name,
   }));
-  const divisions: NamedOption[] = (divisionRows ?? []).map((division) => ({ id: division.id, name: division.name }));
+  const ageCategories: NamedOption[] = (ageCategoryRows ?? []).map((ageCategory) => ({
+    id: ageCategory.id,
+    name: ageCategory.name,
+  }));
   const teams: NamedOption[] = (teamRows ?? []).map((team) => ({ id: team.id, name: team.name }));
   const entries: BoardEntry[] = (entryRows ?? []).map((row) => {
     const lifter = lifterById.get(row.lifter_id);
@@ -135,8 +138,9 @@ export async function loadBoardData(
       bodyweightKg: row.bodyweight_kg,
       weightClassId: row.weight_class_id,
       weightClassName: row.weight_class_id ? (weightClassById.get(row.weight_class_id) ?? null) : null,
-      divisionId: row.division_id,
-      divisionName: row.division_id ? (divisionById.get(row.division_id) ?? null) : null,
+      ageCategoryId: row.age_category_id,
+      ageCategoryName: row.age_category_id ? (ageCategoryById.get(row.age_category_id) ?? null) : null,
+      division: row.division,
       rackHeightSquat: row.rack_height_squat,
       squatRackSetting: row.squat_rack_setting,
       rackHeightBench: row.rack_height_bench,
@@ -154,5 +158,5 @@ export async function loadBoardData(
     decidedAt: row.decided_at,
   }));
 
-  return { platforms, sessions, flights, weightClasses, divisions, teams, entries, attempts };
+  return { platforms, sessions, flights, weightClasses, ageCategories, teams, entries, attempts };
 }

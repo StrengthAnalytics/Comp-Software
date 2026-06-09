@@ -151,7 +151,7 @@ export function LoadingDisplay({
   attempts: initialAttempts,
 }: LoadingDisplayProps) {
   // Read-only live state shared with the run screen; the loading display never mutates it (no
-  // optimistic writes), it only reads to render. Weight classes/divisions are omitted — this screen
+  // optimistic writes), it only reads to render. Weight classes/age categories are omitted — this screen
   // doesn't show those columns.
   const { attempts, entries, flights } = useBoardState({
     competitionId,

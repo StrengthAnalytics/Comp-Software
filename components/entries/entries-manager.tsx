@@ -22,12 +22,14 @@ import {
   BENCH_SPOTTING_LABELS,
   BENCH_SPOTTINGS,
   ENTRY_STATUS_LABELS,
+  BP_DIVISIONS,
   ENTRY_STATUSES,
   GENDER_LABELS,
   GENDERS,
   SQUAT_RACK_SETTING_LABELS,
   SQUAT_RACK_SETTINGS,
   type BenchSpotting,
+  type Division,
   type Gender,
   type Lifts,
   type SquatRackSetting,
@@ -57,7 +59,8 @@ export type EntryLifter = {
 export type EntryWithLifter = {
   id: string;
   weight_class_id: string | null;
-  division_id: string | null;
+  age_category_id: string | null;
+  division: string | null;
   lot_number: number | null;
   bodyweight_kg: number | null;
   opener_squat_kg: number | null;
@@ -72,7 +75,7 @@ export type EntryWithLifter = {
   lifter: EntryLifter;
 };
 
-export type DivisionOption = { id: string; name: string };
+export type AgeCategoryOption = { id: string; name: string };
 export type WeightClassOption = { id: string; name: string; gender: string };
 
 const INPUT_CLASS =
@@ -106,7 +109,8 @@ function fullName(lifter: { first_name: string; surname: string }): string {
 function entryToForm(entry: EntryWithLifter): EntryFormValues {
   return {
     weightClassId: entry.weight_class_id ?? '',
-    divisionId: entry.division_id ?? '',
+    ageCategoryId: entry.age_category_id ?? '',
+    division: entry.division ?? '',
     lotNumber: numberToInput(entry.lot_number),
     bodyweight: numberToInput(entry.bodyweight_kg),
     openerSquat: numberToInput(entry.opener_squat_kg),
@@ -253,13 +257,13 @@ function EntryCard({
   competitionId,
   entry,
   lifts,
-  divisions,
+  ageCategories,
   weightClasses,
 }: {
   competitionId: string;
   entry: EntryWithLifter;
   lifts: Lifts;
-  divisions: DivisionOption[];
+  ageCategories: AgeCategoryOption[];
   weightClasses: WeightClassOption[];
 }) {
   const router = useRouter();
@@ -330,7 +334,9 @@ function EntryCard({
         id: entry.id,
         competitionId,
         weightClassId: form.weightClassId === '' ? null : form.weightClassId,
-        divisionId: form.divisionId === '' ? null : form.divisionId,
+        ageCategoryId: form.ageCategoryId === '' ? null : form.ageCategoryId,
+        // The Division select only offers BP_DIVISIONS values (or blank), so this narrowing is exact.
+        division: form.division === '' ? null : (form.division as Division),
         lotNumber: parseOptionalNumber(form.lotNumber),
         bodyweightKg: parseOptionalNumber(form.bodyweight),
         openerSquatKg: lifts.squat ? parseOptionalNumber(form.openerSquat) : null,
@@ -414,16 +420,32 @@ function EntryCard({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className={LABEL_CLASS}>Division</span>
+          <span className={LABEL_CLASS}>Age category</span>
           <select
-            value={form.divisionId}
-            onChange={(event) => update('divisionId', event.target.value)}
+            value={form.ageCategoryId}
+            onChange={(event) => update('ageCategoryId', event.target.value)}
             className={INPUT_CLASS}
           >
             <option value="">—</option>
-            {divisions.map((division) => (
-              <option key={division.id} value={division.id}>
-                {division.name}
+            {ageCategories.map((ageCategory) => (
+              <option key={ageCategory.id} value={ageCategory.id}>
+                {ageCategory.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className={LABEL_CLASS}>Division</span>
+          <select
+            value={form.division}
+            onChange={(event) => update('division', event.target.value)}
+            className={INPUT_CLASS}
+          >
+            <option value="">—</option>
+            {BP_DIVISIONS.map((division) => (
+              <option key={division} value={division}>
+                {division}
               </option>
             ))}
           </select>
@@ -794,12 +816,12 @@ const COPY_RESET_MS = 2000;
 
 function CopyEntriesButton({
   entries,
-  divisions,
+  ageCategories,
   weightClasses,
   lifts,
 }: {
   entries: EntryWithLifter[];
-  divisions: DivisionOption[];
+  ageCategories: AgeCategoryOption[];
   weightClasses: WeightClassOption[];
   lifts: Lifts;
 }) {
@@ -810,7 +832,7 @@ function CopyEntriesButton({
     return null;
   }
 
-  const divisionNameById = new Map(divisions.map((division) => [division.id, division.name]));
+  const ageCategoryNameById = new Map(ageCategories.map((ageCategory) => [ageCategory.id, ageCategory.name]));
   const weightClassNameById = new Map(weightClasses.map((weightClass) => [weightClass.id, weightClass.name]));
 
   async function copy() {
@@ -823,7 +845,8 @@ function CopyEntriesButton({
       membership: entry.lifter.ipf_member_id,
       club: entry.lifter.club,
       country: entry.lifter.country,
-      divisionName: entry.division_id ? (divisionNameById.get(entry.division_id) ?? null) : null,
+      ageCategoryName: entry.age_category_id ? (ageCategoryNameById.get(entry.age_category_id) ?? null) : null,
+      division: entry.division,
       weightClassName: entry.weight_class_id ? (weightClassNameById.get(entry.weight_class_id) ?? null) : null,
       lot: entry.lot_number,
       bodyweight: entry.bodyweight_kg,
@@ -855,9 +878,9 @@ function CopyEntriesButton({
   );
 }
 
-// Re-derives every registered lifter's age division from the comp date and their current date of
-// birth. The division is otherwise only assigned at registration, so this is the way to pick up a
-// date-of-birth correction made afterwards. Confirms first (it overrides any manual division change)
+// Re-derives every registered lifter's age category from the comp date and their current date of
+// birth. The age category is otherwise only assigned at registration, so this is the way to pick up a
+// date-of-birth correction made afterwards. Confirms first (it overrides any manual age-category change)
 // and reports a one-line summary of what changed.
 function RecalculateAgeCategories({
   competitionId,
@@ -874,7 +897,7 @@ function RecalculateAgeCategories({
   function run() {
     const confirmed = globalThis.confirm(
       `Recalculate age categories for all ${entryCount} lifter${entryCount === 1 ? '' : 's'} from their date of birth? ` +
-        "This sets each lifter's division to their age category and overrides any manual division change.",
+        "This sets each lifter's age category from their date of birth and overrides any manual age-category change.",
     );
     if (!confirmed) {
       return;
@@ -888,13 +911,13 @@ function RecalculateAgeCategories({
         setMessage(readError(result));
         return;
       }
-      const { updated, unchanged, noDateOfBirth, noMatchingDivision } = result.data;
+      const { updated, unchanged, noDateOfBirth, noMatchingAgeCategory } = result.data;
       const parts = [`${updated} updated`, `${unchanged} unchanged`];
       if (noDateOfBirth > 0) {
         parts.push(`${noDateOfBirth} no date of birth`);
       }
-      if (noMatchingDivision > 0) {
-        parts.push(`${noMatchingDivision} no matching division`);
+      if (noMatchingAgeCategory > 0) {
+        parts.push(`${noMatchingAgeCategory} no matching age category`);
       }
       setMessage(parts.join(' · '));
       router.refresh();
@@ -921,7 +944,7 @@ export function EntriesManager({
   competitionStatus,
   competitionStartsOn,
   lifts,
-  divisions,
+  ageCategories,
   weightClasses,
   entries,
 }: {
@@ -930,7 +953,7 @@ export function EntriesManager({
   competitionStatus: Database['public']['Enums']['comp_status'];
   competitionStartsOn: string | null;
   lifts: Lifts;
-  divisions: DivisionOption[];
+  ageCategories: AgeCategoryOption[];
   weightClasses: WeightClassOption[];
   entries: EntryWithLifter[];
 }) {
@@ -999,7 +1022,7 @@ export function EntriesManager({
             ) : null}
             <CopyEntriesButton
               entries={entries}
-              divisions={divisions}
+              ageCategories={ageCategories}
               weightClasses={weightClasses}
               lifts={lifts}
             />
@@ -1020,7 +1043,7 @@ export function EntriesManager({
                   competitionId={competitionId}
                   entry={entry}
                   lifts={lifts}
-                  divisions={divisions}
+                  ageCategories={ageCategories}
                   weightClasses={weightClasses}
                 />
               ))

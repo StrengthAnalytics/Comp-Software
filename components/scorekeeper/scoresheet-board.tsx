@@ -61,7 +61,7 @@ type ScoresheetBoardProps = {
   sessions: BoardSession[];
   flights: BoardFlight[];
   weightClasses: NamedOption[];
-  divisions: NamedOption[];
+  ageCategories: NamedOption[];
   teams: NamedOption[];
   entries: BoardEntry[];
   attempts: BoardAttempt[];
@@ -222,7 +222,7 @@ export function ScoresheetBoard({
   sessions,
   flights: initialFlights,
   weightClasses,
-  divisions,
+  ageCategories,
   teams,
   entries: initialEntries,
   attempts: initialAttempts,
@@ -233,7 +233,7 @@ export function ScoresheetBoard({
     initialEntries,
     initialFlights,
     weightClasses,
-    divisions,
+    ageCategories,
     teams,
   });
   const [error, setError] = useState<string | null>(null);
@@ -249,7 +249,8 @@ export function ScoresheetBoard({
   const [showLot, toggleLot] = usePersistentToggle('scoresheet:col:lot');
   const [showBw, toggleBw] = usePersistentToggle('scoresheet:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('scoresheet:col:class');
-  const [showDiv, toggleDiv] = usePersistentToggle('scoresheet:col:div');
+  const [showAgeCat, toggleAgeCat] = usePersistentToggle('scoresheet:col:agecat');
+  const [showDivision, toggleDivision] = usePersistentToggle('scoresheet:col:division', false);
   const [showRack, toggleRack] = usePersistentToggle('scoresheet:col:rack');
   const [showBest, toggleBest] = usePersistentToggle('scoresheet:col:best');
   const [showTotal, toggleTotal] = usePersistentToggle('scoresheet:col:total');
@@ -353,8 +354,8 @@ export function ScoresheetBoard({
     return map;
   }, [entries, attempts, columnLifts, kitType, isTeamCompetition, showCurPlace, showPredPlace, showPredTotal, showPredGl]);
 
-  // Individual current/predicted place per entry, within (weight class × division × sex). Empty for a
-  // team comp (which ranks teams, not lifters) or unless a place column is on.
+  // Individual current/predicted place per entry, within (weight class × age category × sex). Empty for
+  // a team comp (which ranks teams, not lifters) or unless a place column is on.
   const placings = useMemo(() => {
     if (isTeamCompetition || (!showCurPlace && !showPredPlace)) {
       return { currentPlaceById: new Map<string, number>(), predictedPlaceById: new Map<string, number>() };
@@ -364,7 +365,7 @@ export function ScoresheetBoard({
       return {
         id: entry.id,
         weightClassId: entry.weightClassId,
-        divisionId: entry.divisionId,
+        ageCategoryId: entry.ageCategoryId,
         sex: entry.sex,
         bodyweightKg: entry.bodyweightKg,
         lotNumber: entry.lotNumber,
@@ -757,7 +758,8 @@ export function ScoresheetBoard({
               { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
               { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
               { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
-              { id: 'div', label: 'Division', checked: showDiv, onToggle: toggleDiv },
+              { id: 'agecat', label: 'Age category', checked: showAgeCat, onToggle: toggleAgeCat },
+              { id: 'division', label: 'Division', checked: showDivision, onToggle: toggleDivision },
               { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
               { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest },
               ...(canSubTotal
@@ -809,7 +811,8 @@ export function ScoresheetBoard({
               showLot={showLot}
               showBw={showBw}
               showClass={showClass}
-              showDiv={showDiv}
+              showAgeCat={showAgeCat}
+              showDivision={showDivision}
               showRack={showRack}
               showBest={showBest}
               showTotal={showTotal}
@@ -853,7 +856,8 @@ function PlatformPanel({
   showLot,
   showBw,
   showClass,
-  showDiv,
+  showAgeCat,
+  showDivision,
   showRack,
   showBest,
   showTotal,
@@ -883,7 +887,8 @@ function PlatformPanel({
   showLot: boolean;
   showBw: boolean;
   showClass: boolean;
-  showDiv: boolean;
+  showAgeCat: boolean;
+  showDivision: boolean;
   showRack: boolean;
   showBest: boolean;
   showTotal: boolean;
@@ -961,9 +966,14 @@ function PlatformPanel({
                     Class
                   </th>
                 ) : null}
-                {showDiv ? (
+                {showAgeCat ? (
                   <th scope="col" className={`w-24 text-left ${HEAD}`}>
-                    Div
+                    Age Cat.
+                  </th>
+                ) : null}
+                {showDivision ? (
+                  <th scope="col" className={`w-28 text-left ${HEAD}`}>
+                    Division
                   </th>
                 ) : null}
                 {columnLifts.map((lift) => (
@@ -1060,8 +1070,11 @@ function PlatformPanel({
                   {showClass ? (
                     <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.weightClassName ?? '—'}</td>
                   ) : null}
-                  {showDiv ? (
-                    <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.divisionName ?? '—'}</td>
+                  {showAgeCat ? (
+                    <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.ageCategoryName ?? '—'}</td>
+                  ) : null}
+                  {showDivision ? (
+                    <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.division ?? '—'}</td>
                   ) : null}
                   {columnLifts.map((lift) => {
                     const active = isTeamCompetition ? entry.teamLift === lift : true;

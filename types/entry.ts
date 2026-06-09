@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BENCH_SPOTTINGS, SQUAT_RACK_SETTINGS } from '@/lib/constants';
+import { BENCH_SPOTTINGS, BP_DIVISIONS, SQUAT_RACK_SETTINGS } from '@/lib/constants';
 import { roundToOneDecimal, roundToTwoDecimals } from '@/lib/number-input';
 
 // Blank string → null, so optional text fields clear cleanly when the operator empties them.
@@ -53,6 +53,14 @@ const optionalRackHeight = z
 const optionalSquatRackSetting = z.enum(SQUAT_RACK_SETTINGS).nullable();
 const optionalBenchSpotting = z.enum(BENCH_SPOTTINGS).nullable();
 
+// The lifter's BP division (region) — an informational affiliation, not a placement dimension. Blank
+// string → null; otherwise must be one of the fixed BP_DIVISIONS values (the entry card offers them
+// as a dropdown, so only a valid value reaches here).
+const optionalDivision = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
+  z.enum(BP_DIVISIONS).nullable(),
+);
+
 const optionalUuid = z.uuid().nullable();
 
 export const GENDER_VALUES = ['male', 'female'] as const;
@@ -91,7 +99,7 @@ export const lifterSearchSchema = z.object({
   query: z.string().trim().min(1, 'Enter a surname to search.').max(80, 'Search term is too long.'),
 });
 
-// Registering a lifter for a comp. Only the link is required at this point; class, division, lot
+// Registering a lifter for a comp. Only the link is required at this point; class, age category, lot
 // and weigh-in details are filled in afterwards on the same screen via the update schema.
 export const createEntrySchema = z.object({
   competitionId: z.uuid(),
@@ -111,7 +119,8 @@ export const entryUpdateSchema = z.object({
   id: z.uuid(),
   competitionId: z.uuid(),
   weightClassId: optionalUuid,
-  divisionId: optionalUuid,
+  ageCategoryId: optionalUuid,
+  division: optionalDivision,
   lotNumber: optionalLotNumber,
   bodyweightKg: optionalBodyweightKg,
   openerSquatKg: optionalWeightKg,
@@ -129,7 +138,7 @@ export type EntryUpdateInput = z.infer<typeof entryUpdateSchema>;
 
 // Recording a lifter's weigh-in. Deliberately a subset of the entry update: it touches only the
 // fields captured at the scale (bodyweight, openers, rack heights, status) so the weigh-in screen
-// cannot clobber the weight class, division or lot set during registration.
+// cannot clobber the weight class, age category or lot set during registration.
 export const weighInSchema = z.object({
   id: z.uuid(),
   competitionId: z.uuid(),
@@ -173,8 +182,8 @@ export type RackSettingsInput = z.infer<typeof rackSettingsSchema>;
 
 // Recording a lifter's rack heights from the dedicated rack-heights screen (the warm-up room). Like
 // weighInSchema this is a deliberate subset of the entry update — only the squat/bench rack columns
-// plus the `racks_set` completion marker — so the screen can't clobber the weight class, division, lot
-// or weigh-in data. Both lifts are written together (unlike the per-lift rackSettingsSchema the run
+// plus the `racks_set` completion marker — so the screen can't clobber the weight class, age category,
+// lot or weigh-in data. Both lifts are written together (unlike the per-lift rackSettingsSchema the run
 // screen uses); a lift the entry doesn't contest comes through as null and is cleared.
 export const rackHeightsSchema = z.object({
   entryId: z.uuid(),

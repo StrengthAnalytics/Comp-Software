@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   ipfAgeCategory,
   isoYear,
-  matchDivisionByName,
+  matchAgeCategoryByName,
   planAgeCategoryRecalc,
   resolveAgeCategory,
-} from '@/lib/divisions/age-category';
+} from '@/lib/age-categories/age-category';
 
 describe('ipfAgeCategory', () => {
   const COMP_YEAR = 2026;
@@ -81,48 +81,48 @@ describe('resolveAgeCategory', () => {
   });
 });
 
-describe('matchDivisionByName', () => {
-  const divisions = [
+describe('matchAgeCategoryByName', () => {
+  const ageCategories = [
     { id: 'a', name: 'Open' },
     { id: 'b', name: 'M1' },
     { id: 'c', name: ' U23 ' },
   ];
 
-  it('matches a division by name, case- and whitespace-insensitively', () => {
-    expect(matchDivisionByName(divisions, 'open')?.id).toBe('a');
-    expect(matchDivisionByName(divisions, 'U23')?.id).toBe('c');
+  it('matches an age category by name, case- and whitespace-insensitively', () => {
+    expect(matchAgeCategoryByName(ageCategories, 'open')?.id).toBe('a');
+    expect(matchAgeCategoryByName(ageCategories, 'U23')?.id).toBe('c');
   });
 
-  it('returns null when no division matches or the category is null', () => {
-    expect(matchDivisionByName(divisions, 'M6')).toBeNull();
-    expect(matchDivisionByName(divisions, null)).toBeNull();
+  it('returns null when no age category matches or the category is null', () => {
+    expect(matchAgeCategoryByName(ageCategories, 'M6')).toBeNull();
+    expect(matchAgeCategoryByName(ageCategories, null)).toBeNull();
   });
 });
 
 describe('planAgeCategoryRecalc', () => {
-  const divisions = [
+  const ageCategories = [
     { id: 'open', name: 'Open' },
     { id: 'm1', name: 'M1' },
     { id: 'u23', name: 'U23' },
   ];
   const startsOn = '2026-03-14';
 
-  it('queues an update when an entry is on the wrong age division', () => {
+  it('queues an update when an entry is on the wrong age category', () => {
     // Born 1986 → age 40 in 2026 → M1, currently on Open.
     const plan = planAgeCategoryRecalc(
       startsOn,
-      [{ id: 'e1', dateOfBirth: '1986-05-01', divisionId: 'open' }],
-      divisions,
+      [{ id: 'e1', dateOfBirth: '1986-05-01', ageCategoryId: 'open' }],
+      ageCategories,
     );
-    expect(plan.updates).toEqual([{ entryId: 'e1', divisionId: 'm1' }]);
-    expect(plan).toMatchObject({ updated: 1, unchanged: 0, noDateOfBirth: 0, noMatchingDivision: 0 });
+    expect(plan.updates).toEqual([{ entryId: 'e1', ageCategoryId: 'm1' }]);
+    expect(plan).toMatchObject({ updated: 1, unchanged: 0, noDateOfBirth: 0, noMatchingAgeCategory: 0 });
   });
 
-  it('leaves an entry already on its age division unchanged', () => {
+  it('leaves an entry already on its age category unchanged', () => {
     const plan = planAgeCategoryRecalc(
       startsOn,
-      [{ id: 'e1', dateOfBirth: '1986-05-01', divisionId: 'm1' }],
-      divisions,
+      [{ id: 'e1', dateOfBirth: '1986-05-01', ageCategoryId: 'm1' }],
+      ageCategories,
     );
     expect(plan.updates).toEqual([]);
     expect(plan).toMatchObject({ updated: 0, unchanged: 1 });
@@ -131,31 +131,31 @@ describe('planAgeCategoryRecalc', () => {
   it('counts an entry with no date of birth and leaves it untouched', () => {
     const plan = planAgeCategoryRecalc(
       startsOn,
-      [{ id: 'e1', dateOfBirth: null, divisionId: 'open' }],
-      divisions,
+      [{ id: 'e1', dateOfBirth: null, ageCategoryId: 'open' }],
+      ageCategories,
     );
     expect(plan.updates).toEqual([]);
     expect(plan).toMatchObject({ noDateOfBirth: 1, updated: 0, unchanged: 0 });
   });
 
-  it('counts an entry whose category has no matching division and leaves it untouched', () => {
+  it('counts an entry whose category has no matching age category and leaves it untouched', () => {
     // Born 1956 → age 70 → M4, which this comp does not have.
     const plan = planAgeCategoryRecalc(
       startsOn,
-      [{ id: 'e1', dateOfBirth: '1956-05-01', divisionId: 'open' }],
-      divisions,
+      [{ id: 'e1', dateOfBirth: '1956-05-01', ageCategoryId: 'open' }],
+      ageCategories,
     );
     expect(plan.updates).toEqual([]);
-    expect(plan).toMatchObject({ noMatchingDivision: 1, updated: 0 });
+    expect(plan).toMatchObject({ noMatchingAgeCategory: 1, updated: 0 });
   });
 
-  it('assigns a previously blank division', () => {
+  it('assigns a previously blank age category', () => {
     const plan = planAgeCategoryRecalc(
       startsOn,
-      [{ id: 'e1', dateOfBirth: '2005-05-01', divisionId: null }],
-      divisions,
+      [{ id: 'e1', dateOfBirth: '2005-05-01', ageCategoryId: null }],
+      ageCategories,
     );
-    expect(plan.updates).toEqual([{ entryId: 'e1', divisionId: 'u23' }]);
+    expect(plan.updates).toEqual([{ entryId: 'e1', ageCategoryId: 'u23' }]);
     expect(plan.updated).toBe(1);
   });
 
@@ -163,14 +163,14 @@ describe('planAgeCategoryRecalc', () => {
     const plan = planAgeCategoryRecalc(
       startsOn,
       [
-        { id: 'a', dateOfBirth: '1986-05-01', divisionId: 'open' }, // → M1 (update)
-        { id: 'b', dateOfBirth: '2002-05-01', divisionId: 'open' }, // age 24 → Open (unchanged)
-        { id: 'c', dateOfBirth: null, divisionId: 'open' }, // no DOB
-        { id: 'd', dateOfBirth: '1956-05-01', divisionId: null }, // → M4, absent (no division)
+        { id: 'a', dateOfBirth: '1986-05-01', ageCategoryId: 'open' }, // → M1 (update)
+        { id: 'b', dateOfBirth: '2002-05-01', ageCategoryId: 'open' }, // age 24 → Open (unchanged)
+        { id: 'c', dateOfBirth: null, ageCategoryId: 'open' }, // no DOB
+        { id: 'd', dateOfBirth: '1956-05-01', ageCategoryId: null }, // → M4, absent (no age category)
       ],
-      divisions,
+      ageCategories,
     );
-    expect(plan).toMatchObject({ updated: 1, unchanged: 1, noDateOfBirth: 1, noMatchingDivision: 1 });
-    expect(plan.updates).toEqual([{ entryId: 'a', divisionId: 'm1' }]);
+    expect(plan).toMatchObject({ updated: 1, unchanged: 1, noDateOfBirth: 1, noMatchingAgeCategory: 1 });
+    expect(plan.updates).toEqual([{ entryId: 'a', ageCategoryId: 'm1' }]);
   });
 });

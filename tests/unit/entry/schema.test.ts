@@ -57,7 +57,8 @@ describe('entryUpdateSchema', () => {
     id: UUID,
     competitionId: UUID,
     weightClassId: null,
-    divisionId: null,
+    ageCategoryId: null,
+    division: null,
     lotNumber: null,
     bodyweightKg: null,
     openerSquatKg: null,
@@ -144,6 +145,26 @@ describe('entryUpdateSchema', () => {
 
   it('rejects a non-uuid weight class', () => {
     expect(entryUpdateSchema.safeParse({ ...base, weightClassId: 'not-a-uuid' }).success).toBe(false);
+  });
+
+  it('accepts a BP division from the fixed list', () => {
+    const result = entryUpdateSchema.safeParse({ ...base, division: 'Yorkshire & North East' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.division).toBe('Yorkshire & North East');
+    }
+  });
+
+  it('maps a blank division to null', () => {
+    const result = entryUpdateSchema.safeParse({ ...base, division: '  ' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.division).toBeNull();
+    }
+  });
+
+  it('rejects a division not on the fixed list', () => {
+    expect(entryUpdateSchema.safeParse({ ...base, division: 'Atlantis' }).success).toBe(false);
   });
 });
 

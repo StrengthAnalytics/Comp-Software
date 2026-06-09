@@ -127,10 +127,10 @@ export const COMP_STATUSES = Object.keys(COMP_STATUS_LABELS) as CompStatus[];
 export const GENDERS = Object.keys(GENDER_LABELS) as Gender[];
 export const ENTRY_STATUSES = Object.keys(ENTRY_STATUS_LABELS) as EntryStatus[];
 
-// Default age divisions, in competition running order, using the British Powerlifting nomenclature
+// Default age categories, in competition running order, using the British Powerlifting nomenclature
 // (U16/U18/U23 youth classes and M1-M6 masters). Used by the "seed defaults" action and mirrored by
 // RECORD_AGE_CATEGORIES for the records dataset.
-export const DEFAULT_DIVISIONS: readonly string[] = [
+export const DEFAULT_AGE_CATEGORIES: readonly string[] = [
   'U16',
   'U18',
   'U23',
@@ -142,6 +142,32 @@ export const DEFAULT_DIVISIONS: readonly string[] = [
   'M5',
   'M6',
 ];
+
+// British Powerlifting divisions — the region / home nation a lifter competes on behalf of, in BP
+// order. A division is an informational affiliation on an entry, NOT a placement dimension: placement
+// stays weight class × age category × sex. The entry card offers these as a dropdown and the bulk
+// import validates against them. Deliberately a separate constant from SUGGESTED_RECORD_REGIONS even
+// though the values currently coincide — the records vocabulary is kept isolated from the comp
+// vocabulary (ARCHITECTURE.md §7) so a change to one can never silently alter the other.
+export const BP_DIVISIONS = [
+  'England',
+  'Wales',
+  'Scotland',
+  'British',
+  'British Universities',
+  'Northern Ireland',
+  'Yorkshire & North East',
+  'North West',
+  'North Midlands',
+  'East Midlands',
+  'West Midlands',
+  'Greater London',
+  'South West',
+  'South Midlands',
+  'South East',
+] as const;
+
+export type Division = (typeof BP_DIVISIONS)[number];
 
 export type WeightClassSeed = {
   name: string;

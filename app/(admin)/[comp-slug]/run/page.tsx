@@ -12,7 +12,7 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
     notFound();
   }
 
-  const { platforms, sessions, flights, weightClasses, divisions, teams, entries, attempts } = await loadBoardData(
+  const { platforms, sessions, flights, weightClasses, ageCategories, teams, entries, attempts } = await loadBoardData(
     comp.id,
   );
 
@@ -31,7 +31,7 @@ export default async function RunPage({ params }: { params: Promise<{ 'comp-slug
         sessions={sessions}
         flights={flights}
         weightClasses={weightClasses}
-        divisions={divisions}
+        ageCategories={ageCategories}
         teams={teams}
         entries={entries}
         attempts={attempts}

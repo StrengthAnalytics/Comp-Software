@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { CompForm } from '@/components/comps/comp-form';
 import { CompShell } from '@/components/comps/comp-shell';
 import { DeleteCompetition } from '@/components/comps/delete-competition';
-import { DivisionsEditor } from '@/components/comps/divisions-editor';
+import { AgeCategoriesEditor } from '@/components/comps/age-categories-editor';
 import { OverlayLinks } from '@/components/comps/overlay-links';
 import { WeightClassesEditor } from '@/components/comps/weight-classes-editor';
 
@@ -30,10 +30,10 @@ export default async function EditCompPage({
     notFound();
   }
 
-  const [{ data: divisions }, { data: weightClasses }, { count: entryCount }, { data: platformRows }, { data: sessionRows }] =
+  const [{ data: ageCategories }, { data: weightClasses }, { count: entryCount }, { data: platformRows }, { data: sessionRows }] =
     await Promise.all([
       supabase
-        .from('divisions')
+        .from('age_categories')
         .select('id, name, sort_order')
         .eq('competition_id', id)
         .order('sort_order', { ascending: true }),
@@ -73,7 +73,7 @@ export default async function EditCompPage({
             role="alert"
             className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
           >
-            The standard IPF divisions and weight classes couldn&rsquo;t be added automatically when this
+            The standard IPF age categories and weight classes couldn&rsquo;t be added automatically when this
             competition was created. Use the <strong>Seed IPF defaults</strong> buttons below to add them.
           </p>
         ) : null}
@@ -94,7 +94,7 @@ export default async function EditCompPage({
           />
         </div>
 
-        <DivisionsEditor competitionId={comp.id} divisions={divisions ?? []} />
+        <AgeCategoriesEditor competitionId={comp.id} ageCategories={ageCategories ?? []} />
         <WeightClassesEditor competitionId={comp.id} weightClasses={weightClasses ?? []} />
 
         <OverlayLinks slug={comp.slug} platforms={overlayPlatforms} />

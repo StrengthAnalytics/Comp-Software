@@ -19,9 +19,9 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
 
   const supabase = await createClient();
 
-  const [{ data: divisions }, { data: weightClasses }, { data: entryRows }] = await Promise.all([
+  const [{ data: ageCategories }, { data: weightClasses }, { data: entryRows }] = await Promise.all([
     supabase
-      .from('divisions')
+      .from('age_categories')
       .select('id, name')
       .eq('competition_id', comp.id)
       .order('sort_order', { ascending: true }),
@@ -33,7 +33,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
     supabase
       .from('entries')
       .select(
-        'id, lifter_id, weight_class_id, division_id, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, status',
+        'id, lifter_id, weight_class_id, age_category_id, division, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, status',
       )
       .eq('competition_id', comp.id),
   ]);
@@ -71,7 +71,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
         competitionStatus={comp.status}
         competitionStartsOn={comp.starts_on}
         lifts={LIFTS_FOR_EVENT[comp.event_type]}
-        divisions={divisions ?? []}
+        ageCategories={ageCategories ?? []}
         weightClasses={weightClasses ?? []}
         entries={entries}
       />

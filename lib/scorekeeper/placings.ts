@@ -6,9 +6,9 @@ import { compareValues, nullsLast } from '@/lib/ordering';
 // total if they make their declared attempts ("predicted"). Pure; the boards gather the data (each
 // entry's two totals, plus the grouping fields) and this returns the ranked places.
 //
-// Placement category is weight class × division × sex (kit type is fixed per comp, so it isn't part
-// of the key). A lifter with no weight class or no division assigned can't be placed yet and is left
-// out of both maps (the board shows a dash). Within a category, lifters are ranked by total
+// Placement category is weight class × age category × sex (kit type is fixed per comp, so it isn't
+// part of the key). A lifter with no weight class or no age category assigned can't be placed yet and
+// is left out of both maps (the board shows a dash). Within a category, lifters are ranked by total
 // descending; a lifter with a zero total (no good lift yet, or — for predicted — a lift they can no
 // longer make) is unranked. Ties on total break by lighter bodyweight, then lower lot number (the
 // IPF order); two lifters share a place only when total and bodyweight are equal, and the next place
@@ -17,7 +17,7 @@ import { compareValues, nullsLast } from '@/lib/ordering';
 export type PlaceableEntry = {
   id: string;
   weightClassId: string | null;
-  divisionId: string | null;
+  ageCategoryId: string | null;
   sex: Sex;
   bodyweightKg: number | null;
   lotNumber: number | null;
@@ -74,10 +74,10 @@ function placeWithin(
 export function computePlacings(entries: readonly PlaceableEntry[]): Placings {
   const groups = new Map<string, PlaceableEntry[]>();
   for (const entry of entries) {
-    if (!entry.weightClassId || !entry.divisionId) {
+    if (!entry.weightClassId || !entry.ageCategoryId) {
       continue;
     }
-    const key = `${entry.weightClassId}|${entry.divisionId}|${entry.sex}`;
+    const key = `${entry.weightClassId}|${entry.ageCategoryId}|${entry.sex}`;
     const existing = groups.get(key);
     if (existing) {
       existing.push(entry);

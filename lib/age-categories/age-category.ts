@@ -2,9 +2,9 @@
 //
 // The IPF assigns the age category on (competition year − birth year) — a pure birth-year
 // comparison, not the exact age on meet day — so the only inputs that matter are the two years.
-// The returned name matches the seeded DEFAULT_DIVISIONS so the entries flow can resolve it to one
-// of a comp's division rows by name; a comp that doesn't have that division simply leaves the
-// category unselected for the operator to fill in by hand.
+// The returned name matches the seeded DEFAULT_AGE_CATEGORIES so the entries flow can resolve it to
+// one of a comp's age-category rows by name; a comp that doesn't have that age category simply leaves
+// it unselected for the operator to fill in by hand.
 //
 // Bands (competition year − birth year), each an inclusive upper bound:
 //   ≤15 U16 · 16–18 U18 · 19–23 U23 · 24–39 Open · 40–49 M1 · 50–59 M2 · 60–69 M3 · 70–79 M4
@@ -33,8 +33,8 @@ const OLDEST_CATEGORY = 'M6';
 // Takes the difference of the two years (so a lifter turning 40 anywhere in the competition year is M1
 // for the whole year, per IPF). A negative difference means the birth year is after the competition
 // year — a data error (e.g. a transposed/typo'd date of birth) — so it returns null rather than
-// silently classifying the lifter as the youngest band; the caller then leaves the division unset and
-// the bad date surfaces instead of being masked.
+// silently classifying the lifter as the youngest band; the caller then leaves the age category unset
+// and the bad date surfaces instead of being masked.
 export function ipfAgeCategory(competitionYear: number, birthYear: number): string | null {
   const age = competitionYear - birthYear;
   if (age < 0) {
@@ -55,7 +55,7 @@ export function isoYear(iso: string | null | undefined): number | null {
 
 // Resolves the IPF age-category name for a lifter from the competition start date and the lifter's
 // date of birth (both ISO `YYYY-MM-DD`). Returns null when either date is missing or malformed —
-// the caller then leaves the division unset. A meet that spans a year boundary uses the start year.
+// the caller then leaves the age category unset. A meet that spans a year boundary uses the start year.
 export function resolveAgeCategory(
   competitionStartsOn: string | null,
   dateOfBirth: string | null,
@@ -68,50 +68,50 @@ export function resolveAgeCategory(
   return ipfAgeCategory(competitionYear, birthYear);
 }
 
-// Finds the division whose name matches the given category, case- and whitespace-insensitively, or
-// null. Mirrors the name resolution the bulk importer uses, so a comp keeps one rule for turning a
-// category name into one of its division rows.
-export function matchDivisionByName<T extends { name: string }>(
-  divisions: readonly T[],
+// Finds the age category whose name matches the given category, case- and whitespace-insensitively,
+// or null. Mirrors the name resolution the bulk importer uses, so a comp keeps one rule for turning a
+// category name into one of its age-category rows.
+export function matchAgeCategoryByName<T extends { name: string }>(
+  ageCategories: readonly T[],
   categoryName: string | null,
 ): T | null {
   if (!categoryName) {
     return null;
   }
   const target = categoryName.trim().toLowerCase();
-  return divisions.find((division) => division.name.trim().toLowerCase() === target) ?? null;
+  return ageCategories.find((ageCategory) => ageCategory.name.trim().toLowerCase() === target) ?? null;
 }
 
 export type AgeCategoryRecalcEntry = {
   id: string;
   dateOfBirth: string | null;
-  divisionId: string | null;
+  ageCategoryId: string | null;
 };
 
 export type AgeCategoryRecalcPlan = {
-  // Entries whose division should change, paired with the division to set them to.
-  updates: { entryId: string; divisionId: string }[];
-  updated: number; // entries whose division changes
-  unchanged: number; // already on their age-category division
+  // Entries whose age category should change, paired with the age category to set them to.
+  updates: { entryId: string; ageCategoryId: string }[];
+  updated: number; // entries whose age category changes
+  unchanged: number; // already on their age-category row
   noDateOfBirth: number; // can't classify — left as-is
-  noMatchingDivision: number; // computed category isn't a division in this comp — left as-is
+  noMatchingAgeCategory: number; // computed category isn't an age category in this comp — left as-is
 };
 
-// Works out which entries' divisions need changing to match their current age category, given the
+// Works out which entries' age categories need changing to match their current age band, given the
 // comp's start date and each entry's date of birth. Pure so the recalc action and its tests share one
-// rule. An entry with no date of birth, or whose computed category has no matching division in the
+// rule. An entry with no date of birth, or whose computed category has no matching age category in the
 // comp, is counted and left untouched (never cleared) rather than overwritten with a blank.
 export function planAgeCategoryRecalc(
   competitionStartsOn: string | null,
   entries: readonly AgeCategoryRecalcEntry[],
-  divisions: readonly { id: string; name: string }[],
+  ageCategories: readonly { id: string; name: string }[],
 ): AgeCategoryRecalcPlan {
   const plan: AgeCategoryRecalcPlan = {
     updates: [],
     updated: 0,
     unchanged: 0,
     noDateOfBirth: 0,
-    noMatchingDivision: 0,
+    noMatchingAgeCategory: 0,
   };
 
   for (const entry of entries) {
@@ -121,18 +121,18 @@ export function planAgeCategoryRecalc(
       continue;
     }
 
-    const division = matchDivisionByName(divisions, categoryName);
-    if (!division) {
-      plan.noMatchingDivision++;
+    const ageCategory = matchAgeCategoryByName(ageCategories, categoryName);
+    if (!ageCategory) {
+      plan.noMatchingAgeCategory++;
       continue;
     }
 
-    if (division.id === entry.divisionId) {
+    if (ageCategory.id === entry.ageCategoryId) {
       plan.unchanged++;
       continue;
     }
 
-    plan.updates.push({ entryId: entry.id, divisionId: division.id });
+    plan.updates.push({ entryId: entry.id, ageCategoryId: ageCategory.id });
     plan.updated++;
   }
 

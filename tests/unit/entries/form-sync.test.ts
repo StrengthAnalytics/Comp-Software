@@ -4,7 +4,8 @@ import { reconcileForm, sameForm, type EntryFormValues } from '@/lib/entries/for
 function form(overrides: Partial<EntryFormValues> = {}): EntryFormValues {
   return {
     weightClassId: 'wc-1',
-    divisionId: 'div-1',
+    ageCategoryId: 'ac-1',
+    division: 'England',
     lotNumber: '12',
     bodyweight: '82.5',
     openerSquat: '200',

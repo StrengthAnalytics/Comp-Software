@@ -13,7 +13,7 @@ const DANGER_BUTTON =
   'rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50';
 
 // A robust type-to-confirm delete of an entire competition. The operator must type the competition
-// name exactly, because the delete cascades to every division, weight class, platform, session,
+// name exactly, because the delete cascades to every age category, weight class, platform, session,
 // flight, entry, attempt and referee decision and cannot be undone. On success the server action
 // redirects to the comps list, so only an error returns to this component.
 export function DeleteCompetition({
@@ -78,7 +78,7 @@ export function DeleteCompetition({
     <section className="rounded-lg border border-red-200 bg-red-50 p-6">
       <h2 className="text-lg font-semibold tracking-tight text-red-800">Danger zone</h2>
       <p className="mt-1 text-sm text-red-700">
-        Permanently delete this competition and everything in it — divisions, weight classes, platforms, sessions,
+        Permanently delete this competition and everything in it — age categories, weight classes, platforms, sessions,
         flights, every entrant&rsquo;s registration, and all attempts and results. The lifters&rsquo; own records are kept.
         This cannot be undone.
       </p>

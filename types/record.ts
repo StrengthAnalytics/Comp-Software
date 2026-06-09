@@ -31,7 +31,7 @@ const weightKg = z
 // The shared shape of a record. weight_class and age_category are validated only as non-empty
 // strings here (not against the constant lists) so a legitimate historical or non-standard category
 // is never rejected at the boundary; the admin UI and the bulk-import preview surface unknown values
-// as warnings, mirroring how the entries bulk import treats unmatched division/class names.
+// as warnings, mirroring how the entries bulk import treats unmatched age-category/class names.
 export const recordInputSchema = z.object({
   region: z.string().trim().min(1, 'Region is required.').max(80, 'Region is too long.'),
   name: z.string().trim().min(1, 'Name is required.').max(120, 'Name is too long.'),

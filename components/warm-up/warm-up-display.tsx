@@ -91,7 +91,7 @@ type WarmUpDisplayProps = {
   sessions: BoardSession[];
   flights: BoardFlight[];
   weightClasses: NamedOption[];
-  divisions: NamedOption[];
+  ageCategories: NamedOption[];
   teams: NamedOption[];
   entries: BoardEntry[];
   attempts: BoardAttempt[];
@@ -155,7 +155,7 @@ export function WarmUpDisplay({
   sessions,
   flights: initialFlights,
   weightClasses,
-  divisions,
+  ageCategories,
   teams,
   entries: initialEntries,
   attempts: initialAttempts,
@@ -166,7 +166,7 @@ export function WarmUpDisplay({
     initialEntries,
     initialFlights,
     weightClasses,
-    divisions,
+    ageCategories,
     teams,
   });
 
@@ -203,7 +203,8 @@ export function WarmUpDisplay({
   const [showLot, toggleLot] = usePersistentToggle('warmup:col:lot');
   const [showBw, toggleBw] = usePersistentToggle('warmup:col:bw');
   const [showClass, toggleClass] = usePersistentToggle('warmup:col:class');
-  const [showDiv, toggleDiv] = usePersistentToggle('warmup:col:div');
+  const [showAgeCat, toggleAgeCat] = usePersistentToggle('warmup:col:agecat');
+  const [showDivision, toggleDivision] = usePersistentToggle('warmup:col:division', false);
   const [showRack, toggleRack] = usePersistentToggle('warmup:col:rack');
   // Attempt columns toggle per lift, so a board can show only the lift currently being warmed up.
   const [showSquatAttempts, toggleSquatAttempts] = usePersistentToggle('warmup:col:attempts:squat');
@@ -318,7 +319,7 @@ export function WarmUpDisplay({
     return map;
   }, [entries, attempts, columnLifts, kitType, isTeamCompetition, showCurPlace, showPredPlace, showPredTotal, showPredGl]);
 
-  // Individual current/predicted place per entry, within (weight class × division × sex). Empty for a
+  // Individual current/predicted place per entry, within (weight class × age category × sex). Empty for a
   // team comp (which ranks teams, not lifters) or unless a place column is on.
   const placings = useMemo(() => {
     if (isTeamCompetition || (!showCurPlace && !showPredPlace)) {
@@ -329,7 +330,7 @@ export function WarmUpDisplay({
       return {
         id: entry.id,
         weightClassId: entry.weightClassId,
-        divisionId: entry.divisionId,
+        ageCategoryId: entry.ageCategoryId,
         sex: entry.sex,
         bodyweightKg: entry.bodyweightKg,
         lotNumber: entry.lotNumber,
@@ -385,7 +386,8 @@ export function WarmUpDisplay({
     { id: 'lot', label: 'Lot', checked: showLot, onToggle: toggleLot },
     { id: 'bw', label: 'Bodyweight', checked: showBw, onToggle: toggleBw },
     { id: 'class', label: 'Weight class', checked: showClass, onToggle: toggleClass },
-    { id: 'div', label: 'Division', checked: showDiv, onToggle: toggleDiv },
+    { id: 'agecat', label: 'Age category', checked: showAgeCat, onToggle: toggleAgeCat },
+    { id: 'division', label: 'Division', checked: showDivision, onToggle: toggleDivision },
     { id: 'rack', label: 'Rack settings', checked: showRack, onToggle: toggleRack },
     ...liftAttemptToggles,
     { id: 'best', label: 'Best lift', checked: showBest, onToggle: toggleBest, disabled: autoCollapse },
@@ -521,9 +523,14 @@ export function WarmUpDisplay({
                     Class
                   </th>
                 ) : null}
-                {showDiv ? (
+                {showAgeCat ? (
                   <th scope="col" className={`text-left ${HEAD}`}>
-                    Div
+                    Age Cat.
+                  </th>
+                ) : null}
+                {showDivision ? (
+                  <th scope="col" className={`text-left ${HEAD}`}>
+                    Division
                   </th>
                 ) : null}
                 {columnLifts.map((lift) => (
@@ -652,8 +659,11 @@ export function WarmUpDisplay({
                     {showClass ? (
                       <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.weightClassName ?? '—'}</td>
                     ) : null}
-                    {showDiv ? (
-                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.divisionName ?? '—'}</td>
+                    {showAgeCat ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.ageCategoryName ?? '—'}</td>
+                    ) : null}
+                    {showDivision ? (
+                      <td className={`whitespace-nowrap text-neutral-600 ${CELL}`}>{entry.division ?? '—'}</td>
                     ) : null}
                     {columnLifts.map((lift) => {
                       const active = isTeamCompetition ? entry.teamLift === lift : true;

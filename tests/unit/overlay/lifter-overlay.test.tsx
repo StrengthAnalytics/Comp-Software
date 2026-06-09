@@ -26,8 +26,9 @@ function entry(overrides: Partial<BoardEntry> = {}): BoardEntry {
     bodyweightKg: 90,
     weightClassId: null,
     weightClassName: '93 kg',
-    divisionId: null,
-    divisionName: 'Open',
+    ageCategoryId: null,
+    ageCategoryName: 'Open',
+    division: null,
     rackHeightSquat: null,
     squatRackSetting: null,
     rackHeightBench: null,
@@ -59,7 +60,7 @@ const baseProps = {
   sessions,
   flights,
   weightClasses: [],
-  divisions: [],
+  ageCategories: [],
   teams: [],
 };
 
