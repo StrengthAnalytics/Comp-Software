@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { createClient } from '@/lib/supabase/server';
 import { toRecordView } from '@/lib/records/record-view';
+import { fetchAllRows } from '@/lib/supabase/paginate';
 import { RecordsBrowser } from '@/components/records/records-browser';
 
 export const metadata: Metadata = {
@@ -14,15 +15,21 @@ export default async function PublicRecordsPage() {
   const supabase = await createClient();
   // notes is an internal admin field — deliberately not selected here so it never reaches the public
   // (anon) payload. The public browser does not render it.
-  const { data } = await supabase
-    .from('records')
-    .select('id, region, name, gender, weight_class, age_category, lift, equipment, weight_kg, date_set')
-    .order('region')
-    .order('gender')
-    .order('weight_class')
-    .order('lift');
+  //
+  // Page through every record — PostgREST caps a single response at 1000 rows, so an un-paginated
+  // select would silently hide records beyond the first page once the dataset grows past it.
+  const { data } = await fetchAllRows((from, to) =>
+    supabase
+      .from('records')
+      .select('id, region, name, gender, weight_class, age_category, lift, equipment, weight_kg, date_set')
+      .order('region')
+      .order('gender')
+      .order('weight_class')
+      .order('lift')
+      .range(from, to),
+  );
 
-  const records = (data ?? []).map((row) => toRecordView(row));
+  const records = data.map((row) => toRecordView(row));
 
   return <RecordsBrowser records={records} />;
 }

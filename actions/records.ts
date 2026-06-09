@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
+import { fetchAllRows } from '@/lib/supabase/paginate';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import {
@@ -173,18 +174,22 @@ export async function bulkUpsertRecordsAction(input: {
 
     const supabase = await createClient();
 
-    // Pre-fetch the existing natural keys so each row can be reported as created vs updated. The
-    // dataset is small (a few thousand rows), so loading the keys once is cheap.
-    const { data: existing, error: existingError } = await supabase
-      .from('records')
-      .select('region, gender, weight_class, age_category, lift, equipment');
+    // Pre-fetch the existing natural keys so each row can be reported as created vs updated. Paged
+    // through fetchAllRows because PostgREST caps a single response at 1000 rows — an un-paginated
+    // select would miss keys beyond the first page and misreport those rows as created.
+    const { data: existing, error: existingError } = await fetchAllRows((from, to) =>
+      supabase
+        .from('records')
+        .select('region, gender, weight_class, age_category, lift, equipment')
+        .range(from, to),
+    );
     if (existingError) {
       Sentry.captureException(existingError);
       return fail('Could not load the existing records. Please try again.');
     }
 
     const existingKeys = new Set(
-      (existing ?? []).map((row) =>
+      existing.map((row) =>
         recordNaturalKey({
           region: row.region,
           gender: row.gender,
