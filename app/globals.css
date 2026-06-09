@@ -1,10 +1,12 @@
 @import "tailwindcss";
 
 /* Design tokens. Registering --color-brand-* in @theme makes Tailwind v4 generate the matching
-   bg-brand-*/text-brand-*/border-brand-* utilities. `brand` is the single place the product's
-   identity colour lives — restyling the platform is a swap of this ramp, not a find-and-replace
-   of blue-* classes. The deep end (900/950) is the app-shell sidebar; the mid ramp (500-700) is
-   for primary actions and focus states; the light end (50-200) for tints and selected states. */
+   brand colour utilities (bg-brand-950, text-brand-800, border-brand-200, …). `brand` is the single
+   place the product's identity colour lives — restyling the platform is a swap of this ramp, not a
+   find-and-replace of blue classes. The deep end (900/950) is the app-shell sidebar; the mid ramp
+   (500-700) is for primary actions and focus states; the light end (50-200) for tints and selected
+   states. (NB: never write a utility glob like "bg-brand-asterisk-slash" with real characters inside
+   a CSS comment — the asterisk-slash pair closes the comment early and the parser eats the theme.) */
 @theme {
   --color-brand-50: #eef4ff;
   --color-brand-100: #dfe9ff;
