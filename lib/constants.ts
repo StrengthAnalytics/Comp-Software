@@ -127,10 +127,10 @@ export const COMP_STATUSES = Object.keys(COMP_STATUS_LABELS) as CompStatus[];
 export const GENDERS = Object.keys(GENDER_LABELS) as Gender[];
 export const ENTRY_STATUSES = Object.keys(ENTRY_STATUS_LABELS) as EntryStatus[];
 
-// Default age divisions, in competition running order, using the British Powerlifting nomenclature
+// Default age categories, in competition running order, using the British Powerlifting nomenclature
 // (U16/U18/U23 youth classes and M1-M6 masters). Used by the "seed defaults" action and mirrored by
 // RECORD_AGE_CATEGORIES for the records dataset.
-export const DEFAULT_DIVISIONS: readonly string[] = [
+export const DEFAULT_AGE_CATEGORIES: readonly string[] = [
   'U16',
   'U18',
   'U23',

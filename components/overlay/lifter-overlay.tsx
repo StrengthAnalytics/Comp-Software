@@ -26,7 +26,7 @@ type LifterOverlayProps = {
   sessions: BoardSession[];
   flights: BoardFlight[];
   weightClasses: NamedOption[];
-  divisions: NamedOption[];
+  ageCategories: NamedOption[];
   teams: NamedOption[];
   entries: BoardEntry[];
   attempts: BoardAttempt[];
@@ -62,7 +62,7 @@ export function LifterOverlay({
   sessions,
   flights: initialFlights,
   weightClasses,
-  divisions,
+  ageCategories,
   teams,
   entries: initialEntries,
   attempts: initialAttempts,
@@ -73,7 +73,7 @@ export function LifterOverlay({
     initialEntries,
     initialFlights,
     weightClasses,
-    divisions,
+    ageCategories,
     teams,
   });
 
@@ -101,10 +101,10 @@ export function LifterOverlay({
     // from the run screen and warm-up board on what a lifter's total or points are.
     const { bestLifts, total, glPoints } = computeEntryScore(attempts, entry, columnLifts, kitType, isTeamCompetition);
 
-    // Category line: weight class · division for an individual comp, or the team name for a team comp.
+    // Category line: weight class · age category for an individual comp, or the team name for a team comp.
     const subtitle = isTeamCompetition
       ? (entry.teamName ?? '')
-      : [entry.weightClassName, entry.divisionName].filter(Boolean).join(' · ');
+      : [entry.weightClassName, entry.ageCategoryName].filter(Boolean).join(' · ');
 
     return {
       key: attemptKey(entry.id, onPlatform.lift, onPlatform.attemptNumber),

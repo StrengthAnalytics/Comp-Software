@@ -66,7 +66,7 @@ export async function createCompetitionAction(
       return mapCompetitionWriteError(error);
     }
 
-    // Every comp is created with the canonical IPF age divisions and weight classes, so it is never
+    // Every comp is created with the canonical IPF age categories and weight classes, so it is never
     // empty. Best-effort: the comp already exists, so a seed failure is logged and surfaced on the edit
     // screen (via ?setup=seed-failed) with the manual "Seed defaults" buttons as the idempotent
     // recovery, rather than losing the creation or leaving the operator unaware the seed didn't run.
@@ -196,7 +196,7 @@ async function insertDuplicateCompetition(
 }
 
 // Deep-copies every row belonging to a competition into the new one, remapping all internal references
-// (session→platform, flight→session, entry→class/division/flight/team, attempt→entry, decision→attempt)
+// (session→platform, flight→session, entry→class/age-category/flight/team, attempt→entry, decision→attempt)
 // onto the fresh copies. Lifters are a shared table, so entries keep their original lifter_id. Copies in
 // dependency order; new ids are generated up front so each level is remapped before the next is inserted.
 // Returns an error ActionResult on the first failure, or null on success.
@@ -205,17 +205,22 @@ async function copyCompetitionChildren(
   sourceId: string,
   newCompId: string,
 ): Promise<ActionResult<never> | null> {
-  // divisions
-  const divisions = await supabase.from('divisions').select('id, name, sort_order').eq('competition_id', sourceId);
-  if (divisions.error) return duplicateFailed(divisions.error);
-  const divisionIds = new Map<string, string>();
-  const divisionRows = (divisions.data ?? []).map((row) => {
+  // age categories
+  const ageCategories = await supabase
+    .from('age_categories')
+    .select('id, name, sort_order')
+    .eq('competition_id', sourceId);
+  if (ageCategories.error) return duplicateFailed(ageCategories.error);
+  const ageCategoryIds = new Map<string, string>();
+  const ageCategoryRows = (ageCategories.data ?? []).map((row) => {
     const id = randomUUID();
-    divisionIds.set(row.id, id);
+    ageCategoryIds.set(row.id, id);
     return { id, competition_id: newCompId, name: row.name, sort_order: row.sort_order };
   });
-  const divisionError = await insertInChunks(divisionRows, (chunk) => supabase.from('divisions').insert(chunk));
-  if (divisionError) return divisionError;
+  const ageCategoryError = await insertInChunks(ageCategoryRows, (chunk) =>
+    supabase.from('age_categories').insert(chunk),
+  );
+  if (ageCategoryError) return ageCategoryError;
 
   // weight_classes
   const weightClasses = await supabase
@@ -307,11 +312,11 @@ async function copyCompetitionChildren(
   const flightError = await insertInChunks(flightRows, (chunk) => supabase.from('flights').insert(chunk));
   if (flightError) return flightError;
 
-  // entries (weight_class_id / division_id / flight_id / team_id → copies; lifter_id is shared)
+  // entries (weight_class_id / age_category_id / flight_id / team_id → copies; lifter_id is shared)
   const entries = await supabase
     .from('entries')
     .select(
-      'id, lifter_id, weight_class_id, division_id, flight_id, team_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, racks_set, status',
+      'id, lifter_id, weight_class_id, age_category_id, flight_id, team_id, team_lift, lot_number, bodyweight_kg, opener_squat_kg, opener_bench_kg, opener_deadlift_kg, rack_height_squat, squat_rack_setting, rack_height_bench, bench_safety_height, bench_spotting, racks_set, status',
     )
     .eq('competition_id', sourceId);
   if (entries.error) return duplicateFailed(entries.error);
@@ -324,7 +329,7 @@ async function copyCompetitionChildren(
       competition_id: newCompId,
       lifter_id: row.lifter_id,
       weight_class_id: mappedId(weightClassIds, row.weight_class_id),
-      division_id: mappedId(divisionIds, row.division_id),
+      age_category_id: mappedId(ageCategoryIds, row.age_category_id),
       flight_id: mappedId(flightIds, row.flight_id),
       team_id: mappedId(teamIds, row.team_id),
       team_lift: row.team_lift,
@@ -403,7 +408,7 @@ async function copyCompetitionChildren(
   return null;
 }
 
-// Duplicates a competition in full: its settings plus every division, weight class, platform, team,
+// Duplicates a competition in full: its settings plus every age category, weight class, platform, team,
 // session, flight, entry, attempt and referee decision, with all internal references remapped onto the
 // copies. Works at any status (the source is only read). The duplicate is created as a draft named
 // "<name> (copy)" with a fresh slug. On success the operator lands on the new comp's edit screen; on a
@@ -457,7 +462,7 @@ export async function duplicateCompetitionAction(input: { competitionId: string 
   });
 }
 
-// Permanently deletes a competition and everything that hangs off it — divisions, weight classes,
+// Permanently deletes a competition and everything that hangs off it — age categories, weight classes,
 // platforms, teams, sessions, flights, entries, attempts and referee decisions all cascade away.
 // Lifters are a shared table and are kept. Blocked once a comp is `completed`: that cascade would
 // destroy the meet's final record, the one deliberate status guard on the setup side (ARCHITECTURE.md

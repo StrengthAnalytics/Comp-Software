@@ -53,13 +53,13 @@ export const competitionInputSchema = z
 
 export type CompetitionInput = z.infer<typeof competitionInputSchema>;
 
-export const divisionInputSchema = z.object({
+export const ageCategoryInputSchema = z.object({
   competitionId: z.uuid(),
   name: z.string().trim().min(1, 'Name is required.').max(60, 'Name is too long.'),
   sortOrder: z.number().int().min(0).default(0),
 });
 
-export const divisionUpdateSchema = z.object({
+export const ageCategoryUpdateSchema = z.object({
   id: z.uuid(),
   name: z.string().trim().min(1, 'Name is required.').max(60, 'Name is too long.'),
   sortOrder: z.number().int().min(0),

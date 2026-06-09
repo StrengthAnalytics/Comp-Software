@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { defaultDivisionRows, defaultWeightClassRows } from '@/lib/comps/seed-defaults';
-import { DEFAULT_DIVISIONS, DEFAULT_WEIGHT_CLASSES } from '@/lib/constants';
+import { defaultAgeCategoryRows, defaultWeightClassRows } from '@/lib/comps/seed-defaults';
+import { DEFAULT_AGE_CATEGORIES, DEFAULT_WEIGHT_CLASSES } from '@/lib/constants';
 
 const COMP_ID = '00000000-0000-0000-0000-000000000000';
 
-describe('defaultDivisionRows', () => {
-  it('builds one row per default division, in order, tagged to the comp', () => {
-    const rows = defaultDivisionRows(COMP_ID);
-    expect(rows).toHaveLength(DEFAULT_DIVISIONS.length);
-    expect(rows.map((row) => row.name)).toEqual([...DEFAULT_DIVISIONS]);
+describe('defaultAgeCategoryRows', () => {
+  it('builds one row per default age category, in order, tagged to the comp', () => {
+    const rows = defaultAgeCategoryRows(COMP_ID);
+    expect(rows).toHaveLength(DEFAULT_AGE_CATEGORIES.length);
+    expect(rows.map((row) => row.name)).toEqual([...DEFAULT_AGE_CATEGORIES]);
     for (const [index, row] of rows.entries()) {
       expect(row.competition_id).toBe(COMP_ID);
       expect(row.sort_order).toBe(index);

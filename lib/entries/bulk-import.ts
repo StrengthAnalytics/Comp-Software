@@ -14,7 +14,7 @@ export type BulkImportField =
   | 'membership'
   | 'club'
   | 'country'
-  | 'divisionName'
+  | 'ageCategoryName'
   | 'weightClassName'
   | 'lot'
   | 'bodyweight'
@@ -32,7 +32,7 @@ const BASE_COLUMNS: BulkImportColumn[] = [
   { key: 'membership', label: 'Membership number' },
   { key: 'club', label: 'Club' },
   { key: 'country', label: 'Country' },
-  { key: 'divisionName', label: 'Division' },
+  { key: 'ageCategoryName', label: 'Age category' },
   { key: 'weightClassName', label: 'Weight class' },
   { key: 'lot', label: 'Lot' },
   { key: 'bodyweight', label: 'Bodyweight' },
@@ -68,7 +68,7 @@ export type ParsedImportRow = {
   membership: string | null;
   club: string | null;
   country: string | null;
-  divisionName: string | null;
+  ageCategoryName: string | null;
   weightClassName: string | null;
   lot: number | null;
   bodyweight: number | null;
@@ -170,7 +170,7 @@ export type ExportRow = {
   membership: string | null;
   club: string | null;
   country: string | null;
-  divisionName: string | null;
+  ageCategoryName: string | null;
   weightClassName: string | null;
   lot: number | null;
   bodyweight: number | null;
@@ -216,8 +216,8 @@ function exportValue(row: ExportRow, key: BulkImportField): string {
     case 'country': {
       return row.country ?? '';
     }
-    case 'divisionName': {
-      return row.divisionName ?? '';
+    case 'ageCategoryName': {
+      return row.ageCategoryName ?? '';
     }
     case 'weightClassName': {
       return row.weightClassName ?? '';
@@ -323,7 +323,7 @@ export function parseBulkImport(text: string, lifts: Lifts): ParsedImportRow[] {
       membership: optionalText(cellAt(cells, indexByKey, 'membership')),
       club: optionalText(cellAt(cells, indexByKey, 'club')),
       country: optionalText(cellAt(cells, indexByKey, 'country')),
-      divisionName: optionalText(cellAt(cells, indexByKey, 'divisionName')),
+      ageCategoryName: optionalText(cellAt(cells, indexByKey, 'ageCategoryName')),
       weightClassName: optionalText(cellAt(cells, indexByKey, 'weightClassName')),
       lot: lot.value,
       bodyweight: bodyweight.value,

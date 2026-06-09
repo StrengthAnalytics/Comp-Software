@@ -17,7 +17,7 @@ type EntryRow = Database['public']['Tables']['entries']['Row'];
 type FlightRow = Database['public']['Tables']['flights']['Row'];
 type LiftType = Database['public']['Enums']['lift_type'];
 
-// Stable empty default so callers that don't have weight classes/divisions (e.g. the loading display)
+// Stable empty default so callers that don't have weight classes/age categories (e.g. the loading display)
 // don't recreate an array — and the lookup maps below — on every render.
 const NO_OPTIONS: NamedOption[] = [];
 
@@ -64,7 +64,7 @@ export function applyEntryChange(
   nameById: Map<string, string>,
   sexById: Map<string, Sex>,
   classNameById: Map<string, string>,
-  divisionNameById: Map<string, string>,
+  ageCategoryNameById: Map<string, string>,
   teamNameById: Map<string, string>,
 ): BoardEntry[] {
   if (payload.eventType === 'DELETE') {
@@ -87,8 +87,8 @@ export function applyEntryChange(
     bodyweightKg: changed.bodyweight_kg,
     weightClassId: changed.weight_class_id,
     weightClassName: changed.weight_class_id ? (classNameById.get(changed.weight_class_id) ?? null) : null,
-    divisionId: changed.division_id,
-    divisionName: changed.division_id ? (divisionNameById.get(changed.division_id) ?? null) : null,
+    ageCategoryId: changed.age_category_id,
+    ageCategoryName: changed.age_category_id ? (ageCategoryNameById.get(changed.age_category_id) ?? null) : null,
     rackHeightSquat: changed.rack_height_squat,
     squatRackSetting: changed.squat_rack_setting,
     rackHeightBench: changed.rack_height_bench,
@@ -146,7 +146,7 @@ type BoardChannel = 'attempts' | 'entries' | 'flights';
 // flights from the server snapshot, reconciles realtime changes (scoped to the competition), and
 // re-seeds when fresh props arrive after a manual refresh. The attempts/entries setters are returned
 // so the run screen can apply optimistic updates; the realtime subscription reconciles on success.
-// Weight classes and divisions are optional — only the run screen renders those columns, so the
+// Weight classes and age categories are optional — only the run screen renders those columns, so the
 // loading display omits them and the entry reconciler leaves them null.
 export function useBoardState({
   competitionId,
@@ -154,7 +154,7 @@ export function useBoardState({
   initialEntries,
   initialFlights,
   weightClasses = NO_OPTIONS,
-  divisions = NO_OPTIONS,
+  ageCategories = NO_OPTIONS,
   teams = NO_OPTIONS,
 }: {
   competitionId: string;
@@ -162,7 +162,7 @@ export function useBoardState({
   initialEntries: BoardEntry[];
   initialFlights: BoardFlight[];
   weightClasses?: NamedOption[];
-  divisions?: NamedOption[];
+  ageCategories?: NamedOption[];
   teams?: NamedOption[];
 }): BoardState {
   const [attempts, setAttempts] = useState<Map<string, BoardAttempt>>(
@@ -174,7 +174,10 @@ export function useBoardState({
   const nameById = useMemo(() => new Map(initialEntries.map((entry) => [entry.id, entry.lifterName])), [initialEntries]);
   const sexById = useMemo(() => new Map(initialEntries.map((entry) => [entry.id, entry.sex])), [initialEntries]);
   const classNameById = useMemo(() => new Map(weightClasses.map((option) => [option.id, option.name])), [weightClasses]);
-  const divisionNameById = useMemo(() => new Map(divisions.map((option) => [option.id, option.name])), [divisions]);
+  const ageCategoryNameById = useMemo(
+    () => new Map(ageCategories.map((option) => [option.id, option.name])),
+    [ageCategories],
+  );
   const teamNameById = useMemo(() => new Map(teams.map((option) => [option.id, option.name])), [teams]);
 
   // Track each channel's subscribe status so the board can show a live/reconnecting/offline pill. All
@@ -198,7 +201,7 @@ export function useBoardState({
     competitionId,
     (payload) =>
       setEntries((current) =>
-        applyEntryChange(current, payload, nameById, sexById, classNameById, divisionNameById, teamNameById),
+        applyEntryChange(current, payload, nameById, sexById, classNameById, ageCategoryNameById, teamNameById),
       ),
     { onStatusChange: (status) => trackStatus('entries', status) },
   );

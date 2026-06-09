@@ -5,7 +5,7 @@ function placeable(overrides: Partial<PlaceableEntry> = {}): PlaceableEntry {
   return {
     id: 'e1',
     weightClassId: 'wc-83',
-    divisionId: 'div-open',
+    ageCategoryId: 'ac-open',
     sex: 'male',
     bodyweightKg: 82,
     lotNumber: 1,
@@ -38,11 +38,11 @@ describe('computePlacings', () => {
     expect(predictedPlaceById.get('b')).toBe(2);
   });
 
-  it('separates lifters into categories by weight class, division and sex', () => {
+  it('separates lifters into categories by weight class, age category and sex', () => {
     const { currentPlaceById } = computePlacings([
       placeable({ id: 'a', weightClassId: 'wc-83', currentTotal: 600 }),
       placeable({ id: 'b', weightClassId: 'wc-93', currentTotal: 500 }),
-      placeable({ id: 'c', divisionId: 'div-junior', currentTotal: 550 }),
+      placeable({ id: 'c', ageCategoryId: 'ac-junior', currentTotal: 550 }),
       placeable({ id: 'd', sex: 'female', weightClassId: 'wc-63', currentTotal: 400 }),
     ]);
     // Each lifter is alone in their own category, so all place first.
@@ -60,11 +60,11 @@ describe('computePlacings', () => {
     expect(currentPlaceById.has('b')).toBe(false);
   });
 
-  it('leaves out lifters with no weight class or division assigned', () => {
+  it('leaves out lifters with no weight class or age category assigned', () => {
     const { currentPlaceById } = computePlacings([
       placeable({ id: 'a', currentTotal: 600 }),
       placeable({ id: 'b', weightClassId: null, currentTotal: 700 }),
-      placeable({ id: 'c', divisionId: null, currentTotal: 800 }),
+      placeable({ id: 'c', ageCategoryId: null, currentTotal: 800 }),
     ]);
     expect(currentPlaceById.get('a')).toBe(1);
     expect(currentPlaceById.has('b')).toBe(false);

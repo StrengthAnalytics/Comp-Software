@@ -7,7 +7,7 @@ This file is read by AI coding assistants at the start of every session. Read it
 Comp-Software is a web app for organising and running IPF-affiliated powerlifting competitions. It replaces tools like LiftingCast with a system built around our specific operational needs and bespoke livestream overlays.
 
 The platform supports:
-- Competition setup (divisions, weight classes, platforms, sessions, flights)
+- Competition setup (age categories, weight classes, platforms, sessions, flights)
 - Lifter registration and weigh-in
 - Live scorekeeping (attempts, referee decisions, real-time scoreboard)
 - Admin-operated live scorekeeping during a meet (attempts, referee decisions, flight management)
@@ -145,7 +145,7 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 - React Testing Library for component tests. Test behaviour not implementation.
 - Playwright for end-to-end tests covering critical flows:
   1. Sign in (email + password; OTP for production)
-  2. Create a comp, add weight classes and divisions
+  2. Create a comp, add weight classes and age categories
   3. Register a lifter
   4. Check in and assign to flight
   5. Run a flight: enter attempts, mark referees, advance lifter
@@ -158,7 +158,7 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 - Kit type: classic or equipped, set per comp.
 - Event type: full power (SBD), bench only, or deadlift only.
 - Lift weights stored in kg to one decimal place (0.5 kg increments). Bodyweights and weight-class bounds stored to two decimal places (IPF weigh-in precision, 0.01 kg). Weight-class bounds are inclusive on both ends, each class's lower bound sitting 0.01 kg above the class below's upper, so a boundary is unambiguous (83.00 kg is the -83 class, 83.01 kg is -93).
-- Each comp owns its own divisions and weight classes (rule sets change year to year).
+- Each comp owns its own age categories and weight classes (rule sets change year to year). ("Age category" is the lifter's IPF age division — U16–M6 — stored in the `age_categories` table; the word "division" is reserved for the British Powerlifting region/home nation a lifter competes on behalf of.)
 - A comp can be a team competition (`is_team_competition`, full power only) — see Team competitions below.
 
 ### Attempt lifecycle
@@ -176,7 +176,7 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 
 ### Scoring
 - Total = best squat + best bench + best deadlift.
-- Placement by total within (weight class × division × gender × kit type).
+- Placement by total within (weight class × age category × gender × kit type).
 - IPF GL points, Wilks, DOTS as parallel ranking metrics. Pure functions in `/lib/scoring`.
 
 ### Team competitions

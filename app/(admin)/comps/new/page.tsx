@@ -9,7 +9,7 @@ export default function NewCompPage() {
       </Link>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">New competition</h1>
       <p className="mt-1 text-sm text-neutral-600">
-        Create the meet first, then add divisions and weight classes.
+        Create the meet first, then add age categories and weight classes.
       </p>
       <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-6">
         <CompForm />

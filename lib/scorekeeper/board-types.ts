@@ -24,8 +24,8 @@ export type BoardEntry = {
   bodyweightKg: number | null;
   weightClassId: string | null;
   weightClassName: string | null;
-  divisionId: string | null;
-  divisionName: string | null;
+  ageCategoryId: string | null;
+  ageCategoryName: string | null;
   rackHeightSquat: number | null;
   squatRackSetting: SquatRackSetting | null;
   rackHeightBench: number | null;

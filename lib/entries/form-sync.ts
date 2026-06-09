@@ -10,7 +10,7 @@ type EntryStatus = Database['public']['Enums']['entry_status'];
 // the raw input strings (numberToInput), so a snapshot mirrors exactly what sits in the boxes.
 export type EntryFormValues = {
   weightClassId: string;
-  divisionId: string;
+  ageCategoryId: string;
   lotNumber: string;
   bodyweight: string;
   openerSquat: string;
@@ -29,7 +29,7 @@ export type EntryFormValues = {
 export function sameForm(a: EntryFormValues, b: EntryFormValues): boolean {
   return (
     a.weightClassId === b.weightClassId &&
-    a.divisionId === b.divisionId &&
+    a.ageCategoryId === b.ageCategoryId &&
     a.lotNumber === b.lotNumber &&
     a.bodyweight === b.bodyweight &&
     a.openerSquat === b.openerSquat &&

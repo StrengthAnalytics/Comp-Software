@@ -28,7 +28,7 @@ The migration files in `/supabase/migrations` are the source of truth. The diagr
 
 ```mermaid
 erDiagram
-  COMPETITIONS ||--o{ DIVISIONS : has
+  COMPETITIONS ||--o{ AGE_CATEGORIES : has
   COMPETITIONS ||--o{ WEIGHT_CLASSES : has
   COMPETITIONS ||--o{ PLATFORMS : has
   COMPETITIONS ||--o{ SESSIONS : has
@@ -40,7 +40,7 @@ erDiagram
   TEAMS ||--o{ ENTRIES : groups
   LIFTERS ||--o{ ENTRIES : registers
   WEIGHT_CLASSES ||--o{ ENTRIES : assigns
-  DIVISIONS ||--o{ ENTRIES : categorises
+  AGE_CATEGORIES ||--o{ ENTRIES : categorises
   ENTRIES ||--o{ ATTEMPTS : produces
   ATTEMPTS ||--o{ REFEREE_DECISIONS : receives
 ```
@@ -48,13 +48,13 @@ erDiagram
 ### Table summaries
 
 - **competitions**: the meet. Slug, name, federation, kit_type (classic/equipped), event_type (full_power/bench_only/deadlift_only), date range, status (draft/published/active/completed), is_team_competition (team-format flag, full power only).
-- **divisions**: age categories per comp. The seed defaults follow British Powerlifting (U16, U18, U23, Open, M1-M6); each comp owns its own set.
+- **age_categories**: age categories per comp (formerly the `divisions` table — renamed so "division" can mean the BP region/home nation). The seed defaults follow British Powerlifting (U16, U18, U23, Open, M1-M6); each comp owns its own set. A placement dimension: individual placement is weight class × age category × sex.
 - **weight_classes**: bodyweight categories per comp with gender, lower_kg, upper_kg (both 2 dp, inclusive bounds — each class's lower bound is the class below's upper + 0.01 kg, so a boundary is unambiguous: 83.00 kg is -83, 83.01 kg is -93).
 - **platforms**: physical lifting platforms (one per comp normally, two for bigger meets).
 - **sessions**: a chunk of lifting tied to a date, time, and platform.
 - **flights**: a group of ~8-14 lifters within a session who lift together.
 - **lifters**: the persistent person. First name, surname, gender, DOB, IPF member ID, club, country.
-- **entries**: a lifter registering for one comp. Weight class, division, flight, lot number, bodyweight at weigh-in, opener attempts, and structured rack settings (integer squat rack height + position, integer bench and safety heights + spotting choice — `squat_rack_setting` / `bench_spotting` enums), status. In team competitions, team_id and team_lift link the entry to a team and its one assigned discipline.
+- **entries**: a lifter registering for one comp. Weight class, age category (`age_category_id`), flight, lot number, bodyweight at weigh-in, opener attempts, and structured rack settings (integer squat rack height + position, integer bench and safety heights + spotting choice — `squat_rack_setting` / `bench_spotting` enums), status. In team competitions, team_id and team_lift link the entry to a team and its one assigned discipline.
 - **teams**: (team competitions only) a named team within a comp. Its members are entries tagged with team_id and team_lift — one per discipline (squat/bench/deadlift). The team score is the sum of the three members' IPF GL points.
 - **attempts**: up to 9 per entry (3 squats, 3 benches, 3 deadlifts). Weight in kg, declared timestamp, decided timestamp (`decided_at`, set when a good/no lift is recorded — anchors the run screen's 60-second next-attempt countdown across devices), result (pending/good_lift/no_lift/not_taken/withdrawn).
 - **referee_decisions**: exactly 3 per attempt (left/head/right positions). Decision (white/red) plus reasons array for no-lifts.
@@ -171,7 +171,7 @@ Overlays run in OBS as Browser Sources. A Browser Source is a headless Chromium 
 
 ### Competition setup stays editable at any status
 
-Setup writes (competition metadata, divisions, weight classes, and lifter registration / weigh-in entries) are not gated on `status`: an operator can edit a `completed` comp's details, not just a `draft` one. The "no writes to a completed comp" rule is a meet-time concern for attempts, referee decisions, and results — not for the setup tables, where late corrections (a misspelled name, a wrong date, a weigh-in adjustment) are legitimate. `requireAdmin()` remains the gate. The attempt/result write paths, when built, should enforce their own status checks. Two deliberate exceptions on the setup side, both blocked once a comp is `completed` because they cascade to attempts and referee decisions and would destroy the final record: deleting *all* entrants at once (`deleteAllEntriesAction`) and deleting the whole competition (`deleteCompetitionAction`). Single-entry edits — and duplicating a comp, which only reads the source — stay allowed at any status.
+Setup writes (competition metadata, age categories, weight classes, and lifter registration / weigh-in entries) are not gated on `status`: an operator can edit a `completed` comp's details, not just a `draft` one. The "no writes to a completed comp" rule is a meet-time concern for attempts, referee decisions, and results — not for the setup tables, where late corrections (a misspelled name, a wrong date, a weigh-in adjustment) are legitimate. `requireAdmin()` remains the gate. The attempt/result write paths, when built, should enforce their own status checks. Two deliberate exceptions on the setup side, both blocked once a comp is `completed` because they cascade to attempts and referee decisions and would destroy the final record: deleting *all* entrants at once (`deleteAllEntriesAction`) and deleting the whole competition (`deleteCompetitionAction`). Single-entry edits — and duplicating a comp, which only reads the source — stay allowed at any status.
 
 ### Password sign-in for the initial build, OTP for production
 
@@ -190,3 +190,9 @@ GL uses the full-power (3-lift) coefficients for all three roles. The IPF publis
 The regional/national records browser (replacing the in-code JSON file of `StrengthAnalytics/BPRecords`) stores its data in a `records` table that is the first and only **app-global** table — it hangs off no `competition_id`, has no foreign keys to any competition table, and is never affected by a comp's lifecycle. A UK record is a standing reference value owned by no meet.
 
 Two consequences follow. First, its **anon read policy is unconditional** (`using (true)`) rather than gated on `is_comp_public()`: records are public reference data that should always render, regardless of whether any comp is published. This is the single documented exception in section 3. Second, the record holder's `name` is **free text**, not a foreign key to `lifters`, mirroring the source dataset and keeping the records feature fully independent of the registration data — so a records change can never touch, and is never touched by, the competition software. The record vocabulary (`record_lift`, `record_equipment` enums; weight-class/age-category/region constants) is likewise kept separate from the comp vocabulary for the same isolation reason — though the record weight-class list is *derived* from the comp's seeded `DEFAULT_WEIGHT_CLASSES` so the two can't drift. The natural key `(region, gender, weight_class, age_category, lift, equipment)` is unique and **case-insensitive** (the three free-text columns are `citext`), so one row is authoritative per category regardless of capitalisation and bulk import is an upsert on that key.
+
+### "Division" renamed to "age category"; "division" reserved for the BP region
+
+Originally the per-comp `divisions` table held a lifter's **age category** (U16–M6), and "division" was used for that concept throughout the code and UI. But in British Powerlifting a *division* is the **region / home nation a lifter competes on behalf of** (England, Wales, Scotland, British, the regional bodies, …) — a different axis entirely. To free the word for its federation meaning, the age-category concept was renamed end-to-end: the table is now `age_categories`, the entries foreign key is `age_category_id`, and all code/UI says "age category" (abbreviated "Age Cat." in tight board columns). This was a pure rename with no behaviour change — placement is still weight class × age category × sex. Migration `supabase/migrations/20260609000001_rename_divisions_to_age_categories.sql` renames the table, column, indexes, constraints and RLS policies in place (apply via the Supabase SQL editor; `types/database.types.ts` hand-updated to match).
+
+The BP **division** (region) itself is added separately as an informational entry attribute (which region a lifter represents) drawn from a fixed app-wide region list — it does **not** affect placement (placement stays weight class × age category × sex). That is a follow-up change layered on top of this rename.

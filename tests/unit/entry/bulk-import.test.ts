@@ -27,7 +27,7 @@ describe('bulkImportColumns / header', () => {
 
   it('emits a tab-separated header row', () => {
     expect(bulkImportHeader(FULL_POWER)).toBe(
-      'First name\tSurname\tGender\tDate of birth\tMembership number\tClub\tCountry\tDivision\tWeight class\tLot\tBodyweight\tOpening squat\tOpening bench\tOpening deadlift',
+      'First name\tSurname\tGender\tDate of birth\tMembership number\tClub\tCountry\tAge category\tWeight class\tLot\tBodyweight\tOpening squat\tOpening bench\tOpening deadlift',
     );
   });
 });
@@ -45,7 +45,7 @@ describe('parseBulkImport', () => {
       membership: 'GB123',
       club: 'Barbell Club',
       country: 'GBR',
-      divisionName: 'Open',
+      ageCategoryName: 'Open',
       weightClassName: '-72 kg',
       lot: 5,
       bodyweight: 71.5,
@@ -129,7 +129,7 @@ describe('formatBulkExport', () => {
     membership: 'GB123',
     club: 'Barbell Club',
     country: 'GBR',
-    divisionName: 'Open',
+    ageCategoryName: 'Open',
     weightClassName: '-72 kg',
     lot: 5,
     bodyweight: 71.5,
@@ -159,7 +159,7 @@ describe('formatBulkExport', () => {
       gender: 'female',
       dateOfBirth: '1995-04-02',
       membership: 'GB123',
-      divisionName: 'Open',
+      ageCategoryName: 'Open',
       weightClassName: '-72 kg',
       lot: 5,
       bodyweight: 71.5,

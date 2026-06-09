@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ageCategoryInputSchema,
   competitionInputSchema,
-  divisionInputSchema,
   slugify,
   weightClassInputSchema,
 } from '@/types/competition';
@@ -87,9 +87,9 @@ describe('competitionInputSchema', () => {
   });
 });
 
-describe('divisionInputSchema', () => {
+describe('ageCategoryInputSchema', () => {
   it('defaults sort order to 0', () => {
-    const result = divisionInputSchema.safeParse({ competitionId: UUID, name: 'Open' });
+    const result = ageCategoryInputSchema.safeParse({ competitionId: UUID, name: 'Open' });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.sortOrder).toBe(0);
@@ -97,7 +97,7 @@ describe('divisionInputSchema', () => {
   });
 
   it('rejects an empty name', () => {
-    const result = divisionInputSchema.safeParse({ competitionId: UUID, name: '  ' });
+    const result = ageCategoryInputSchema.safeParse({ competitionId: UUID, name: '  ' });
     expect(result.success).toBe(false);
   });
 });

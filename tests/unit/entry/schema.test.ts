@@ -57,7 +57,7 @@ describe('entryUpdateSchema', () => {
     id: UUID,
     competitionId: UUID,
     weightClassId: null,
-    divisionId: null,
+    ageCategoryId: null,
     lotNumber: null,
     bodyweightKg: null,
     openerSquatKg: null,
