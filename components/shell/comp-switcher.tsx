@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type { Database } from '@/types/database.types';
 import { COMP_STATUS_LABELS } from '@/lib/constants';
+import { COMP_STATUS_DOT_CLASS } from '@/components/ui/status-badge';
 import { IconBarbell, IconChevronDown } from '@/components/shell/icons';
 
 type CompStatus = Database['public']['Enums']['comp_status'];
@@ -17,15 +18,6 @@ export type ShellComp = {
   isTeamCompetition: boolean;
 };
 
-// One dot colour per lifecycle status, used in the switcher trigger and menu so an operator can
-// tell at a glance which comp is live. Matches the status vocabulary in COMP_STATUS_LABELS.
-const STATUS_DOT: Record<CompStatus, string> = {
-  draft: 'bg-neutral-400',
-  published: 'bg-sky-400',
-  active: 'bg-emerald-400',
-  completed: 'bg-neutral-500',
-};
-
 type CompSwitcherProps = {
   comps: ShellComp[];
   activeComp: ShellComp;
@@ -37,7 +29,7 @@ type CompSwitcherProps = {
 
 // Competition context switcher at the top of the sidebar (the Vercel/Supabase "project switcher"
 // pattern): shows which comp the comp-scoped nav below it belongs to, and jumps to any other comp
-// (landing on its Setup page) or back to the full competitions list.
+// (landing on its Overview page) or back to the full competitions list.
 export function CompSwitcher({ comps, activeComp, collapsed, onExpandRequest }: CompSwitcherProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -89,7 +81,7 @@ export function CompSwitcher({ comps, activeComp, collapsed, onExpandRequest }: 
         className="flex w-full items-center gap-2.5 rounded-lg bg-white/10 px-3 py-2.5 text-left hover:bg-white/15"
       >
         <span
-          className={`h-2 w-2 flex-shrink-0 rounded-full ${STATUS_DOT[activeComp.status]}`}
+          className={`h-2 w-2 flex-shrink-0 rounded-full ${COMP_STATUS_DOT_CLASS[activeComp.status]}`}
           aria-hidden="true"
         />
         <span className="min-w-0 flex-1">
@@ -120,7 +112,7 @@ export function CompSwitcher({ comps, activeComp, collapsed, onExpandRequest }: 
             {comps.map((comp) => (
               <Link
                 key={comp.id}
-                href={`/comps/${comp.id}/edit`}
+                href={`/${comp.slug}/overview`}
                 role="menuitem"
                 onClick={() => setOpen(false)}
                 aria-current={comp.id === activeComp.id ? 'true' : undefined}
@@ -129,7 +121,7 @@ export function CompSwitcher({ comps, activeComp, collapsed, onExpandRequest }: 
                 }`}
               >
                 <span
-                  className={`h-2 w-2 flex-shrink-0 rounded-full ${STATUS_DOT[comp.status]}`}
+                  className={`h-2 w-2 flex-shrink-0 rounded-full ${COMP_STATUS_DOT_CLASS[comp.status]}`}
                   aria-hidden="true"
                 />
                 <span className="min-w-0 flex-1 truncate" title={comp.name}>

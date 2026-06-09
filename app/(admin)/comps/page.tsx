@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { COMP_STATUS_LABELS, EVENT_TYPE_LABELS, KIT_TYPE_LABELS } from '@/lib/constants';
+import { EVENT_TYPE_LABELS, KIT_TYPE_LABELS } from '@/lib/constants';
 import { DuplicateCompButton } from '@/components/comps/duplicate-comp-button';
+import { CompStatusBadge } from '@/components/ui/status-badge';
 
 function formatDateRange(startsOn: string | null, endsOn: string | null): string {
   if (!startsOn && !endsOn) {
@@ -59,19 +60,29 @@ export default async function CompsPage() {
               {comps.map((comp) => (
                 <tr key={comp.id} className="hover:bg-neutral-50">
                   <td className="px-4 py-3">
-                    <Link href={`/comps/${comp.id}/edit`} className="font-medium text-neutral-900 hover:underline">
+                    <Link href={`/${comp.slug}/overview`} className="font-medium text-neutral-900 hover:underline">
                       {comp.name}
                     </Link>
                     <div className="text-xs text-neutral-500">/{comp.slug}</div>
                   </td>
-                  <td className="px-4 py-3 text-neutral-700">{COMP_STATUS_LABELS[comp.status]}</td>
+                  <td className="px-4 py-3">
+                    <CompStatusBadge status={comp.status} />
+                  </td>
                   <td className="px-4 py-3 text-neutral-700">{EVENT_TYPE_LABELS[comp.event_type]}</td>
                   <td className="px-4 py-3 text-neutral-700">{KIT_TYPE_LABELS[comp.kit_type]}</td>
                   <td className="px-4 py-3 text-neutral-700">
                     {formatDateRange(comp.starts_on, comp.ends_on)}
                   </td>
                   <td className="px-4 py-3">
-                    <DuplicateCompButton competitionId={comp.id} name={comp.name} />
+                    <div className="flex items-center justify-end gap-3">
+                      <Link
+                        href={`/comps/${comp.id}/edit`}
+                        className="text-sm text-neutral-600 hover:text-neutral-900 hover:underline"
+                      >
+                        Setup
+                      </Link>
+                      <DuplicateCompButton competitionId={comp.id} name={comp.name} />
+                    </div>
                   </td>
                 </tr>
               ))}

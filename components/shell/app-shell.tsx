@@ -15,6 +15,7 @@ import {
   IconClose,
   IconExternalLink,
   IconFlag,
+  IconHome,
   IconLogOut,
   IconMenu,
   IconMonitor,
@@ -51,6 +52,7 @@ function compNavGroups(comp: ShellComp): NavGroup[] {
     {
       label: 'Competition',
       items: [
+        { label: 'Overview', href: `/${comp.slug}/overview`, icon: IconHome },
         { label: 'Setup', href: `/comps/${comp.id}/edit`, icon: IconSliders },
         { label: 'Lifters', href: `/${comp.slug}/entries`, icon: IconUsers },
         { label: 'Sessions & flights', href: `/${comp.slug}/flights`, icon: IconCalendar },

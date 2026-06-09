@@ -1,3 +1,15 @@
+// Whole days from `fromIso` to `toIso` (both strict ISO `YYYY-MM-DD`): positive when `toIso` is
+// later, 0 for the same day, negative when it has passed. Null when either date is not real, so a
+// caller renders nothing rather than NaN. Calendar-day arithmetic in UTC — no time-of-day or
+// timezone component — which is all the Overview page's "days to go" figure needs.
+export function daysBetweenIsoDates(fromIso: string, toIso: string): number | null {
+  if (!isRealIsoDate(fromIso) || !isRealIsoDate(toIso)) {
+    return null;
+  }
+  const MS_PER_DAY = 86_400_000;
+  return Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / MS_PER_DAY);
+}
+
 // True when `value` is a real calendar date in strict ISO `YYYY-MM-DD` form — i.e. the month is
 // 1-12 and the day exists in that month (Feb 29 only in a leap year). The plain regex used at the
 // validation boundary accepts impossible dates like 2020-02-31; this rejects them before they reach
