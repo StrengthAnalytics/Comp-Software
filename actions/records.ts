@@ -176,11 +176,13 @@ export async function bulkUpsertRecordsAction(input: {
 
     // Pre-fetch the existing natural keys so each row can be reported as created vs updated. Paged
     // through fetchAllRows because PostgREST caps a single response at 1000 rows — an un-paginated
-    // select would miss keys beyond the first page and misreport those rows as created.
+    // select would miss keys beyond the first page and misreport those rows as created. Ordered by
+    // the unique id so offset paging can't skip or duplicate a key at a page boundary.
     const { data: existing, error: existingError } = await fetchAllRows((from, to) =>
       supabase
         .from('records')
         .select('region, gender, weight_class, age_category, lift, equipment')
+        .order('id')
         .range(from, to),
     );
     if (existingError) {

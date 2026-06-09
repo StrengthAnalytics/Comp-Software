@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import * as Sentry from '@sentry/nextjs';
 import { createClient } from '@/lib/supabase/server';
 import { toRecordView } from '@/lib/records/record-view';
 import { fetchAllRows } from '@/lib/supabase/paginate';
@@ -17,8 +18,10 @@ export default async function PublicRecordsPage() {
   // (anon) payload. The public browser does not render it.
   //
   // Page through every record — PostgREST caps a single response at 1000 rows, so an un-paginated
-  // select would silently hide records beyond the first page once the dataset grows past it.
-  const { data } = await fetchAllRows((from, to) =>
+  // select would silently hide records beyond the first page once the dataset grows past it. The
+  // final .order('id') is a unique tiebreaker so offset paging can't skip or duplicate a row whose
+  // other sort columns tie at a page boundary.
+  const { data, error } = await fetchAllRows((from, to) =>
     supabase
       .from('records')
       .select('id, region, name, gender, weight_class, age_category, lift, equipment, weight_kg, date_set')
@@ -26,8 +29,11 @@ export default async function PublicRecordsPage() {
       .order('gender')
       .order('weight_class')
       .order('lift')
+      .order('id')
       .range(from, to),
   );
+
+  if (error) Sentry.captureException(error);
 
   const records = data.map((row) => toRecordView(row));
 
