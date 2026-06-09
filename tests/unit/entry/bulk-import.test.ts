@@ -119,6 +119,37 @@ describe('parseBulkImport', () => {
     expect(row.surname).toBe('Smith');
     expect(row.weightClassName).toBe('-72 kg');
   });
+
+  it('maps columns by header name when an older-layout sheet omits the Division column', () => {
+    // A sheet exported before the Division column existed: its data has no Division cell, so a
+    // position-based parse would shift weight class / lot / bodyweight one column left. Mapping by the
+    // pasted header name keeps every value in the right field and leaves division blank.
+    const header =
+      'First name\tSurname\tGender\tDate of birth\tMembership number\tClub\tCountry\tAge category\tWeight class\tLot\tBodyweight\tOpening squat\tOpening bench\tOpening deadlift';
+    const dataRow = 'Dana\tSmith\tF\t1995-04-02\tGB123\tBarbell Club\tGBR\tOpen\t-72 kg\t5\t71.5\t100\t60\t130';
+    const [row] = parseBulkImport(`${header}\n${dataRow}`, FULL_POWER);
+    expect(row.errors).toEqual([]);
+    expect(row).toMatchObject({
+      ageCategoryName: 'Open',
+      division: null,
+      weightClassName: '-72 kg',
+      lot: 5,
+      bodyweight: 71.5,
+      openerSquat: 100,
+      openerBench: 60,
+      openerDeadlift: 130,
+    });
+  });
+
+  it('maps columns by header name when the pasted header is reordered', () => {
+    // Bodyweight and Lot swapped relative to the canonical layout; header-name mapping still aligns them.
+    const header =
+      'First name\tSurname\tGender\tDate of birth\tMembership number\tClub\tCountry\tAge category\tDivision\tWeight class\tBodyweight\tLot\tOpening squat\tOpening bench\tOpening deadlift';
+    const dataRow = 'Dana\tSmith\tF\t1995-04-02\t\t\t\tOpen\tEngland\t-72 kg\t71.5\t5\t100\t60\t130';
+    const [row] = parseBulkImport(`${header}\n${dataRow}`, FULL_POWER);
+    expect(row.errors).toEqual([]);
+    expect(row).toMatchObject({ division: 'England', weightClassName: '-72 kg', bodyweight: 71.5, lot: 5 });
+  });
 });
 
 describe('formatBulkExport', () => {

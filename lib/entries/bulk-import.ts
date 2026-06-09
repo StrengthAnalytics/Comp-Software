@@ -163,6 +163,26 @@ function cellAt(cells: string[], indexByKey: Map<BulkImportField, number>, key: 
   return columnIndex === undefined ? '' : (cells[columnIndex] ?? '');
 }
 
+// Maps each known column to the position it actually occupies in a pasted header row, by matching the
+// header label (case- and whitespace-insensitively). Lets the parser align by name rather than fixed
+// position, so a sheet whose columns are reordered — or whose layout predates a column, e.g. an older
+// export with no "Division" column — still lands each value in the right field instead of silently
+// shifting. A header column the layout doesn't know is ignored; a known column the header omits is left
+// unmapped (its cells read as blank).
+function deriveColumnIndex(
+  headerCells: string[],
+  labelToKey: Map<string, BulkImportField>,
+): Map<BulkImportField, number> {
+  const indexByKey = new Map<BulkImportField, number>();
+  for (const [columnIndex, cell] of headerCells.entries()) {
+    const key = labelToKey.get(cell.trim().toLowerCase());
+    if (key !== undefined && !indexByKey.has(key)) {
+      indexByKey.set(key, columnIndex);
+    }
+  }
+  return indexByKey;
+}
+
 // The reverse of the import: dump current registrations as the same tab-separated layout so the
 // operator can pull them back into a sheet, edit, and re-import. Round-trips with parseBulkImport.
 export type ExportRow = {
@@ -256,8 +276,19 @@ export function formatBulkExport(rows: ExportRow[], lifts: Lifts): string {
 
 export function parseBulkImport(text: string, lifts: Lifts): ParsedImportRow[] {
   const columns = bulkImportColumns(lifts);
-  const indexByKey = new Map(columns.map((column, index) => [column.key, index]));
   const delimiter = detectDelimiter(text);
+
+  // Default to the fixed layout positions; if the paste includes the header row, remap columns by their
+  // actual header position so a reordered or older-layout sheet aligns by name rather than position.
+  let indexByKey = new Map<BulkImportField, number>(columns.map((column, index) => [column.key, index]));
+  const labelToKey = new Map(columns.map((column) => [column.label.trim().toLowerCase(), column.key]));
+  const headerRow = text
+    .split(/\r?\n/)
+    .find((line) => line.split(delimiter)[0]?.trim().toLowerCase() === 'first name');
+  if (headerRow) {
+    indexByKey = deriveColumnIndex(headerRow.split(delimiter), labelToKey);
+  }
+
   const rows: ParsedImportRow[] = [];
 
   for (const [index, rawLine] of text.split(/\r?\n/).entries()) {
