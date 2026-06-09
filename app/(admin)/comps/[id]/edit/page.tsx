@@ -6,6 +6,7 @@ import { DeleteCompetition } from '@/components/comps/delete-competition';
 import { AgeCategoriesEditor } from '@/components/comps/age-categories-editor';
 import { OverlayLinks } from '@/components/comps/overlay-links';
 import { WeightClassesEditor } from '@/components/comps/weight-classes-editor';
+import { Card } from '@/components/ui/card';
 
 export default async function EditCompPage({
   params,
@@ -71,7 +72,7 @@ export default async function EditCompPage({
         </p>
       ) : null}
 
-      <div className="rounded-lg border border-neutral-200 bg-white p-6">
+      <Card>
         <CompForm
           initial={{
             id: comp.id,
@@ -85,7 +86,7 @@ export default async function EditCompPage({
             is_team_competition: comp.is_team_competition,
           }}
         />
-      </div>
+      </Card>
 
       <AgeCategoriesEditor competitionId={comp.id} ageCategories={ageCategories ?? []} />
       <WeightClassesEditor competitionId={comp.id} weightClasses={weightClasses ?? []} />

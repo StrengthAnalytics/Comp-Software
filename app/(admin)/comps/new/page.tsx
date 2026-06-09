@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CompForm } from '@/components/comps/comp-form';
+import { Card } from '@/components/ui/card';
 
 export default function NewCompPage() {
   return (
@@ -11,9 +12,9 @@ export default function NewCompPage() {
       <p className="mt-1 text-sm text-neutral-600">
         Create the meet first, then add age categories and weight classes.
       </p>
-      <div className="mt-6 rounded-lg border border-neutral-200 bg-white p-6">
+      <Card className="mt-6">
         <CompForm />
-      </div>
+      </Card>
     </div>
   );
 }

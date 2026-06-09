@@ -7,6 +7,8 @@ import { LIFT_LABELS, MAX_FLIGHT_SIZE } from '@/lib/constants';
 import type { TeamLift } from '@/types/team';
 import type { ActionResult } from '@/types/action-result';
 import type { FlightRow, SessionRow } from '@/components/flights/flights-manager';
+import { buttonClasses } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
 export type BoardTeamMember = { lift: TeamLift; lifter_name: string };
 export type BoardTeam = {
@@ -223,16 +225,15 @@ export function TeamFlightBoard({
       ) : null}
 
       {teams.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center">
-          <p className="text-sm text-neutral-600">This is a team competition, so flights are filled by team, not by lifter.</p>
-          <p className="mt-1 text-sm text-neutral-600">Create teams before you can assign them to flights.</p>
-          <Link
-            href={`/${compSlug}/teams`}
-            className="mt-4 inline-block rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700"
-          >
-            Go to Teams →
-          </Link>
-        </div>
+        <EmptyState
+          title="No teams to assign yet"
+          description="This is a team competition, so flights are filled by team, not by lifter — every member of a team moves together. Create teams first, then come back here to place them."
+          action={
+            <Link href={`/${compSlug}/teams`} className={buttonClasses('secondary')}>
+              Go to Teams
+            </Link>
+          }
+        />
       ) : (
         <>
           <Lane title="Unassigned" count={unassigned.length} warnOver={false}>

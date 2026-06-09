@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import type { BoardPlatform } from '@/lib/scorekeeper/board-types';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 // How long the "Copied" confirmation shows before reverting, matching the other copy controls.
 const COPY_RESET_MS = 2000;
@@ -47,14 +49,13 @@ export function OverlayLinks({ slug, platforms }: OverlayLinksProps) {
   }
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-6">
-      <h2 className="text-lg font-semibold tracking-tight">Broadcast overlays (OBS)</h2>
-      <p className="mt-1 text-sm text-neutral-600">
+    <Card title="Broadcast overlays (OBS)">
+      <p className="-mt-3 mb-4 text-sm text-neutral-600">
         Add these as Browser Sources in OBS (1920×1080). The background is transparent — no chroma key
         needed. Overlays show data once the competition is published.
       </p>
 
-      <ul className="mt-4 space-y-2">
+      <ul className="space-y-2">
         {rows.map((row) => (
           <li
             key={row.path}
@@ -65,13 +66,9 @@ export function OverlayLinks({ slug, platforms }: OverlayLinksProps) {
               <p className="truncate text-xs text-neutral-500">{row.path}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={() => copy(row.path)}
-                className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-800 hover:bg-neutral-100"
-              >
+              <Button variant="secondary" onClick={() => copy(row.path)}>
                 {copiedPath === row.path ? 'Copied ✓' : 'Copy URL'}
-              </button>
+              </Button>
               <a
                 href={row.path}
                 target="_blank"
@@ -91,6 +88,6 @@ export function OverlayLinks({ slug, platforms }: OverlayLinksProps) {
           {error}
         </p>
       ) : null}
-    </section>
+    </Card>
   );
 }

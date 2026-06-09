@@ -17,6 +17,7 @@ import {
   KIT_TYPES,
 } from '@/lib/constants';
 import type { Database } from '@/types/database.types';
+import { Button } from '@/components/ui/button';
 
 type CompRow = Database['public']['Tables']['competitions']['Row'];
 
@@ -50,13 +51,9 @@ function FieldError({ messages }: { messages?: string[] }) {
 function SaveButton({ label, pendingLabel }: { label: string; pendingLabel: string }) {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-    >
+    <Button type="submit" disabled={pending}>
       {pending ? pendingLabel : label}
-    </button>
+    </Button>
   );
 }
 
