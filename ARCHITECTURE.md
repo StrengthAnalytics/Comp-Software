@@ -87,6 +87,7 @@ Which screens subscribe to which tables.
 | `/(admin)/[comp]/run` | attempts, entries, flights | `competition_id` |
 | `/(display)/[comp]/loading` | attempts, entries, flights | `competition_id` (display scoped to one platform via `?platform`) |
 | `/(public)/[comp]/warm-up` | attempts, entries, flights | `competition_id` (warm-up board, scoped to one platform via `?platform`; sign-in-free, anon, RLS-gated to public comps) |
+| `/(admin)/[comp]/entries` | entries, entry_submissions | `competition_id` (debounced `router.refresh()`: live opener edits + the review inbox) |
 | `/(admin)/[comp]/rack-heights` | entries, flights | `competition_id` |
 | `/(admin)/[comp]/flights` | flights, entries | `competition_id` |
 | `/(overlay)/[comp]/scoreboard` | attempts, entries | `competition_id` + current session |

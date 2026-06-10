@@ -4,10 +4,15 @@ import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
+import { requireAdmin } from '@/lib/auth/admin';
+import { matchAgeCategoryByName, resolveAgeCategory } from '@/lib/age-categories/age-category';
 import { isCompPubliclyVisible } from '@/lib/comps/meet-status';
+import { isUniqueViolation } from '@/lib/supabase/errors';
 import { toFieldErrors } from '@/lib/validation';
 import { buildSubmissionSchema, entryFormConfigSchema, parseEntryFormConfig } from '@/types/entry-form';
+import { GENDER_VALUES } from '@/types/entry';
 import { fail, ok, type ActionResult } from '@/types/action-result';
+import type { Database } from '@/types/database.types';
 
 // The public entry form's admin actions: saving the comp's form design and opening/closing the
 // form. Both are setup writes — deliberately not gated on competition status (ARCHITECTURE.md §7);
@@ -201,6 +206,288 @@ export async function submitEntryFormAction(input: SubmitEntryFormInput): Promis
       }
       Sentry.captureException(error);
       return fail('Could not submit your entry. Please try again.');
+    }
+
+    return ok();
+  });
+}
+
+// --- Reviewing submissions ------------------------------------------------------------------------
+
+const reviewSubmissionSchema = z.object({
+  submissionId: z.uuid(),
+  competitionId: z.uuid(),
+});
+
+export type ReviewSubmissionInput = z.infer<typeof reviewSubmissionSchema>;
+
+// Approves a pending submission: runs the standard registration path — resolve-or-create the
+// lifter (the same surname+first-name match the bulk importer uses), auto-assign the age category
+// from the comp date and date of birth, resolve the chosen weight class to this comp's class row —
+// then stamps the submission with the created entry and the reviewer. The submission's predicted
+// total, kit/event preference, instagram and contact details stay on the (approved) submission as
+// the admin's reference; they have no entry columns.
+export async function approveSubmissionAction(input: ReviewSubmissionInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('approveSubmission', async () => {
+    // requireAdmin directly (not adminGuard) because the reviewer's email is stamped on the row.
+    let reviewer: string;
+    try {
+      reviewer = await requireAdmin();
+    } catch {
+      return fail('You need to be signed in as an admin to do that.');
+    }
+
+    const parsed = reviewSubmissionSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not approve the entry. Please try again.');
+    }
+
+    const supabase = await createClient();
+
+    const { data: submission, error: submissionError } = await supabase
+      .from('entry_submissions')
+      .select(
+        'id, competition_id, status, first_name, surname, gender, date_of_birth, club, ipf_member_id, division, weight_class',
+      )
+      .eq('id', parsed.data.submissionId)
+      .maybeSingle();
+    if (submissionError) {
+      Sentry.captureException(submissionError);
+      return fail('Could not approve the entry. Please try again.');
+    }
+    if (!submission || submission.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that submission.');
+    }
+    if (submission.status !== 'pending') {
+      return fail('This submission has already been reviewed.');
+    }
+
+    // The columns are CHECK-constrained, but they type as plain strings; narrow before writing to
+    // the lifters table, which expects the same two values.
+    const gender = z.enum(GENDER_VALUES).safeParse(submission.gender);
+    if (!gender.success) {
+      return fail('Could not approve the entry. Please try again.');
+    }
+
+    const { data: comp, error: compError } = await supabase
+      .from('competitions')
+      .select('starts_on')
+      .eq('id', parsed.data.competitionId)
+      .maybeSingle();
+    if (compError) {
+      Sentry.captureException(compError);
+      return fail('Could not approve the entry. Please try again.');
+    }
+    if (!comp) {
+      return fail('Could not find that competition.');
+    }
+    if (!comp.starts_on) {
+      return fail('Set a competition date before approving entries — the age category is worked out from it.');
+    }
+
+    // Resolve the lifter the way the bulk importer does: an existing lifter with this name is the
+    // same person (their details are refreshed from the submission), otherwise create them.
+    const { data: found, error: lookupError } = await supabase
+      .from('lifters')
+      .select('id')
+      .ilike('surname', submission.surname)
+      .ilike('first_name', submission.first_name)
+      .limit(1)
+      .maybeSingle();
+    if (lookupError) {
+      Sentry.captureException(lookupError);
+      return fail('Could not approve the entry. Please try again.');
+    }
+
+    let lifterId: string;
+    let createdLifter = false;
+
+    if (found) {
+      const { data: existingEntry, error: existingError } = await supabase
+        .from('entries')
+        .select('id')
+        .eq('competition_id', parsed.data.competitionId)
+        .eq('lifter_id', found.id)
+        .maybeSingle();
+      if (existingError) {
+        Sentry.captureException(existingError);
+        return fail('Could not approve the entry. Please try again.');
+      }
+      if (existingEntry) {
+        return fail(
+          'A lifter with this name is already registered in this competition. Reject the card if it is a duplicate.',
+        );
+      }
+
+      // Refresh the persistent lifter from the submission — but only overwrite club/membership when
+      // the form actually collected them, so a form that didn't ask can't blank existing details.
+      const lifterUpdate: Database['public']['Tables']['lifters']['Update'] = {
+        first_name: submission.first_name,
+        surname: submission.surname,
+        gender: gender.data,
+        date_of_birth: submission.date_of_birth,
+      };
+      if (submission.club !== null) {
+        lifterUpdate.club = submission.club;
+      }
+      if (submission.ipf_member_id !== null) {
+        lifterUpdate.ipf_member_id = submission.ipf_member_id;
+      }
+      const { error: updateError } = await supabase.from('lifters').update(lifterUpdate).eq('id', found.id);
+      if (updateError) {
+        Sentry.captureException(updateError);
+        return fail('Could not approve the entry. Please try again.');
+      }
+      lifterId = found.id;
+    } else {
+      const { data: created, error: insertError } = await supabase
+        .from('lifters')
+        .insert({
+          first_name: submission.first_name,
+          surname: submission.surname,
+          gender: gender.data,
+          date_of_birth: submission.date_of_birth,
+          club: submission.club,
+          ipf_member_id: submission.ipf_member_id,
+        })
+        .select('id')
+        .single();
+      if (insertError || !created) {
+        Sentry.captureException(insertError);
+        return fail('Could not approve the entry. Please try again.');
+      }
+      lifterId = created.id;
+      createdLifter = true;
+    }
+
+    // Roll back a just-created lifter if registration fails below, so a retry can't duplicate them
+    // (mirrors the New-lifter flow; the entries FK is ON DELETE RESTRICT so this only ever removes
+    // an entry-less lifter).
+    const rollbackLifter = async () => {
+      if (!createdLifter) {
+        return;
+      }
+      const { error: rollbackError } = await supabase.from('lifters').delete().eq('id', lifterId);
+      if (rollbackError) {
+        Sentry.captureException(rollbackError);
+      }
+    };
+
+    // Age category from the comp year and birth year, matched to this comp's rows by name; a comp
+    // without the computed category leaves it for the admin (same as every registration path).
+    let ageCategoryId: string | null = null;
+    const categoryName = resolveAgeCategory(comp.starts_on, submission.date_of_birth);
+    if (categoryName) {
+      const { data: ageCategories, error: ageCategoriesError } = await supabase
+        .from('age_categories')
+        .select('id, name')
+        .eq('competition_id', parsed.data.competitionId);
+      if (ageCategoriesError) {
+        Sentry.captureException(ageCategoriesError);
+        await rollbackLifter();
+        return fail('Could not approve the entry. Please try again.');
+      }
+      ageCategoryId = matchAgeCategoryByName(ageCategories ?? [], categoryName)?.id ?? null;
+    }
+
+    // The chosen weight class, matched by name for the lifter's sex; unmatched (renamed since the
+    // submission) is left blank for the admin rather than failing the approval.
+    let weightClassId: string | null = null;
+    if (submission.weight_class !== null) {
+      const { data: weightClasses, error: weightClassesError } = await supabase
+        .from('weight_classes')
+        .select('id, name, gender')
+        .eq('competition_id', parsed.data.competitionId);
+      if (weightClassesError) {
+        Sentry.captureException(weightClassesError);
+        await rollbackLifter();
+        return fail('Could not approve the entry. Please try again.');
+      }
+      weightClassId =
+        (weightClasses ?? []).find(
+          (weightClass) =>
+            weightClass.name.trim().toLowerCase() === submission.weight_class?.trim().toLowerCase() &&
+            weightClass.gender === gender.data,
+        )?.id ?? null;
+    }
+
+    const { data: entry, error: entryError } = await supabase
+      .from('entries')
+      .insert({
+        competition_id: parsed.data.competitionId,
+        lifter_id: lifterId,
+        weight_class_id: weightClassId,
+        age_category_id: ageCategoryId,
+        division: submission.division,
+      })
+      .select('id')
+      .single();
+    if (entryError || !entry) {
+      await rollbackLifter();
+      if (entryError && isUniqueViolation(entryError)) {
+        return fail('A lifter with this name is already registered in this competition.');
+      }
+      Sentry.captureException(entryError);
+      return fail('Could not approve the entry. Please try again.');
+    }
+
+    const { error: stampError } = await supabase
+      .from('entry_submissions')
+      .update({
+        status: 'approved',
+        entry_id: entry.id,
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: reviewer,
+      })
+      .eq('id', submission.id);
+    if (stampError) {
+      // The entry exists — the registration succeeded — but the card will stay in the inbox. Be
+      // honest about the half-applied state rather than reporting clean success.
+      Sentry.captureException(stampError);
+      return fail(
+        'The lifter was registered, but the submission could not be marked approved. Reject this card to clear it.',
+      );
+    }
+
+    return ok();
+  });
+}
+
+// Rejects a pending submission. The row is kept (status 'rejected', stamped with the reviewer) as
+// an audit record rather than deleted.
+export async function rejectSubmissionAction(input: ReviewSubmissionInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('rejectSubmission', async () => {
+    let reviewer: string;
+    try {
+      reviewer = await requireAdmin();
+    } catch {
+      return fail('You need to be signed in as an admin to do that.');
+    }
+
+    const parsed = reviewSubmissionSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not reject the entry. Please try again.');
+    }
+
+    const supabase = await createClient();
+    const { data: rejected, error } = await supabase
+      .from('entry_submissions')
+      .update({
+        status: 'rejected',
+        reviewed_at: new Date().toISOString(),
+        reviewed_by: reviewer,
+      })
+      .eq('id', parsed.data.submissionId)
+      .eq('competition_id', parsed.data.competitionId)
+      .eq('status', 'pending')
+      .select('id');
+
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not reject the entry. Please try again.');
+    }
+    if (!rejected || rejected.length === 0) {
+      return fail('This submission has already been reviewed.');
     }
 
     return ok();
