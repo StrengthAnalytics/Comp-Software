@@ -40,6 +40,9 @@ import { OptionalSelectField } from '@/components/optional-select-field';
 import { formatBulkExport, type ExportRow } from '@/lib/entries/bulk-import';
 import { formatLifterName } from '@/lib/lifters/name';
 import { numberToInput, parseOptionalNumber } from '@/lib/number-input';
+import { buttonClasses } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
 
@@ -81,10 +84,8 @@ export type WeightClassOption = { id: string; name: string; gender: string };
 const INPUT_CLASS =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
-const GHOST_BUTTON =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const PRIMARY_BUTTON =
-  'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
+const GHOST_BUTTON = buttonClasses('secondary');
+const PRIMARY_BUTTON = buttonClasses('primary');
 
 // Surfaces the most specific message an action returned: a field error when present, else the
 // form-level message. Entry validation reports failures per field (e.g. mismatched gender).
@@ -716,9 +717,9 @@ function AddEntry({
   }
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold tracking-tight">Add a lifter</h2>
+    <Card
+      title="Add a lifter"
+      action={
         <button
           type="button"
           onClick={() => setShowNewLifter((value) => !value)}
@@ -727,12 +728,12 @@ function AddEntry({
         >
           {showNewLifter ? 'Search instead' : 'New lifter'}
         </button>
-      </div>
-
+      }
+    >
       {showNewLifter ? (
         <NewLifterForm competitionId={competitionId} onDone={() => setShowNewLifter(false)} />
       ) : (
-        <div className="mt-4">
+        <div>
           <div className="flex flex-wrap items-center gap-2">
             <input
               aria-label="Search by surname"
@@ -808,7 +809,7 @@ function AddEntry({
           {error}
         </p>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
@@ -1029,9 +1030,11 @@ export function EntriesManager({
           </div>
         </div>
         {entries.length === 0 ? (
-          <p className="mt-4 rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
-            No lifters registered yet.
-          </p>
+          <EmptyState
+            className="mt-4"
+            title="No lifters registered yet"
+            description="Register each lifter individually with the Add a lifter card above, or paste a whole start list at once with Bulk import. Age categories are assigned automatically from each lifter's date of birth."
+          />
         ) : (
           <div className="mt-4 space-y-4">
             {visibleEntries.length === 0 ? (

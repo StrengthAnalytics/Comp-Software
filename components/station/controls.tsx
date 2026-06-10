@@ -39,7 +39,7 @@ export function SegmentedToggle<T extends string>({
             onClick={() => onChange(option.value)}
             aria-pressed={active}
             title={option.title}
-            className={`${TAB_BASE} ${active ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
+            className={`${TAB_BASE} ${active ? 'bg-brand-600 text-white' : 'text-neutral-700 hover:bg-neutral-100'}`}
           >
             {option.label}
           </button>

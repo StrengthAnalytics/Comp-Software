@@ -41,6 +41,30 @@ export const LIFT_LABELS: Record<LiftType, string> = {
   deadlift: 'Deadlift',
 };
 
+// Federation / rule-set choice, fixed when a comp is created. 'ipf' seeds the standard IPF age
+// categories and weight classes automatically and locks them (the Setup editors are replaced by a
+// read-only card and the category write actions reject edits); 'custom' starts empty and the
+// operator builds their own. Stored as text on competitions, constrained by a database CHECK and
+// by Zod at the action boundary (migration 20260610000001).
+export const FEDERATION_LABELS = {
+  ipf: 'IPF',
+  custom: 'Custom',
+} as const;
+
+export type Federation = keyof typeof FEDERATION_LABELS;
+
+export const FEDERATIONS = Object.keys(FEDERATION_LABELS) as Federation[];
+
+// The federation column is text, so reads arrive as plain string. Only the exact 'ipf' code locks
+// the category set — any legacy or unexpected value reads as custom (editable), the safe direction.
+export function isIpfFederation(value: string): boolean {
+  return value === 'ipf';
+}
+
+export function federationLabel(value: string): string {
+  return isIpfFederation(value) ? FEDERATION_LABELS.ipf : FEDERATION_LABELS.custom;
+}
+
 // Live scorekeeping vocabulary ----------------------------------------------------------------
 
 // Three attempts per lift (3 squats, 3 benches, 3 deadlifts). A lifter's "round" is the attempt
@@ -168,6 +192,67 @@ export const BP_DIVISIONS = [
 ] as const;
 
 export type Division = (typeof BP_DIVISIONS)[number];
+
+// Public entry form vocabulary -------------------------------------------------------------------
+
+// The admin-designed, comp-specific public entry form ("Design entry form" on the entries screen).
+// Name, sex and date of birth are always collected — the minimum the registration path needs — and
+// each field below is toggled off / optional / required per comp. The design is stored in
+// competitions.entry_form (jsonb), shaped and validated by types/entry-form.ts.
+export const ENTRY_FORM_FIELDS = [
+  'club',
+  'ipf_member_id',
+  'division',
+  'weight_class',
+  'predicted_total',
+  'kit',
+  'event',
+  'instagram',
+  'email',
+  'phone',
+] as const;
+
+export type EntryFormField = (typeof ENTRY_FORM_FIELDS)[number];
+
+export const ENTRY_FORM_FIELD_STATES = ['off', 'optional', 'required'] as const;
+
+export type EntryFormFieldState = (typeof ENTRY_FORM_FIELD_STATES)[number];
+
+export const ENTRY_FORM_FIELD_LABELS: Record<EntryFormField, string> = {
+  club: 'Club',
+  ipf_member_id: 'Membership number',
+  division: 'Division (region)',
+  weight_class: 'Weight class',
+  predicted_total: 'Predicted total',
+  kit: 'Raw / Equipped',
+  event: 'SBD / Bench only',
+  instagram: 'Instagram handle',
+  email: 'Email address',
+  phone: 'Phone number',
+};
+
+// The lifter's declared kit/event preference on the form. The codes reuse the comp's kit_type /
+// event_type values (so an approval can compare them against the comp), but the lifter-facing kit
+// labels say "Raw" where the admin screens say "Classic" — the term lifters use. Informational:
+// kit and event are per-comp settings today, so the choice tells the admin what the lifter
+// expects rather than configuring the entry.
+export const ENTRY_FORM_KIT_CHOICES = ['classic', 'equipped'] as const;
+
+export type EntryFormKitChoice = (typeof ENTRY_FORM_KIT_CHOICES)[number];
+
+export const ENTRY_FORM_KIT_LABELS: Record<EntryFormKitChoice, string> = {
+  classic: 'Raw',
+  equipped: 'Equipped',
+};
+
+export const ENTRY_FORM_EVENT_CHOICES = ['full_power', 'bench_only'] as const;
+
+export type EntryFormEventChoice = (typeof ENTRY_FORM_EVENT_CHOICES)[number];
+
+export const ENTRY_FORM_EVENT_LABELS: Record<EntryFormEventChoice, string> = {
+  full_power: 'Full power (SBD)',
+  bench_only: 'Bench only',
+};
 
 export type WeightClassSeed = {
   name: string;

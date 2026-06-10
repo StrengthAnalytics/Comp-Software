@@ -1,8 +1,11 @@
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
 import { formatLifterName } from '@/lib/lifters/name';
 import { TeamsManager, type TeamMemberEntry } from '@/components/teams/teams-manager';
+import { buttonClasses } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
 export default async function TeamsPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
@@ -18,10 +21,15 @@ export default async function TeamsPage({ params }: { params: Promise<{ 'comp-sl
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Teams</h1>
         </div>
-        <p className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
-          This competition isn&rsquo;t a team competition. Turn on “Team competition” on the competition details to build
-          teams.
-        </p>
+        <EmptyState
+          title="Not a team competition"
+          description="Teams are three lifters — one each on squat, bench and deadlift — scored on combined IPF GL points. Turn on Team competition in the competition details to build teams."
+          action={
+            <Link href={`/comps/${comp.id}/edit`} className={buttonClasses('secondary')}>
+              Go to Setup
+            </Link>
+          }
+        />
       </div>
     );
   }

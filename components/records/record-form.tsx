@@ -20,14 +20,13 @@ import {
 } from '@/lib/constants';
 import type { RecordView } from '@/lib/records/record-view';
 import type { FieldErrors } from '@/types/action-result';
+import { buttonClasses } from '@/components/ui/button';
 
 const INPUT_CLASS =
   'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const LABEL_CLASS = 'text-sm font-medium text-neutral-700';
-const PRIMARY_BUTTON =
-  'rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
-const GHOST_BUTTON =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
+const PRIMARY_BUTTON = buttonClasses('primary');
+const GHOST_BUTTON = buttonClasses('secondary');
 
 function FieldError({ messages }: { messages?: string[] }) {
   if (!messages || messages.length === 0) {

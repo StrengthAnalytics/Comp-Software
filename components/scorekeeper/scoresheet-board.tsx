@@ -237,8 +237,8 @@ export function ScoresheetBoard({
     teams,
   });
   const [error, setError] = useState<string | null>(null);
-  // Default to the full-window view: the admin chrome caps content at max-w-6xl minus the comp-nav
-  // sidebar (~840px), which crushes the wide scoresheet. Full screen reclaims the whole window; Esc or
+  // Default to the full-window view: the admin chrome caps content at max-w-7xl minus the app-shell
+  // sidebar, which crushes the wide scoresheet. Full screen reclaims the whole window; Esc or
   // Collapse drops back to the in-flow view (which now scrolls horizontally rather than compressing).
   const [expanded, setExpanded] = useState(true);
   // View options, toggled from the Options dropdown and remembered per browser (so two operators — or a

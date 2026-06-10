@@ -10,6 +10,7 @@ import {
   type RecordSortKey,
 } from '@/lib/records/filter';
 import type { RecordView } from '@/lib/records/record-view';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   RECORD_EQUIPMENT_LABELS,
   RECORD_GENDER_LABELS,
@@ -168,9 +169,15 @@ export function RecordsBrowser({ records }: { records: RecordView[] }) {
       </p>
 
       {filtered.length === 0 ? (
-        <div className="mt-4 rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
-          {records.length === 0 ? 'No records published yet.' : 'No records match these filters.'}
-        </div>
+        <EmptyState
+          className="mt-4"
+          title={records.length === 0 ? 'No records published yet' : 'No records match these filters'}
+          description={
+            records.length === 0
+              ? 'UK regional and national records will appear here once published.'
+              : 'Adjust or clear the filters above.'
+          }
+        />
       ) : (
         <div className="mt-4 overflow-x-auto rounded-lg border border-neutral-200 bg-white">
           <table className="w-full min-w-max text-left text-sm">

@@ -4,13 +4,13 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { deleteAllEntriesAction } from '@/actions/entries';
 import type { Database } from '@/types/database.types';
+import { buttonClasses } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 
 const INPUT_CLASS =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
-const GHOST_BUTTON =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const DANGER_BUTTON =
-  'rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50';
+const GHOST_BUTTON = buttonClasses('secondary');
+const DANGER_BUTTON = buttonClasses('danger');
 
 // A type-to-confirm wipe of every entrant in a comp. The operator must type the competition name
 // exactly, mirroring the "type the repo name" pattern, because the delete cascades to attempts and
@@ -39,13 +39,12 @@ export function DeleteAllEntries({
   // Bulk deletion is blocked once a comp is completed (it would cascade to attempts and results).
   if (competitionStatus === 'completed') {
     return (
-      <section className="rounded-lg border border-neutral-200 bg-white p-6">
-        <h2 className="text-lg font-semibold tracking-tight text-neutral-800">Danger zone</h2>
+      <Card title="Danger zone">
         <p className="mt-1 text-sm text-neutral-600">
           This competition is completed, so its entrants can&rsquo;t be bulk-deleted. Change the status back to active or
           draft on the competition details if you genuinely need to.
         </p>
-      </section>
+      </Card>
     );
   }
 

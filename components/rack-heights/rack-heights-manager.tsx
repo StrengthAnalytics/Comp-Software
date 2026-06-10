@@ -49,6 +49,8 @@ import { numberToInput, parseOptionalNumber } from '@/lib/number-input';
 import { buildWeighInGroups, liftsForWeighInGroup, weighInGroupLabel } from '@/lib/weigh-in/order';
 import type { RackHeightsInput } from '@/types/entry';
 import type { TeamLift } from '@/types/team';
+import { buttonClasses } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
 // Rack settings only ever apply to the squat and the bench (the deadlift has none), so this screen
 // shows just those columns — no Simple/Full toggle. It reuses the weigh-in calling order (sex / team
@@ -719,13 +721,15 @@ export function RackHeightsManager({
 
   if (sessions.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
-        No sessions yet. Build the meet structure on the{' '}
-        <Link href={`/${compSlug}/flights`} className="font-medium text-neutral-900 underline">
-          sessions &amp; flights
-        </Link>{' '}
-        screen first.
-      </p>
+      <EmptyState
+        title="No sessions yet"
+        description="Rack heights are captured session by session for every lifter contesting the squat or bench. Build the meet structure first."
+        action={
+          <Link href={`/${compSlug}/flights`} className={buttonClasses('secondary')}>
+            Go to Sessions &amp; flights
+          </Link>
+        }
+      />
     );
   }
 
@@ -772,7 +776,7 @@ export function RackHeightsManager({
                   type="button"
                   onClick={() => setSelectedSessionId(session.id)}
                   className={`${TAB_BASE} ${
-                    active ? 'bg-neutral-900 text-white' : 'border border-neutral-300 text-neutral-700 hover:bg-neutral-100'
+                    active ? 'bg-brand-600 text-white' : 'border border-neutral-300 text-neutral-700 hover:bg-neutral-100'
                   }`}
                 >
                   {session.name}

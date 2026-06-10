@@ -75,6 +75,8 @@ import {
 import type { Database } from '@/types/database.types';
 import type { WeighInInput } from '@/types/entry';
 import type { TeamLift } from '@/types/team';
+import { buttonClasses } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
 type EntryStatus = Database['public']['Enums']['entry_status'];
 
@@ -1302,13 +1304,15 @@ export function WeighInManager({
 
   if (sessions.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
-        No sessions yet. Build the meet structure on the{' '}
-        <Link href={`/${compSlug}/flights`} className="font-medium text-neutral-900 underline">
-          sessions &amp; flights
-        </Link>{' '}
-        screen first.
-      </p>
+      <EmptyState
+        title="No sessions to weigh in yet"
+        description="Weigh-in runs session by session — each lifter's bodyweight, openers and rack settings are captured against the session they lift in. Build the meet structure first."
+        action={
+          <Link href={`/${compSlug}/flights`} className={buttonClasses('secondary')}>
+            Go to Sessions &amp; flights
+          </Link>
+        }
+      />
     );
   }
 
@@ -1371,7 +1375,7 @@ export function WeighInManager({
                 onClick={() => setSelectedSessionId(session.id)}
                 className={`${TAB_BASE} ${
                   active
-                    ? 'bg-neutral-900 text-white'
+                    ? 'bg-brand-600 text-white'
                     : 'border border-neutral-300 text-neutral-700 hover:bg-neutral-100'
                 }`}
               >

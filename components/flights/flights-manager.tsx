@@ -17,7 +17,11 @@ import { assignEntryFlightAction } from '@/actions/entries';
 import { MAX_FLIGHT_SIZE } from '@/lib/constants';
 import { compareFlightOrder } from '@/lib/flights/order';
 import { TeamFlightBoard, type BoardTeam } from '@/components/flights/team-flight-board';
+import { buttonClasses } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import type { ActionResult } from '@/types/action-result';
+import Link from 'next/link';
 
 export type PlatformOption = { id: string; name: string };
 export type SessionRow = {
@@ -43,10 +47,8 @@ const UNASSIGNED = 'unassigned';
 const INPUT_CLASS =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
-const GHOST_BUTTON =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const PRIMARY_BUTTON =
-  'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
+const GHOST_BUTTON = buttonClasses('secondary');
+const PRIMARY_BUTTON = buttonClasses('primary');
 
 function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {
@@ -135,13 +137,12 @@ function PlatformsEditor({ competitionId, platforms }: { competitionId: string; 
   }
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-6">
-      <h2 className="text-lg font-semibold tracking-tight">Platforms</h2>
-      <p className="mt-1 text-sm text-neutral-600">
+    <Card title="Platforms">
+      <p className="-mt-3 mb-4 text-sm text-neutral-600">
         Most meets run on a single platform. Add a second only if you are running more than one at once.
       </p>
 
-      <div className="mt-4 divide-y divide-neutral-100">
+      <div className="divide-y divide-neutral-100">
         {platforms.length === 0 ? (
           <p className="py-2 text-sm text-neutral-500">No platforms added — sessions will use the single default platform.</p>
         ) : (
@@ -166,7 +167,7 @@ function PlatformsEditor({ competitionId, platforms }: { competitionId: string; 
           {error}
         </p>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
@@ -444,7 +445,7 @@ function AddSession({ competitionId, nextSortOrder }: { competitionId: string; n
   }
 
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-6">
+    <Card>
       <div className="flex flex-wrap items-center gap-2">
         <input
           aria-label="New session name"
@@ -462,7 +463,7 @@ function AddSession({ competitionId, nextSortOrder }: { competitionId: string; n
           {error}
         </p>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
@@ -716,9 +717,15 @@ export function FlightsManager({
         ) : null}
 
         {entries.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
-            No lifters registered yet. Add lifters on the entries screen first.
-          </p>
+          <EmptyState
+            title="No lifters to assign yet"
+            description="Flights are the groups of 8–14 lifters who lift together. Register lifters first, then come back here to place them into sessions and flights."
+            action={
+              <Link href={`/${compSlug}/entries`} className={buttonClasses('secondary')}>
+                Go to Lifters
+              </Link>
+            }
+          />
         ) : (
           <>
             <Lane
