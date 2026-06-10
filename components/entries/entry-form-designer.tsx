@@ -155,18 +155,37 @@ export function EntryFormDesigner({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-100 pt-3">
-          <p className="text-sm">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-neutral-900">
+              <span
+                className={`mr-2 inline-block h-2 w-2 rounded-full ${open ? 'bg-emerald-500' : 'bg-neutral-300'}`}
+                aria-hidden="true"
+              />
+              Accepting entries
+            </p>
+            <p className="mt-0.5 text-xs text-neutral-500">
+              The entry form is only live while this is switched on — lifters who open the link see
+              &ldquo;Entries are closed&rdquo; otherwise. Switch it off when entries close.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={open}
+            aria-label="Accepting entries"
+            disabled={openPending}
+            onClick={toggleOpen}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+              open ? 'bg-brand-600' : 'bg-neutral-300'
+            }`}
+          >
             <span
-              className={`mr-2 inline-block h-2 w-2 rounded-full ${open ? 'bg-emerald-500' : 'bg-neutral-300'}`}
               aria-hidden="true"
+              className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                open ? 'translate-x-[1.375rem]' : 'translate-x-0.5'
+              }`}
             />
-            <span className="font-medium text-neutral-900">
-              {open ? 'Accepting entries' : 'Not accepting entries'}
-            </span>
-          </p>
-          <Button variant={open ? 'secondary' : 'primary'} disabled={openPending} onClick={toggleOpen}>
-            {open ? 'Close the form' : 'Open the form'}
-          </Button>
+          </button>
         </div>
 
         {isPublic ? null : (

@@ -89,26 +89,34 @@ describe('EntryFormDesigner', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('opens the form optimistically and rolls back when the action fails', async () => {
+  it('switches the form on optimistically and rolls back when the action fails', async () => {
     openAction.mockResolvedValue({ status: 'error', message: 'Could not update the form. Please try again.' });
     renderDesigner();
 
-    expect(screen.getByText('Not accepting entries')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open the form' }));
+    const toggle = screen.getByRole('switch', { name: 'Accepting entries' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    fireEvent.click(toggle);
     // Optimistic flip…
-    expect(screen.getByText('Accepting entries')).toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
     // …rolled back when the action rejects.
-    await waitFor(() => expect(screen.getByText('Not accepting entries')).toBeInTheDocument());
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'));
     expect(screen.getByRole('alert')).toHaveTextContent('Could not update the form.');
     expect(openAction).toHaveBeenCalledWith({ competitionId: COMP_ID, open: true });
   });
 
-  it('closes an open form', async () => {
+  it('switches an open form off', async () => {
     openAction.mockResolvedValue({ status: 'ok', data: undefined });
     renderDesigner({ initialOpen: true });
-    fireEvent.click(screen.getByRole('button', { name: 'Close the form' }));
-    await waitFor(() => expect(screen.getByText('Not accepting entries')).toBeInTheDocument());
-    expect(openAction).toHaveBeenCalledWith({ competitionId: COMP_ID, open: false });
+    const toggle = screen.getByRole('switch', { name: 'Accepting entries' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(openAction).toHaveBeenCalledWith({ competitionId: COMP_ID, open: false }));
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('explains that the form is only live while the toggle is on', () => {
+    renderDesigner();
+    expect(screen.getByText(/only live while this is switched on/)).toBeInTheDocument();
   });
 
   it('warns that a draft comp’s form is not live', () => {
