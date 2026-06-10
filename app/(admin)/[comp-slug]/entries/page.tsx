@@ -3,11 +3,13 @@ import { createClient } from '@/lib/supabase/server';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
 import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
+import { parseEntryFormConfig } from '@/types/entry-form';
 import {
   EntriesManager,
   type EntryLifter,
   type EntryWithLifter,
 } from '@/components/entries/entries-manager';
+import { EntryFormDesigner } from '@/components/entries/entry-form-designer';
 
 export default async function EntriesPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
@@ -74,6 +76,14 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
         ageCategories={ageCategories ?? []}
         weightClasses={weightClasses ?? []}
         entries={entries}
+      />
+
+      <EntryFormDesigner
+        competitionId={comp.id}
+        slug={comp.slug}
+        competitionStatus={comp.status}
+        initialConfig={parseEntryFormConfig(comp.entry_form)}
+        initialOpen={comp.entry_form_open}
       />
     </div>
   );
