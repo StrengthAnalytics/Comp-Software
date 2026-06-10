@@ -11,6 +11,7 @@ import { ageCategoryInputSchema, ageCategoryUpdateSchema } from '@/types/competi
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 import { defaultAgeCategoryRows } from '@/lib/comps/seed-defaults';
+import { requireEditableCategories } from '@/lib/comps/category-guard';
 
 function mapAgeCategoryWriteError(error: PostgrestError): ActionResult<never> {
   if (isUniqueViolation(error)) {
@@ -34,6 +35,9 @@ export async function createAgeCategoryAction(input: {
     }
 
     const supabase = await createClient();
+    const locked = await requireEditableCategories(supabase, parsed.data.competitionId);
+    if (locked) return locked;
+
     const { error } = await supabase.from('age_categories').insert({
       competition_id: parsed.data.competitionId,
       name: parsed.data.name,
@@ -70,6 +74,9 @@ export async function updateAgeCategoryAction(input: {
     }
 
     const supabase = await createClient();
+    const locked = await requireEditableCategories(supabase, competitionId.data);
+    if (locked) return locked;
+
     const { error } = await supabase
       .from('age_categories')
       .update({ name: parsed.data.name, sort_order: parsed.data.sortOrder })
@@ -99,6 +106,9 @@ export async function deleteAgeCategoryAction(input: {
     }
 
     const supabase = await createClient();
+    const locked = await requireEditableCategories(supabase, parsed.data.competitionId);
+    if (locked) return locked;
+
     const { error } = await supabase.from('age_categories').delete().eq('id', parsed.data.id);
 
     if (error) {

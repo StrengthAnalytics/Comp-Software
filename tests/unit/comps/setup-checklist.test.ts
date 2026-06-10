@@ -9,6 +9,7 @@ const base: SetupChecklistInput = {
   compId: 'comp-1',
   slug: 'summer-open',
   isTeamCompetition: false,
+  usesIpfCategorySet: false,
   hasStartDate: true,
   ageCategoryCount: 10,
   weightClassCount: 18,
@@ -70,6 +71,26 @@ describe('buildSetupChecklist', () => {
   it('counts weigh-in done only when every lifter is weighed', () => {
     expect(item({ ...base, entriesWeighedIn: 23 }, 'weigh-in').state).toBe('partial');
     expect(item({ ...base, entriesWeighedIn: 24 }, 'weigh-in').state).toBe('done');
+  });
+
+  it('omits the category steps for an IPF-federation comp', () => {
+    const items = buildSetupChecklist({ ...base, usesIpfCategorySet: true });
+    expect(items.some((entry) => entry.key === 'age-categories')).toBe(false);
+    expect(items.some((entry) => entry.key === 'weight-classes')).toBe(false);
+    expect(items).toHaveLength(5);
+    // The categories aren't counted as outstanding (or complete) work — they're simply not steps.
+    expect(checklistProgress(items)).toEqual({ done: 5, total: 5 });
+  });
+
+  it('keeps the category steps for a custom-federation comp with none yet', () => {
+    const items = buildSetupChecklist({
+      ...base,
+      usesIpfCategorySet: false,
+      ageCategoryCount: 0,
+      weightClassCount: 0,
+    });
+    expect(items.find((entry) => entry.key === 'age-categories')?.state).toBe('todo');
+    expect(items.find((entry) => entry.key === 'weight-classes')?.state).toBe('todo');
   });
 
   it('omits the teams step for an individual comp and includes it for a team comp', () => {

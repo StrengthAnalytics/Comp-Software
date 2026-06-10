@@ -11,6 +11,7 @@ import { weightClassInputSchema, weightClassUpdateSchema } from '@/types/competi
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 import { defaultWeightClassRows } from '@/lib/comps/seed-defaults';
+import { requireEditableCategories } from '@/lib/comps/category-guard';
 
 function mapWeightClassWriteError(error: PostgrestError): ActionResult<never> {
   if (isUniqueViolation(error)) {
@@ -39,6 +40,9 @@ export async function createWeightClassAction(input: {
     }
 
     const supabase = await createClient();
+    const locked = await requireEditableCategories(supabase, parsed.data.competitionId);
+    if (locked) return locked;
+
     const { error } = await supabase.from('weight_classes').insert({
       competition_id: parsed.data.competitionId,
       name: parsed.data.name,
@@ -81,6 +85,9 @@ export async function updateWeightClassAction(input: {
     }
 
     const supabase = await createClient();
+    const locked = await requireEditableCategories(supabase, competitionId.data);
+    if (locked) return locked;
+
     const { error } = await supabase
       .from('weight_classes')
       .update({
@@ -116,6 +123,9 @@ export async function deleteWeightClassAction(input: {
     }
 
     const supabase = await createClient();
+    const locked = await requireEditableCategories(supabase, parsed.data.competitionId);
+    if (locked) return locked;
+
     const { error } = await supabase.from('weight_classes').delete().eq('id', parsed.data.id);
 
     if (error) {

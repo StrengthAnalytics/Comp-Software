@@ -4,7 +4,9 @@ import { createClient } from '@/lib/supabase/server';
 import { CompForm } from '@/components/comps/comp-form';
 import { DeleteCompetition } from '@/components/comps/delete-competition';
 import { AgeCategoriesEditor } from '@/components/comps/age-categories-editor';
+import { IpfCategoriesCard } from '@/components/comps/ipf-categories-card';
 import { OverlayLinks } from '@/components/comps/overlay-links';
+import { isIpfFederation } from '@/lib/constants';
 import { WeightClassesEditor } from '@/components/comps/weight-classes-editor';
 import { Card } from '@/components/ui/card';
 
@@ -22,7 +24,7 @@ export default async function EditCompPage({
 
   const { data: comp } = await supabase
     .from('competitions')
-    .select('id, name, slug, kit_type, event_type, status, starts_on, ends_on, is_team_competition')
+    .select('id, name, slug, federation, kit_type, event_type, status, starts_on, ends_on, is_team_competition')
     .eq('id', id)
     .maybeSingle();
 
@@ -78,6 +80,7 @@ export default async function EditCompPage({
             id: comp.id,
             name: comp.name,
             slug: comp.slug,
+            federation: comp.federation,
             kit_type: comp.kit_type,
             event_type: comp.event_type,
             status: comp.status,
@@ -88,8 +91,18 @@ export default async function EditCompPage({
         />
       </Card>
 
-      <AgeCategoriesEditor competitionId={comp.id} ageCategories={ageCategories ?? []} />
-      <WeightClassesEditor competitionId={comp.id} weightClasses={weightClasses ?? []} />
+      {isIpfFederation(comp.federation) ? (
+        <IpfCategoriesCard
+          competitionId={comp.id}
+          ageCategories={ageCategories ?? []}
+          weightClasses={weightClasses ?? []}
+        />
+      ) : (
+        <>
+          <AgeCategoriesEditor competitionId={comp.id} ageCategories={ageCategories ?? []} />
+          <WeightClassesEditor competitionId={comp.id} weightClasses={weightClasses ?? []} />
+        </>
+      )}
 
       <OverlayLinks slug={comp.slug} platforms={overlayPlatforms} />
 

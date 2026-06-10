@@ -10,7 +10,7 @@ import {
   checklistProgress,
   type ChecklistItem,
 } from '@/lib/comps/setup-checklist';
-import { EVENT_TYPE_LABELS, KIT_TYPE_LABELS } from '@/lib/constants';
+import { EVENT_TYPE_LABELS, federationLabel, isIpfFederation, KIT_TYPE_LABELS } from '@/lib/constants';
 import { Card } from '@/components/ui/card';
 import { CompStatusBadge } from '@/components/ui/status-badge';
 import { IconCheck, IconExternalLink } from '@/components/shell/icons';
@@ -161,6 +161,7 @@ export default async function OverviewPage({
     compId: comp.id,
     slug: comp.slug,
     isTeamCompetition: comp.is_team_competition,
+    usesIpfCategorySet: isIpfFederation(comp.federation),
     hasStartDate: comp.starts_on !== null,
     ageCategoryCount: ageCategories.count ?? 0,
     weightClassCount: weightClasses.count ?? 0,
@@ -185,8 +186,8 @@ export default async function OverviewPage({
             <CompStatusBadge status={comp.status} />
           </div>
           <p className="mt-1 text-sm text-neutral-600">
-            {dateRangeText(comp.starts_on, comp.ends_on)} · {KIT_TYPE_LABELS[comp.kit_type]} ·{' '}
-            {EVENT_TYPE_LABELS[comp.event_type]}
+            {dateRangeText(comp.starts_on, comp.ends_on)} · {federationLabel(comp.federation)} ·{' '}
+            {KIT_TYPE_LABELS[comp.kit_type]} · {EVENT_TYPE_LABELS[comp.event_type]}
             {comp.is_team_competition ? ' · Team competition' : ''}
           </p>
         </div>

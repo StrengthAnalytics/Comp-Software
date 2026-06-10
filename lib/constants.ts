@@ -41,6 +41,30 @@ export const LIFT_LABELS: Record<LiftType, string> = {
   deadlift: 'Deadlift',
 };
 
+// Federation / rule-set choice, fixed when a comp is created. 'ipf' seeds the standard IPF age
+// categories and weight classes automatically and locks them (the Setup editors are replaced by a
+// read-only card and the category write actions reject edits); 'custom' starts empty and the
+// operator builds their own. Stored as text on competitions, constrained by a database CHECK and
+// by Zod at the action boundary (migration 20260610000001).
+export const FEDERATION_LABELS = {
+  ipf: 'IPF',
+  custom: 'Custom',
+} as const;
+
+export type Federation = keyof typeof FEDERATION_LABELS;
+
+export const FEDERATIONS = Object.keys(FEDERATION_LABELS) as Federation[];
+
+// The federation column is text, so reads arrive as plain string. Only the exact 'ipf' code locks
+// the category set — any legacy or unexpected value reads as custom (editable), the safe direction.
+export function isIpfFederation(value: string): boolean {
+  return value === 'ipf';
+}
+
+export function federationLabel(value: string): string {
+  return isIpfFederation(value) ? FEDERATION_LABELS.ipf : FEDERATION_LABELS.custom;
+}
+
 // Live scorekeeping vocabulary ----------------------------------------------------------------
 
 // Three attempts per lift (3 squats, 3 benches, 3 deadlifts). A lifter's "round" is the attempt

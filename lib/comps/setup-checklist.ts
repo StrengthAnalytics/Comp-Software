@@ -18,6 +18,9 @@ export type SetupChecklistInput = {
   compId: string;
   slug: string;
   isTeamCompetition: boolean;
+  // IPF-federation comps get the standard category set seeded and locked at creation, so the
+  // age-category and weight-class steps are not part of their setup work and are omitted.
+  usesIpfCategorySet: boolean;
   hasStartDate: boolean;
   ageCategoryCount: number;
   weightClassCount: number;
@@ -75,6 +78,32 @@ export function buildSetupChecklist(input: SetupChecklistInput): ChecklistItem[]
     href: `/${input.slug}/teams`,
   };
 
+  // An IPF comp's categories are seeded and locked at creation — not setup work for the operator.
+  const categorySteps: ChecklistItem[] = input.usesIpfCategorySet
+    ? []
+    : [
+        {
+          key: 'age-categories',
+          label: 'Add age categories',
+          state: input.ageCategoryCount > 0 ? 'done' : 'todo',
+          detail:
+            input.ageCategoryCount > 0
+              ? counted(input.ageCategoryCount, 'age category', 'age categories')
+              : 'None yet — add your own on Setup',
+          href: setupHref,
+        },
+        {
+          key: 'weight-classes',
+          label: 'Add weight classes',
+          state: input.weightClassCount > 0 ? 'done' : 'todo',
+          detail:
+            input.weightClassCount > 0
+              ? counted(input.weightClassCount, 'weight class', 'weight classes')
+              : 'None yet — add your own on Setup',
+          href: setupHref,
+        },
+      ];
+
   return [
     {
       key: 'date',
@@ -85,26 +114,7 @@ export function buildSetupChecklist(input: SetupChecklistInput): ChecklistItem[]
         : 'Lifters cannot be registered until the comp has a date',
       href: setupHref,
     },
-    {
-      key: 'age-categories',
-      label: 'Add age categories',
-      state: input.ageCategoryCount > 0 ? 'done' : 'todo',
-      detail:
-        input.ageCategoryCount > 0
-          ? counted(input.ageCategoryCount, 'age category', 'age categories')
-          : 'None yet — seed the IPF defaults on Setup',
-      href: setupHref,
-    },
-    {
-      key: 'weight-classes',
-      label: 'Add weight classes',
-      state: input.weightClassCount > 0 ? 'done' : 'todo',
-      detail:
-        input.weightClassCount > 0
-          ? counted(input.weightClassCount, 'weight class', 'weight classes')
-          : 'None yet — seed the IPF defaults on Setup',
-      href: setupHref,
-    },
+    ...categorySteps,
     {
       key: 'sessions',
       label: 'Create platforms & sessions',

@@ -155,11 +155,11 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 ## Key business logic
 
 ### Competition structure
-- Federation: IPF-affiliated (other federations deferred).
+- Federation: a per-comp rule-set choice fixed at creation — `ipf` (the standard IPF age categories and weight classes are seeded automatically and locked: the Setup screen shows them read-only and the category write actions reject edits via `requireEditableCategories` in `lib/comps/category-guard.ts`) or `custom` (the operator builds their own). Stored as text on `competitions`, constrained by a database CHECK and Zod (`competitionCreateSchema`). The Overview checklist omits the category steps for an `ipf` comp.
 - Kit type: classic or equipped, set per comp.
 - Event type: full power (SBD), bench only, or deadlift only.
 - Lift weights stored in kg to one decimal place (0.5 kg increments). Bodyweights and weight-class bounds stored to two decimal places (IPF weigh-in precision, 0.01 kg). Weight-class bounds are inclusive on both ends, each class's lower bound sitting 0.01 kg above the class below's upper, so a boundary is unambiguous (83.00 kg is the -83 class, 83.01 kg is -93).
-- Each comp owns its own age categories and weight classes (rule sets change year to year). ("Age category" is the lifter's IPF age band — U16–M6 — stored in the `age_categories` table; the word "division" means the British Powerlifting region/home nation a lifter competes on behalf of.)
+- Each comp owns its own age categories and weight classes (rule sets change year to year); for an `ipf`-federation comp that set is the locked standard, for `custom` it is operator-edited. ("Age category" is the lifter's IPF age band — U16–M6 — stored in the `age_categories` table; the word "division" means the British Powerlifting region/home nation a lifter competes on behalf of.)
 - A lifter's **division** (BP region) is an informational attribute on the entry (the `entries.division` free-text column, constrained by the app to the fixed `BP_DIVISIONS` list in `lib/constants.ts`). It is set on the entries (registration) screen and shown on the boards, but it is **not** a placement dimension — placement stays weight class × age category × gender × kit type.
 - A comp can be a team competition (`is_team_competition`, full power only) — see Team competitions below.
 

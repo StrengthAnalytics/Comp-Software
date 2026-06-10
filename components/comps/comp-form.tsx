@@ -13,8 +13,12 @@ import {
   COMP_STATUSES,
   EVENT_TYPE_LABELS,
   EVENT_TYPES,
+  FEDERATION_LABELS,
+  FEDERATIONS,
+  federationLabel,
   KIT_TYPE_LABELS,
   KIT_TYPES,
+  type Federation,
 } from '@/lib/constants';
 import type { Database } from '@/types/database.types';
 import { Button } from '@/components/ui/button';
@@ -25,6 +29,7 @@ export type CompFormInitial = {
   id: string;
   name: string;
   slug: string;
+  federation: string;
   kit_type: CompRow['kit_type'];
   event_type: CompRow['event_type'];
   status: CompRow['status'];
@@ -48,10 +53,18 @@ function FieldError({ messages }: { messages?: string[] }) {
   );
 }
 
-function SaveButton({ label, pendingLabel }: { label: string; pendingLabel: string }) {
+function SaveButton({
+  label,
+  pendingLabel,
+  disabled = false,
+}: {
+  label: string;
+  pendingLabel: string;
+  disabled?: boolean;
+}) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending}>
+    <Button type="submit" disabled={pending || disabled}>
       {pending ? pendingLabel : label}
     </Button>
   );
@@ -68,8 +81,13 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
   const [slugEdited, setSlugEdited] = useState(mode === 'edit');
   // Controlled so the team-competition toggle can show only for full-power comps.
   const [eventType, setEventType] = useState<CompRow['event_type']>(initial?.event_type ?? 'full_power');
+  // Federation is an explicit creation-time choice: the select starts on a disabled placeholder and
+  // Create stays disabled until one is picked (with the server-side schema as the real gate). It is
+  // fixed after creation, so edit mode shows it read-only.
+  const [federation, setFederation] = useState<Federation | ''>('');
 
   const fieldErrors = state?.status === 'error' ? state.fieldErrors : undefined;
+  const createBlocked = mode === 'create' && (name.trim() === '' || federation === '');
 
   return (
     <form action={formAction} className="space-y-5">
@@ -113,6 +131,43 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
         <p className="mt-1 text-xs text-neutral-500">Used in URLs. Lowercase letters, numbers and hyphens.</p>
         <FieldError messages={fieldErrors?.slug} />
       </div>
+
+      {initial ? (
+        <div>
+          <span className={LABEL_CLASS}>Federation</span>
+          <p className="mt-1 text-sm text-neutral-900">{federationLabel(initial.federation)}</p>
+          <p className="mt-1 text-xs text-neutral-500">Chosen when the competition was created.</p>
+        </div>
+      ) : (
+        <div>
+          <label htmlFor="federation" className={LABEL_CLASS}>
+            Federation
+          </label>
+          <select
+            id="federation"
+            name="federation"
+            required
+            value={federation}
+            // The select only renders FEDERATIONS values plus the placeholder, so this narrowing is exact.
+            onChange={(event) => setFederation(event.target.value as Federation | '')}
+            className={INPUT_CLASS}
+          >
+            <option value="" disabled>
+              Select a federation…
+            </option>
+            {FEDERATIONS.map((value) => (
+              <option key={value} value={value}>
+                {FEDERATION_LABELS[value]}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-neutral-500">
+            IPF applies the standard IPF age categories and weight classes automatically (they can&rsquo;t be
+            edited). Custom starts empty so you can build your own. This can&rsquo;t be changed later.
+          </p>
+          <FieldError messages={fieldErrors?.federation} />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
         <div>
@@ -231,7 +286,11 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
         <SaveButton
           label={mode === 'create' ? 'Create competition' : 'Save changes'}
           pendingLabel="Saving…"
+          disabled={createBlocked}
         />
+        {createBlocked ? (
+          <p className="text-xs text-neutral-500">Enter a name and choose a federation to create the comp.</p>
+        ) : null}
       </div>
     </form>
   );

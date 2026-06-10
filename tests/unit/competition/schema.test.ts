@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ageCategoryInputSchema,
+  competitionCreateSchema,
   competitionInputSchema,
   slugify,
   weightClassInputSchema,
@@ -80,6 +81,49 @@ describe('competitionInputSchema', () => {
   it('rejects a team competition that is not full power', () => {
     const result = competitionInputSchema.safeParse({
       ...base,
+      event_type: 'bench_only',
+      is_team_competition: true,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('ignores a federation key on update (federation is fixed at creation)', () => {
+    const result = competitionInputSchema.safeParse({ ...base, federation: 'ipf' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect('federation' in result.data).toBe(false);
+    }
+  });
+});
+
+describe('competitionCreateSchema', () => {
+  const base = {
+    name: 'Spring Open',
+    slug: 'spring-open',
+    kit_type: 'classic',
+    event_type: 'full_power',
+    status: 'draft',
+    starts_on: '',
+    ends_on: '',
+  };
+
+  it.each(['ipf', 'custom'])('accepts federation %s', (federation) => {
+    expect(competitionCreateSchema.safeParse({ ...base, federation }).success).toBe(true);
+  });
+
+  it('rejects a missing federation', () => {
+    expect(competitionCreateSchema.safeParse(base).success).toBe(false);
+  });
+
+  it('rejects a federation outside the two codes', () => {
+    expect(competitionCreateSchema.safeParse({ ...base, federation: 'IPF' }).success).toBe(false);
+    expect(competitionCreateSchema.safeParse({ ...base, federation: 'wrpf' }).success).toBe(false);
+  });
+
+  it('keeps the shared rules (team comps must be full power)', () => {
+    const result = competitionCreateSchema.safeParse({
+      ...base,
+      federation: 'ipf',
       event_type: 'bench_only',
       is_team_competition: true,
     });

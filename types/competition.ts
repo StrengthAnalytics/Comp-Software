@@ -26,30 +26,46 @@ const optionalDate = z.preprocess(
     .nullable(),
 );
 
-export const competitionInputSchema = z
-  .object({
-    name: z.string().trim().min(1, 'Name is required.').max(120, 'Name is too long.'),
-    slug: z
-      .string()
-      .trim()
-      .min(1, 'Slug is required.')
-      .max(80, 'Slug is too long.')
-      .regex(SLUG_PATTERN, 'Use lowercase letters, numbers and hyphens only.'),
-    kit_type: z.enum(['classic', 'equipped']),
-    event_type: z.enum(['full_power', 'bench_only', 'deadlift_only']),
-    status: z.enum(['draft', 'published', 'active', 'completed']),
-    starts_on: optionalDate,
-    ends_on: optionalDate,
-    is_team_competition: z.boolean().default(false),
+const DATE_ORDER_MESSAGE = 'End date cannot be before the start date.';
+const TEAM_FULL_POWER_MESSAGE = 'Team competitions must be full power (squat, bench and deadlift).';
+
+function datesOrdered(data: { starts_on: string | null; ends_on: string | null }): boolean {
+  return !data.starts_on || !data.ends_on || data.ends_on >= data.starts_on;
+}
+
+function teamRequiresFullPower(data: { is_team_competition: boolean; event_type: string }): boolean {
+  return !data.is_team_competition || data.event_type === 'full_power';
+}
+
+const competitionObject = z.object({
+  name: z.string().trim().min(1, 'Name is required.').max(120, 'Name is too long.'),
+  slug: z
+    .string()
+    .trim()
+    .min(1, 'Slug is required.')
+    .max(80, 'Slug is too long.')
+    .regex(SLUG_PATTERN, 'Use lowercase letters, numbers and hyphens only.'),
+  kit_type: z.enum(['classic', 'equipped']),
+  event_type: z.enum(['full_power', 'bench_only', 'deadlift_only']),
+  status: z.enum(['draft', 'published', 'active', 'completed']),
+  starts_on: optionalDate,
+  ends_on: optionalDate,
+  is_team_competition: z.boolean().default(false),
+});
+
+// Edit-screen schema: the federation is fixed at creation, so updates neither accept nor change it.
+export const competitionInputSchema = competitionObject
+  .refine(datesOrdered, { path: ['ends_on'], message: DATE_ORDER_MESSAGE })
+  .refine(teamRequiresFullPower, { path: ['is_team_competition'], message: TEAM_FULL_POWER_MESSAGE });
+
+// Creation schema: additionally requires the federation rule-set choice ('ipf' = standard IPF
+// categories seeded and locked; 'custom' = the operator builds their own).
+export const competitionCreateSchema = competitionObject
+  .extend({
+    federation: z.enum(['ipf', 'custom'], { message: 'Choose a federation.' }),
   })
-  .refine((data) => !data.starts_on || !data.ends_on || data.ends_on >= data.starts_on, {
-    path: ['ends_on'],
-    message: 'End date cannot be before the start date.',
-  })
-  .refine((data) => !data.is_team_competition || data.event_type === 'full_power', {
-    path: ['is_team_competition'],
-    message: 'Team competitions must be full power (squat, bench and deadlift).',
-  });
+  .refine(datesOrdered, { path: ['ends_on'], message: DATE_ORDER_MESSAGE })
+  .refine(teamRequiresFullPower, { path: ['is_team_competition'], message: TEAM_FULL_POWER_MESSAGE });
 
 export type CompetitionInput = z.infer<typeof competitionInputSchema>;
 

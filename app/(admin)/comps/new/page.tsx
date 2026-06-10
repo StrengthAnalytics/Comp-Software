@@ -10,7 +10,8 @@ export default function NewCompPage() {
       </Link>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">New competition</h1>
       <p className="mt-1 text-sm text-neutral-600">
-        Create the meet first, then add age categories and weight classes.
+        Name the meet and choose its federation — IPF applies the standard age categories and weight
+        classes automatically; Custom lets you build your own.
       </p>
       <Card className="mt-6">
         <CompForm />
