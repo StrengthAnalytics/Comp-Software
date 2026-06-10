@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { signInAction, type SignInState } from '@/actions/auth';
+import { Button } from '@/components/ui/button';
 
 const INPUT_CLASS =
   'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
@@ -10,13 +11,9 @@ const INPUT_CLASS =
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
-    >
+    <Button type="submit" disabled={pending} className="w-full">
       {pending ? 'Signing in…' : 'Sign in'}
-    </button>
+    </Button>
   );
 }
 

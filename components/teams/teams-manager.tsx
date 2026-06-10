@@ -12,6 +12,7 @@ import { BulkAddTeams } from '@/components/teams/bulk-add-teams';
 import { LIFT_LABELS } from '@/lib/constants';
 import { TEAM_LIFTS, type TeamLift } from '@/types/team';
 import type { ActionResult } from '@/types/action-result';
+import { buttonClasses } from '@/components/ui/button';
 
 export type TeamRow = { id: string; name: string; sort_order: number };
 export type TeamMemberEntry = {
@@ -25,10 +26,8 @@ type Assignment = { teamId: string | null; teamLift: TeamLift | null };
 
 const INPUT_CLASS =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
-const GHOST_BUTTON =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const PRIMARY_BUTTON =
-  'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
+const GHOST_BUTTON = buttonClasses('secondary');
+const PRIMARY_BUTTON = buttonClasses('primary');
 
 function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {

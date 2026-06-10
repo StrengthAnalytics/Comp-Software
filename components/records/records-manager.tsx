@@ -15,11 +15,11 @@ import {
 } from '@/lib/constants';
 import { RecordForm } from '@/components/records/record-form';
 import { RecordsBulkImport } from '@/components/records/records-bulk-import';
+import { buttonClasses } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
-const GHOST_BUTTON =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100 disabled:opacity-50';
-const PRIMARY_BUTTON =
-  'rounded-md bg-neutral-900 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50';
+const GHOST_BUTTON = buttonClasses('secondary');
+const PRIMARY_BUTTON = buttonClasses('primary');
 const FILTER_CLASS =
   'rounded-md border border-neutral-300 px-2 py-1.5 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const COPY_RESET_MS = 2000;
@@ -226,9 +226,14 @@ export function RecordsManager({ records }: { records: RecordView[] }) {
       ) : null}
 
       {filtered.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-600">
-          {records.length === 0 ? 'No records yet. Add one, or bulk add from a spreadsheet.' : 'No records match these filters.'}
-        </div>
+        records.length === 0 ? (
+          <EmptyState
+            title="No records yet"
+            description="This is the UK regional and national records dataset behind the public records browser. Add records one at a time, or paste a whole spreadsheet with Bulk add / update."
+          />
+        ) : (
+          <EmptyState title="No records match these filters" description="Adjust or clear the filters above." />
+        )
       ) : (
         <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
           <table className="w-full min-w-max text-left text-sm">
