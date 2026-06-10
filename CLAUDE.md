@@ -65,7 +65,7 @@ This project is developed online-only against the hosted Supabase dev project an
     /[comp-slug]/live           ← live scoreboard for venue TVs and socials (planned)
     /[comp-slug]/warm-up        ← warm-up room board: read-only run scoresheet + up-next, sign-in-free (per-platform via ?platform=)
     /[comp-slug]/results        ← final results
-    /[comp-slug]/enter          ← public entry form: lifters self-register into the review inbox (planned)
+    /[comp-slug]/enter          ← public entry form: lifters self-register into the review inbox
   /auth                         ← sign-in (email + password; OTP for production)
   /account                      ← profile management
 /components                     ← shared UI
