@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 // and the page it wraps share one query instead of each fetching the row. Selects the superset of
 // columns the layout (name, is_team_competition) and the operational pages (event_type, status,
 // kit_type for the run screen's IPF GL column, starts_on for the entries screen's age-category
-// gating, ends_on and federation for the Overview page) need, so every caller reads from the same
+// gating, ends_on and federation for the Checklist page) need, so every caller reads from the same
 // memoized result.
 export const getCompBySlug = cache(async (slug: string) => {
   const supabase = await createClient();

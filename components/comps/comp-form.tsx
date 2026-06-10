@@ -85,6 +85,9 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
   // Create stays disabled until one is picked (with the server-side schema as the real gate). It is
   // fixed after creation, so edit mode shows it read-only.
   const [federation, setFederation] = useState<Federation | ''>('');
+  // Controlled so setting the start date can default the end date (see the start onChange below).
+  const [startsOn, setStartsOn] = useState(initial?.starts_on ?? '');
+  const [endsOn, setEndsOn] = useState(initial?.ends_on ?? '');
 
   const fieldErrors = state?.status === 'error' ? state.fieldErrors : undefined;
   const createBlocked = mode === 'create' && (name.trim() === '' || federation === '');
@@ -250,7 +253,19 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
             id="starts_on"
             name="starts_on"
             type="date"
-            defaultValue={initial?.starts_on ?? ''}
+            value={startsOn}
+            onChange={(event) => {
+              const next = event.target.value;
+              setStartsOn(next);
+              // The native date picker opens on the field's value, so an empty end date would open
+              // on today's month. Defaulting it to the start date opens the picker on the comp's
+              // month — and is the right value for a one-day meet. An end already at or after the
+              // new start is the operator's own choice and is left alone; ISO dates compare as
+              // strings.
+              if (next !== '' && (endsOn === '' || endsOn < next)) {
+                setEndsOn(next);
+              }
+            }}
             className={INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.starts_on} />
@@ -264,7 +279,9 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
             id="ends_on"
             name="ends_on"
             type="date"
-            defaultValue={initial?.ends_on ?? ''}
+            value={endsOn}
+            min={startsOn === '' ? undefined : startsOn}
+            onChange={(event) => setEndsOn(event.target.value)}
             className={INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.ends_on} />

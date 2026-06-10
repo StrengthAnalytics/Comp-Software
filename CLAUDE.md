@@ -42,7 +42,7 @@ This project is developed online-only against the hosted Supabase dev project an
     /comps                      ← comp list, comp setup
     /records/manage             ← UK regional/national records management (app-global; public browser is /records)
     /[comp-slug]
-      /overview                 ← comp dashboard: status badge, stat cards, setup checklist
+      /checklist                ← comp dashboard: status badge, stat cards, setup checklist
       /entries                  ← lifter registration, inline weigh-in editing
       /weigh-in                 ← day-of weigh-in by session (bodyweight, openers, rack settings)
       /rack-heights             ← squat/bench rack settings by session (warm-up room, mobile-friendly)
@@ -155,7 +155,7 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 ## Key business logic
 
 ### Competition structure
-- Federation: a per-comp rule-set choice fixed at creation — `ipf` (the standard IPF age categories and weight classes are seeded automatically and locked: the Setup screen shows them read-only and the category write actions reject edits via `requireEditableCategories` in `lib/comps/category-guard.ts`) or `custom` (the operator builds their own). Stored as text on `competitions`, constrained by a database CHECK and Zod (`competitionCreateSchema`). The Overview checklist omits the category steps for an `ipf` comp.
+- Federation: a per-comp rule-set choice fixed at creation — `ipf` (the standard IPF age categories and weight classes are seeded automatically and locked: the Setup screen shows them read-only and the category write actions reject edits via `requireEditableCategories` in `lib/comps/category-guard.ts`) or `custom` (the operator builds their own). Stored as text on `competitions`, constrained by a database CHECK and Zod (`competitionCreateSchema`). The Checklist page omits the category steps for an `ipf` comp.
 - Kit type: classic or equipped, set per comp.
 - Event type: full power (SBD), bench only, or deadlift only.
 - Lift weights stored in kg to one decimal place (0.5 kg increments). Bodyweights and weight-class bounds stored to two decimal places (IPF weigh-in precision, 0.01 kg). Weight-class bounds are inclusive on both ends, each class's lower bound sitting 0.01 kg above the class below's upper, so a boundary is unambiguous (83.00 kg is the -83 class, 83.01 kg is -93).

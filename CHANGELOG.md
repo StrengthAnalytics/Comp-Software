@@ -14,6 +14,11 @@ Update the `[Unreleased]` section in every PR. Cut a new version entry when depl
 
 ## [Unreleased]
 
+### Changed
+- **The comp Overview page is now "Checklist"** — the name describes what the page is for (the setup checklist is its centrepiece). The route moves from `/[comp-slug]/overview` to **`/[comp-slug]/checklist`**, and the sidebar item, comp-switcher landing and comps-list name link all follow. No behaviour change beyond the name and URL.
+- **Checklist order: Register lifters now sits above Create platforms & sessions** — lifters are usually entered before the session plan exists, so the checklist teaches that order (`buildSetupChecklist` in `lib/comps/setup-checklist.ts`; the step states, details and links are unchanged, and an order assertion is added to its tests).
+- **The comp form's End date now follows the Start date.** Picking a start date defaults an empty (or now-impossible, earlier-than-start) end date to the same day — so opening the end-date picker starts on the comp's month rather than today's, and a one-day meet needs no second entry. An end date already at or after the start is left alone, and the end-date input also gains `min={start}` so the picker can't offer a day before the comp begins (the `ends_on >= starts_on` Zod refinement remains the real gate).
+
 ### Fixed
 - **Comp slugs can no longer collide with the app's own pages.** A competition slugged `comps`, `records`, `account`, `auth` or `api` would have collided with the matching static route (which wins over `/[comp-slug]` in Next.js), making the comp's public and admin pages unreachable and confusing the sidebar's URL-based comp resolution. The slug schema now rejects those reserved segments (`RESERVED_SLUGS` in `types/competition.ts`, applied to both the create and update schemas) with a clear message; a slug merely *containing* a reserved word (e.g. `club-records-2026`) is still fine. The Overview page's count-error reporting also now scans the same array the queries are gathered into, so a future query added to the batch can't silently skip the Sentry/banner reporting. Both from the pre-merge code review.
 

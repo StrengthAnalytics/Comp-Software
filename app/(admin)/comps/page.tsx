@@ -60,7 +60,7 @@ export default async function CompsPage() {
               {comps.map((comp) => (
                 <tr key={comp.id} className="hover:bg-neutral-50">
                   <td className="px-4 py-3">
-                    <Link href={`/${comp.slug}/overview`} className="font-medium text-neutral-900 hover:underline">
+                    <Link href={`/${comp.slug}/checklist`} className="font-medium text-neutral-900 hover:underline">
                       {comp.name}
                     </Link>
                     <div className="text-xs text-neutral-500">/{comp.slug}</div>

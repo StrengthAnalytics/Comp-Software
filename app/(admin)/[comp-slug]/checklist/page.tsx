@@ -96,7 +96,7 @@ function ChecklistRow({ item }: { item: ChecklistItem }) {
   );
 }
 
-export default async function OverviewPage({
+export default async function ChecklistPage({
   params,
 }: {
   params: Promise<{ 'comp-slug': string }>;
@@ -108,7 +108,7 @@ export default async function OverviewPage({
     notFound();
   }
 
-  // Head-only count queries — the overview needs numbers, never rows. Run in parallel; a failed
+  // Head-only count queries — the checklist needs numbers, never rows. Run in parallel; a failed
   // count is reported (Sentry + a banner) rather than silently rendering 0 as if it were true.
   const supabase = await createClient();
   const countOf = (table: 'age_categories' | 'weight_classes' | 'platforms' | 'sessions' | 'teams') =>
