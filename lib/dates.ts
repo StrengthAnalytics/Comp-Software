@@ -1,7 +1,7 @@
 // Whole days from `fromIso` to `toIso` (both strict ISO `YYYY-MM-DD`): positive when `toIso` is
 // later, 0 for the same day, negative when it has passed. Null when either date is not real, so a
 // caller renders nothing rather than NaN. Calendar-day arithmetic in UTC — no time-of-day or
-// timezone component — which is all the Overview page's "days to go" figure needs.
+// timezone component — which is all the Checklist page's "days to go" figure needs.
 export function daysBetweenIsoDates(fromIso: string, toIso: string): number | null {
   if (!isRealIsoDate(fromIso) || !isRealIsoDate(toIso)) {
     return null;

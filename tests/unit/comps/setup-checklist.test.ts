@@ -50,6 +50,18 @@ describe('buildSetupChecklist', () => {
     expect(items.map((entry) => entry.state)).toEqual(Array.from({ length: 7 }, () => 'todo'));
   });
 
+  it('orders the steps with register lifters before platforms & sessions', () => {
+    expect(buildSetupChecklist(base).map((entry) => entry.key)).toEqual([
+      'date',
+      'age-categories',
+      'weight-classes',
+      'lifters',
+      'sessions',
+      'flights',
+      'weigh-in',
+    ]);
+  });
+
   it('explains that registration is blocked until the comp has a date', () => {
     const lifterStep = item({ ...base, hasStartDate: false, entryCount: 0 }, 'lifters');
     expect(lifterStep.state).toBe('todo');

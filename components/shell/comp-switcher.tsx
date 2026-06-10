@@ -29,7 +29,7 @@ type CompSwitcherProps = {
 
 // Competition context switcher at the top of the sidebar (the Vercel/Supabase "project switcher"
 // pattern): shows which comp the comp-scoped nav below it belongs to, and jumps to any other comp
-// (landing on its Overview page) or back to the full competitions list.
+// (landing on its Checklist page) or back to the full competitions list.
 export function CompSwitcher({ comps, activeComp, collapsed, onExpandRequest }: CompSwitcherProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -114,7 +114,7 @@ export function CompSwitcher({ comps, activeComp, collapsed, onExpandRequest }: 
             {comps.map((comp) => (
               <Link
                 key={comp.id}
-                href={`/${comp.slug}/overview`}
+                href={`/${comp.slug}/checklist`}
                 role="menuitem"
                 onClick={() => setOpen(false)}
                 aria-current={comp.id === activeComp.id ? 'true' : undefined}

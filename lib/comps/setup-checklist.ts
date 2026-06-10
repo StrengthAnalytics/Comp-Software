@@ -1,4 +1,4 @@
-// The Overview page's setup checklist: turns a comp's current data counts into an ordered list of
+// The Checklist page's setup checklist: turns a comp's current data counts into an ordered list of
 // meet-preparation steps with a done/partial/todo state and a link to the screen that completes
 // each one. Pure — the page gathers the counts, this derives the story they tell — so the rules a
 // first-time meet director is guided through are unit-tested rather than living in JSX.
@@ -116,6 +116,13 @@ export function buildSetupChecklist(input: SetupChecklistInput): ChecklistItem[]
     },
     ...categorySteps,
     {
+      key: 'lifters',
+      label: 'Register lifters',
+      state: input.entryCount > 0 ? 'done' : 'todo',
+      detail: liftersDetail,
+      href: `/${input.slug}/entries`,
+    },
+    {
       key: 'sessions',
       label: 'Create platforms & sessions',
       state: input.sessionCount > 0 ? 'done' : 'todo',
@@ -124,13 +131,6 @@ export function buildSetupChecklist(input: SetupChecklistInput): ChecklistItem[]
           ? `${counted(input.sessionCount, 'session', 'sessions')} on ${counted(input.platformCount, 'platform', 'platforms')}`
           : 'No sessions yet',
       href: `/${input.slug}/flights`,
-    },
-    {
-      key: 'lifters',
-      label: 'Register lifters',
-      state: input.entryCount > 0 ? 'done' : 'todo',
-      detail: liftersDetail,
-      href: `/${input.slug}/entries`,
     },
     ...(input.isTeamCompetition ? [teamsItem] : []),
     {
