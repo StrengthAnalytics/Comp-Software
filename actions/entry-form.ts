@@ -8,6 +8,7 @@ import { requireAdmin } from '@/lib/auth/admin';
 import { matchAgeCategoryByName, resolveAgeCategory } from '@/lib/age-categories/age-category';
 import { isCompPubliclyVisible } from '@/lib/comps/meet-status';
 import { isUniqueViolation } from '@/lib/supabase/errors';
+import { escapeLikePattern } from '@/lib/supabase/like-pattern';
 import { toFieldErrors } from '@/lib/validation';
 import { buildSubmissionSchema, entryFormConfigSchema, parseEntryFormConfig } from '@/types/entry-form';
 import { GENDER_VALUES } from '@/types/entry';
@@ -286,12 +287,14 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
     }
 
     // Resolve the lifter the way the bulk importer does: an existing lifter with this name is the
-    // same person (their details are refreshed from the submission), otherwise create them.
+    // same person (their details are refreshed from the submission), otherwise create them. The
+    // names are PUBLIC input, so they are escaped — a submission named "%" must match literally,
+    // never act as a wildcard onto someone else's row.
     const { data: found, error: lookupError } = await supabase
       .from('lifters')
       .select('id')
-      .ilike('surname', submission.surname)
-      .ilike('first_name', submission.first_name)
+      .ilike('surname', escapeLikePattern(submission.surname))
+      .ilike('first_name', escapeLikePattern(submission.first_name))
       .limit(1)
       .maybeSingle();
     if (lookupError) {

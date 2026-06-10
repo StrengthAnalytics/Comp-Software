@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { canRecordMeetResults } from '@/lib/comps/meet-status';
 import { isUniqueViolation } from '@/lib/supabase/errors';
+import { escapeLikePattern } from '@/lib/supabase/like-pattern';
 import { BP_DIVISIONS, LIFTS_FOR_EVENT } from '@/lib/constants';
 import { matchAgeCategoryByName, planAgeCategoryRecalc, resolveAgeCategory } from '@/lib/age-categories/age-category';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
@@ -1006,11 +1007,12 @@ export async function bulkImportEntriesAction(input: {
       let status: 'created' | 'updated' = 'updated';
 
       if (lifterId === null) {
+        // Escaped so a name is matched literally — a pasted % or _ must not act as a wildcard.
         const { data: found, error: lookupError } = await supabase
           .from('lifters')
           .select('id')
-          .ilike('surname', row.surname)
-          .ilike('first_name', row.firstName)
+          .ilike('surname', escapeLikePattern(row.surname))
+          .ilike('first_name', escapeLikePattern(row.firstName))
           .limit(1)
           .maybeSingle();
         if (lookupError) {
