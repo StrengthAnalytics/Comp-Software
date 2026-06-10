@@ -4,6 +4,12 @@ import { roundToTwoDecimals } from '@/lib/number-input';
 // Lowercase letters, numbers and single hyphens; no leading, trailing or doubled hyphens.
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+// Top-level route segments the app itself owns. A comp slugged with one of these would collide
+// with the static route — in Next.js the static segment wins over /[comp-slug], so the comp's
+// public and admin pages would become unreachable, and the sidebar's URL-based comp resolution
+// (activeCompFrom in the app shell) would read the segment as an app page instead of the comp.
+export const RESERVED_SLUGS: readonly string[] = ['comps', 'records', 'account', 'auth', 'api'];
+
 // Combining diacritical marks, stripped after NFKD normalisation so accented names slug cleanly.
 const COMBINING_MARKS = /[̀-ͯ]/gu;
 
@@ -44,7 +50,8 @@ const competitionObject = z.object({
     .trim()
     .min(1, 'Slug is required.')
     .max(80, 'Slug is too long.')
-    .regex(SLUG_PATTERN, 'Use lowercase letters, numbers and hyphens only.'),
+    .regex(SLUG_PATTERN, 'Use lowercase letters, numbers and hyphens only.')
+    .refine((value) => !RESERVED_SLUGS.includes(value), 'That slug is a reserved page name — pick a different one.'),
   kit_type: z.enum(['classic', 'equipped']),
   event_type: z.enum(['full_power', 'bench_only', 'deadlift_only']),
   status: z.enum(['draft', 'published', 'active', 'completed']),

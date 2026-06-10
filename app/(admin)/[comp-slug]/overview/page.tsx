@@ -114,16 +114,7 @@ export default async function OverviewPage({
   const countOf = (table: 'age_categories' | 'weight_classes' | 'platforms' | 'sessions' | 'teams') =>
     supabase.from(table).select('id', { count: 'exact', head: true }).eq('competition_id', comp.id);
 
-  const [
-    ageCategories,
-    weightClasses,
-    platforms,
-    sessions,
-    entries,
-    entriesInFlights,
-    entriesWeighedIn,
-    teams,
-  ] = await Promise.all([
+  const counts = await Promise.all([
     countOf('age_categories'),
     countOf('weight_classes'),
     countOf('platforms'),
@@ -141,8 +132,7 @@ export default async function OverviewPage({
       .not('bodyweight_kg', 'is', null),
     countOf('teams'),
   ]);
-
-  const results = [
+  const [
     ageCategories,
     weightClasses,
     platforms,
@@ -151,8 +141,11 @@ export default async function OverviewPage({
     entriesInFlights,
     entriesWeighedIn,
     teams,
-  ];
-  const failed = results.filter((result) => result.error);
+  ] = counts;
+
+  // Scan the same array the queries were gathered into, so a future query added to the
+  // Promise.all can't be missed by the error reporting.
+  const failed = counts.filter((result) => result.error);
   for (const result of failed) {
     Sentry.captureException(result.error);
   }

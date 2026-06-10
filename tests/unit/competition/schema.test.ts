@@ -48,6 +48,17 @@ describe('competitionInputSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it.each(['comps', 'records', 'account', 'auth', 'api'])(
+    'rejects the reserved route segment %s as a slug',
+    (slug) => {
+      expect(competitionInputSchema.safeParse({ ...base, slug }).success).toBe(false);
+    },
+  );
+
+  it('accepts a slug that merely contains a reserved word', () => {
+    expect(competitionInputSchema.safeParse({ ...base, slug: 'club-records-2026' }).success).toBe(true);
+  });
+
   it('rejects an end date before the start date', () => {
     const result = competitionInputSchema.safeParse({
       ...base,
