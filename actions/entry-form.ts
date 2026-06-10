@@ -5,10 +5,9 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { requireAdmin } from '@/lib/auth/admin';
-import { matchAgeCategoryByName, resolveAgeCategory } from '@/lib/age-categories/age-category';
+import { deriveAgeCategoryId, findLifterIdByName, matchWeightClassByName } from '@/lib/entries/registration';
 import { isCompPubliclyVisible } from '@/lib/comps/meet-status';
 import { isUniqueViolation } from '@/lib/supabase/errors';
-import { escapeLikePattern } from '@/lib/supabase/like-pattern';
 import { toFieldErrors } from '@/lib/validation';
 import { buildSubmissionSchema, entryFormConfigSchema, parseEntryFormConfig } from '@/types/entry-form';
 import { GENDER_VALUES } from '@/types/entry';
@@ -286,17 +285,15 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
       return fail('Set a competition date before approving entries — the age category is worked out from it.');
     }
 
-    // Resolve the lifter the way the bulk importer does: an existing lifter with this name is the
-    // same person (their details are refreshed from the submission), otherwise create them. The
-    // names are PUBLIC input, so they are escaped — a submission named "%" must match literally,
-    // never act as a wildcard onto someone else's row.
-    const { data: found, error: lookupError } = await supabase
-      .from('lifters')
-      .select('id')
-      .ilike('surname', escapeLikePattern(submission.surname))
-      .ilike('first_name', escapeLikePattern(submission.first_name))
-      .limit(1)
-      .maybeSingle();
+    // Resolve the lifter the way every registration path does (shared findLifterIdByName, which
+    // escapes the name — it is PUBLIC input here, so a submission named "%" must match literally,
+    // never act as a wildcard onto someone else's row). An existing lifter with this name is the
+    // same person (their details are refreshed from the submission), otherwise create them.
+    const { lifterId: foundId, error: lookupError } = await findLifterIdByName(
+      supabase,
+      submission.first_name,
+      submission.surname,
+    );
     if (lookupError) {
       Sentry.captureException(lookupError);
       return fail('Could not approve the entry. Please try again.');
@@ -305,12 +302,12 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
     let lifterId: string;
     let createdLifter = false;
 
-    if (found) {
+    if (foundId) {
       const { data: existingEntry, error: existingError } = await supabase
         .from('entries')
         .select('id')
         .eq('competition_id', parsed.data.competitionId)
-        .eq('lifter_id', found.id)
+        .eq('lifter_id', foundId)
         .maybeSingle();
       if (existingError) {
         Sentry.captureException(existingError);
@@ -336,12 +333,12 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
       if (submission.ipf_member_id !== null) {
         lifterUpdate.ipf_member_id = submission.ipf_member_id;
       }
-      const { error: updateError } = await supabase.from('lifters').update(lifterUpdate).eq('id', found.id);
+      const { error: updateError } = await supabase.from('lifters').update(lifterUpdate).eq('id', foundId);
       if (updateError) {
         Sentry.captureException(updateError);
         return fail('Could not approve the entry. Please try again.');
       }
-      lifterId = found.id;
+      lifterId = foundId;
     } else {
       const { data: created, error: insertError } = await supabase
         .from('lifters')
@@ -376,42 +373,35 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
       }
     };
 
-    // Age category from the comp year and birth year, matched to this comp's rows by name; a comp
-    // without the computed category leaves it for the admin (same as every registration path).
-    let ageCategoryId: string | null = null;
-    const categoryName = resolveAgeCategory(comp.starts_on, submission.date_of_birth);
-    if (categoryName) {
-      const { data: ageCategories, error: ageCategoriesError } = await supabase
-        .from('age_categories')
-        .select('id, name')
-        .eq('competition_id', parsed.data.competitionId);
-      if (ageCategoriesError) {
-        Sentry.captureException(ageCategoriesError);
-        await rollbackLifter();
-        return fail('Could not approve the entry. Please try again.');
-      }
-      ageCategoryId = matchAgeCategoryByName(ageCategories ?? [], categoryName)?.id ?? null;
+    // The comp's reference rows — two independent reads, fetched together. The age category is
+    // derived from the comp year and birth year (shared deriveAgeCategoryId; a comp without the
+    // computed band leaves it for the admin, same as every registration path), and the chosen
+    // weight class is matched by name for the lifter's sex (shared matchWeightClassByName; a class
+    // renamed since the submission is left blank for the admin rather than failing the approval).
+    const [ageCategoriesResult, weightClassesResult] = await Promise.all([
+      supabase.from('age_categories').select('id, name').eq('competition_id', parsed.data.competitionId),
+      supabase.from('weight_classes').select('id, name, gender').eq('competition_id', parsed.data.competitionId),
+    ]);
+    if (ageCategoriesResult.error || weightClassesResult.error) {
+      Sentry.captureException(ageCategoriesResult.error ?? weightClassesResult.error);
+      await rollbackLifter();
+      return fail('Could not approve the entry. Please try again.');
     }
 
-    // The chosen weight class, matched by name for the lifter's sex; unmatched (renamed since the
-    // submission) is left blank for the admin rather than failing the approval.
+    const ageCategoryId = deriveAgeCategoryId(
+      ageCategoriesResult.data ?? [],
+      comp.starts_on,
+      submission.date_of_birth,
+    );
+
     let weightClassId: string | null = null;
     if (submission.weight_class !== null) {
-      const { data: weightClasses, error: weightClassesError } = await supabase
-        .from('weight_classes')
-        .select('id, name, gender')
-        .eq('competition_id', parsed.data.competitionId);
-      if (weightClassesError) {
-        Sentry.captureException(weightClassesError);
-        await rollbackLifter();
-        return fail('Could not approve the entry. Please try again.');
-      }
-      weightClassId =
-        (weightClasses ?? []).find(
-          (weightClass) =>
-            weightClass.name.trim().toLowerCase() === submission.weight_class?.trim().toLowerCase() &&
-            weightClass.gender === gender.data,
-        )?.id ?? null;
+      const match = matchWeightClassByName(
+        weightClassesResult.data ?? [],
+        submission.weight_class,
+        gender.data,
+      );
+      weightClassId = match.status === 'matched' ? match.weightClass.id : null;
     }
 
     const { data: entry, error: entryError } = await supabase

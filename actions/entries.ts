@@ -7,9 +7,9 @@ import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { canRecordMeetResults } from '@/lib/comps/meet-status';
 import { isUniqueViolation } from '@/lib/supabase/errors';
-import { escapeLikePattern } from '@/lib/supabase/like-pattern';
 import { BP_DIVISIONS, LIFTS_FOR_EVENT } from '@/lib/constants';
 import { matchAgeCategoryByName, planAgeCategoryRecalc, resolveAgeCategory } from '@/lib/age-categories/age-category';
+import { deriveAgeCategoryId, findLifterIdByName, matchWeightClassByName } from '@/lib/entries/registration';
 import { parseBulkImport } from '@/lib/entries/bulk-import';
 import { formatLifterName } from '@/lib/lifters/name';
 import {
@@ -202,21 +202,17 @@ export async function createEntryAction(input: {
       return fail("Add the lifter's date of birth before registering them — the age category needs it.");
     }
 
-    // Auto-select the age category from the comp year and birth year, resolved to one of this comp's
-    // age-category rows by name. A comp missing that age category leaves it null for the operator to fill in.
-    const categoryName = resolveAgeCategory(comp.starts_on, lifter.date_of_birth);
-    let ageCategoryId: string | null = null;
-    if (categoryName) {
-      const { data: ageCategories, error: ageCategoriesError } = await supabase
-        .from('age_categories')
-        .select('id, name')
-        .eq('competition_id', parsed.data.competitionId);
-      if (ageCategoriesError) {
-        Sentry.captureException(ageCategoriesError);
-        return fail('Could not register the lifter. Please try again.');
-      }
-      ageCategoryId = matchAgeCategoryByName(ageCategories ?? [], categoryName)?.id ?? null;
+    // Auto-select the age category from the comp year and birth year (shared deriveAgeCategoryId).
+    // A comp missing that age category leaves it null for the operator to fill in.
+    const { data: ageCategories, error: ageCategoriesError } = await supabase
+      .from('age_categories')
+      .select('id, name')
+      .eq('competition_id', parsed.data.competitionId);
+    if (ageCategoriesError) {
+      Sentry.captureException(ageCategoriesError);
+      return fail('Could not register the lifter. Please try again.');
     }
+    const ageCategoryId = deriveAgeCategoryId(ageCategories ?? [], comp.starts_on, lifter.date_of_birth);
 
     const { error } = await supabase.from('entries').insert({
       competition_id: parsed.data.competitionId,
@@ -908,12 +904,6 @@ export async function bulkImportEntriesAction(input: {
       supabase.from('entries').select('lifter_id').eq('competition_id', comp.id),
     ]);
 
-    const ageCategoryByName = new Map(
-      (ageCategories ?? []).map((ageCategory) => [ageCategory.name.trim().toLowerCase(), ageCategory]),
-    );
-    const weightClassByName = new Map(
-      (weightClasses ?? []).map((weightClass) => [weightClass.name.trim().toLowerCase(), weightClass]),
-    );
     // BP divisions are a fixed app-wide list, not per-comp rows, so a paste is matched case-insensitively
     // against the canonical names (an unmatched, non-empty value warns and is left blank).
     const divisionByName = new Map(BP_DIVISIONS.map((division) => [division.toLowerCase(), division]));
@@ -957,7 +947,7 @@ export async function bulkImportEntriesAction(input: {
       // mistyped age category still gets the right category rather than being left blank.
       let ageCategoryId: string | null = null;
       if (row.ageCategoryName) {
-        const named = ageCategoryByName.get(row.ageCategoryName.toLowerCase());
+        const named = matchAgeCategoryByName(ageCategories ?? [], row.ageCategoryName);
         if (named) {
           ageCategoryId = named.id;
         } else {
@@ -967,7 +957,7 @@ export async function bulkImportEntriesAction(input: {
       if (ageCategoryId === null) {
         const categoryName = resolveAgeCategory(comp.starts_on, row.dateOfBirth);
         if (categoryName) {
-          const derived = ageCategoryByName.get(categoryName.toLowerCase());
+          const derived = matchAgeCategoryByName(ageCategories ?? [], categoryName);
           if (derived) {
             ageCategoryId = derived.id;
           } else {
@@ -978,10 +968,10 @@ export async function bulkImportEntriesAction(input: {
 
       let weightClassId: string | null = null;
       if (row.weightClassName) {
-        const weightClass = weightClassByName.get(row.weightClassName.toLowerCase());
-        if (weightClass && weightClass.gender === row.gender) {
-          weightClassId = weightClass.id;
-        } else if (weightClass) {
+        const match = matchWeightClassByName(weightClasses ?? [], row.weightClassName, lifterFields.data.gender);
+        if (match.status === 'matched') {
+          weightClassId = match.weightClass.id;
+        } else if (match.status === 'wrong_gender') {
           warnings.push(`Weight class "${row.weightClassName}" is not for this lifter's gender — left blank.`);
         } else {
           warnings.push(`Weight class "${row.weightClassName}" not found — left blank.`);
@@ -1007,36 +997,34 @@ export async function bulkImportEntriesAction(input: {
       let status: 'created' | 'updated' = 'updated';
 
       if (lifterId === null) {
-        // Escaped so a name is matched literally — a pasted % or _ must not act as a wildcard.
-        const { data: found, error: lookupError } = await supabase
-          .from('lifters')
-          .select('id')
-          .ilike('surname', escapeLikePattern(row.surname))
-          .ilike('first_name', escapeLikePattern(row.firstName))
-          .limit(1)
-          .maybeSingle();
+        // Shared findLifterIdByName escapes the name, so a pasted % or _ cannot act as a wildcard.
+        const { lifterId: foundId, error: lookupError } = await findLifterIdByName(
+          supabase,
+          row.firstName,
+          row.surname,
+        );
         if (lookupError) {
           Sentry.captureException(lookupError);
           record(row.line, name, 'error', 'Could not look up the lifter. Please try again.');
           continue;
         }
 
-        if (found) {
-          if (registeredLifterIds.has(found.id)) {
-            lifterIdByName.set(nameKey, found.id);
+        if (foundId) {
+          if (registeredLifterIds.has(foundId)) {
+            lifterIdByName.set(nameKey, foundId);
             record(row.line, name, 'skipped', 'Already registered in this competition.');
             continue;
           }
           const { error: updateError } = await supabase
             .from('lifters')
             .update(lifterFields.data)
-            .eq('id', found.id);
+            .eq('id', foundId);
           if (updateError) {
             Sentry.captureException(updateError);
             record(row.line, name, 'error', 'Could not update the lifter. Please try again.');
             continue;
           }
-          lifterId = found.id;
+          lifterId = foundId;
           status = 'updated';
         } else {
           const { data: created, error: insertError } = await supabase
