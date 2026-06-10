@@ -40,6 +40,8 @@ export function CompSwitcher({ comps, activeComp, collapsed, onExpandRequest }: 
       return;
     }
     const onPointerDown = (event: MouseEvent) => {
+      // MouseEvent.target is typed EventTarget | null; contains() wants a Node. A DOM mouse event's
+      // target is always a Node, so the assertion is sound.
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
