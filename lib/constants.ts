@@ -193,6 +193,67 @@ export const BP_DIVISIONS = [
 
 export type Division = (typeof BP_DIVISIONS)[number];
 
+// Public entry form vocabulary -------------------------------------------------------------------
+
+// The admin-designed, comp-specific public entry form ("Design entry form" on the entries screen).
+// Name, sex and date of birth are always collected — the minimum the registration path needs — and
+// each field below is toggled off / optional / required per comp. The design is stored in
+// competitions.entry_form (jsonb), shaped and validated by types/entry-form.ts.
+export const ENTRY_FORM_FIELDS = [
+  'club',
+  'ipf_member_id',
+  'division',
+  'weight_class',
+  'predicted_total',
+  'kit',
+  'event',
+  'instagram',
+  'email',
+  'phone',
+] as const;
+
+export type EntryFormField = (typeof ENTRY_FORM_FIELDS)[number];
+
+export const ENTRY_FORM_FIELD_STATES = ['off', 'optional', 'required'] as const;
+
+export type EntryFormFieldState = (typeof ENTRY_FORM_FIELD_STATES)[number];
+
+export const ENTRY_FORM_FIELD_LABELS: Record<EntryFormField, string> = {
+  club: 'Club',
+  ipf_member_id: 'Membership number',
+  division: 'Division (region)',
+  weight_class: 'Weight class',
+  predicted_total: 'Predicted total',
+  kit: 'Raw / Equipped',
+  event: 'SBD / Bench only',
+  instagram: 'Instagram handle',
+  email: 'Email address',
+  phone: 'Phone number',
+};
+
+// The lifter's declared kit/event preference on the form. The codes reuse the comp's kit_type /
+// event_type values (so an approval can compare them against the comp), but the lifter-facing kit
+// labels say "Raw" where the admin screens say "Classic" — the term lifters use. Informational:
+// kit and event are per-comp settings today, so the choice tells the admin what the lifter
+// expects rather than configuring the entry.
+export const ENTRY_FORM_KIT_CHOICES = ['classic', 'equipped'] as const;
+
+export type EntryFormKitChoice = (typeof ENTRY_FORM_KIT_CHOICES)[number];
+
+export const ENTRY_FORM_KIT_LABELS: Record<EntryFormKitChoice, string> = {
+  classic: 'Raw',
+  equipped: 'Equipped',
+};
+
+export const ENTRY_FORM_EVENT_CHOICES = ['full_power', 'bench_only'] as const;
+
+export type EntryFormEventChoice = (typeof ENTRY_FORM_EVENT_CHOICES)[number];
+
+export const ENTRY_FORM_EVENT_LABELS: Record<EntryFormEventChoice, string> = {
+  full_power: 'Full power (SBD)',
+  bench_only: 'Bench only',
+};
+
 export type WeightClassSeed = {
   name: string;
   gender: Gender;

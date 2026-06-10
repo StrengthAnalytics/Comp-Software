@@ -65,6 +65,7 @@ This project is developed online-only against the hosted Supabase dev project an
     /[comp-slug]/live           ← live scoreboard for venue TVs and socials (planned)
     /[comp-slug]/warm-up        ← warm-up room board: read-only run scoresheet + up-next, sign-in-free (per-platform via ?platform=)
     /[comp-slug]/results        ← final results
+    /[comp-slug]/enter          ← public entry form: lifters self-register into the review inbox (planned)
   /auth                         ← sign-in (email + password; OTP for production)
   /account                      ← profile management
 /components                     ← shared UI
@@ -123,7 +124,7 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 ## Supabase conventions
 
 - Row Level Security (RLS) on every table. No exceptions.
-- Permissions model: admins (email in `ADMIN_EMAILS`) can read and write everything; anon can read data belonging to publicly visible competitions only. There are no per-comp roles.
+- Permissions model: admins (email in `ADMIN_EMAILS`) can read and write everything; anon can read data belonging to publicly visible competitions only. There are no per-comp roles. One deliberate exception: `entry_submissions` (the public entry form's inbox) carries the app's single anon write — INSERT only, gated by `comp_accepts_entries()`, with no anon read (submissions carry PII). See ARCHITECTURE.md §3/§7.
 - Typed Supabase client generated from the database schema. Regenerate types after every migration.
 - Anon key used in client-side Supabase client only.
 - Service role key only in server-side admin actions. Never exposed to the client.
@@ -180,6 +181,11 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 - Total = best squat + best bench + best deadlift.
 - Placement by total within (weight class × age category × gender × kit type).
 - IPF GL points, Wilks, DOTS as parallel ranking metrics. Pure functions in `/lib/scoring`.
+
+### Public entry form
+- Lifters can self-register via a shareable, comp-specific public form (`/[comp-slug]/enter`). Submissions land in the `entry_submissions` holding table — never directly in `lifters`/`entries` — and wait as red-tinted review cards on the entries screen until an admin approves (which runs the standard registration path and stamps the submission) or rejects them. See the ADR in ARCHITECTURE.md §7.
+- The form's design is per comp (`competitions.entry_form` jsonb + the `entry_form_open` accepting-entries toggle): name, sex and date of birth are always collected; club, membership number, division, weight class, predicted total, kit (Raw/Equipped) and event (SBD/Bench-only) preference, instagram, email and phone are each off/optional/required; an optional disclaimer, when set, makes its acceptance tick mandatory. The submission Zod schema is built from the design (`buildSubmissionSchema`, `types/entry-form.ts`), so the server enforces exactly what the admin chose to ask.
+- This is the app's only anonymous write: an INSERT-only RLS policy on `entry_submissions`, gated by `comp_accepts_entries()` (comp publicly visible + form open), no anon read. The submit action is the one server action without `adminGuard()`; kit/event preference and predicted total are informational for the admin (kit and event remain per-comp settings).
 
 ### Team competitions
 - Optional per-comp format (`is_team_competition`), full power only. A team is three lifters, one each on squat, bench and deadlift; each member contests only their assigned lift and weighs in individually.
