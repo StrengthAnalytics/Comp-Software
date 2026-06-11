@@ -185,6 +185,24 @@ describe('buildSubmissionSchema — toggled fields', () => {
     );
     expect(optional.parse({ ...base, predictedTotalKg: null }).predictedTotalKg).toBeNull();
   });
+
+  it('the best total from the last 12 months follows the same kg rules', () => {
+    const schema = buildSubmissionSchema(
+      config({ fields: { recent_best_total: 'required', email: 'off' } }),
+    );
+    expect(schema.parse({ ...base, recentBestTotalKg: 487.55 }).recentBestTotalKg).toBe(487.6);
+    expect(schema.safeParse({ ...base, recentBestTotalKg: 0 }).success).toBe(false);
+    expect(schema.safeParse({ ...base, recentBestTotalKg: null }).success).toBe(false);
+    const optional = buildSubmissionSchema(
+      config({ fields: { recent_best_total: 'optional', email: 'off' } }),
+    );
+    expect(optional.parse({ ...base, recentBestTotalKg: null }).recentBestTotalKg).toBeNull();
+  });
+
+  it('the best total is off by default, so a sent value is never stored', () => {
+    const schema = buildSubmissionSchema(config({ fields: { email: 'off' } }));
+    expect(schema.parse({ ...base, recentBestTotalKg: 500 }).recentBestTotalKg).toBeNull();
+  });
 });
 
 describe('buildSubmissionSchema — disclaimer', () => {

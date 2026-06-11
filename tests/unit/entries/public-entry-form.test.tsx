@@ -20,6 +20,7 @@ const allOff: EntryFormConfig['fields'] = {
   division: 'off',
   weight_class: 'off',
   predicted_total: 'off',
+  recent_best_total: 'off',
   kit: 'off',
   event: 'off',
   instagram: 'off',
@@ -108,6 +109,30 @@ describe('PublicEntryForm', () => {
     );
     // The form is gone — a double submit is impossible.
     expect(screen.queryByRole('button', { name: 'Submit entry' })).toBeNull();
+  });
+
+  it('collects the best comp total from the last 12 months when the design asks for it', async () => {
+    submitAction.mockResolvedValue({ status: 'ok', data: undefined });
+    renderForm({ fields: { recent_best_total: 'optional' } });
+
+    fillAlwaysFields();
+    fireEvent.change(screen.getByLabelText(/Best comp total from the last 12 months/), {
+      target: { value: '487.5' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit entry' }));
+
+    await waitFor(() => expect(submitAction).toHaveBeenCalled());
+    expect(submitAction.mock.calls[0]?.[0]?.recentBestTotalKg).toBe(487.5);
+
+    // A blank input submits null, not NaN.
+    cleanup();
+    vi.clearAllMocks();
+    submitAction.mockResolvedValue({ status: 'ok', data: undefined });
+    renderForm({ fields: { recent_best_total: 'optional' } });
+    fillAlwaysFields();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit entry' }));
+    await waitFor(() => expect(submitAction).toHaveBeenCalled());
+    expect(submitAction.mock.calls[0]?.[0]?.recentBestTotalKg).toBeNull();
   });
 
   it('shows the server’s field and form errors instead of the confirmation', async () => {

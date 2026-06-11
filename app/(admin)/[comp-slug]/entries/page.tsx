@@ -5,15 +5,27 @@ import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
 import { parseEntryFormConfig } from '@/types/entry-form';
 import {
-  EntriesManager,
+  AddLiftersPanel,
+  RegisteredLiftersPanel,
   type EntryLifter,
   type EntryWithLifter,
 } from '@/components/entries/entries-manager';
 import { EntryFormDesigner } from '@/components/entries/entry-form-designer';
 import { SubmissionsInbox, type PendingSubmission } from '@/components/entries/submissions-inbox';
+import { Tabs } from '@/components/ui/tabs';
 
-export default async function EntriesPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
-  const { 'comp-slug': slug } = await params;
+// The three views of the entries screen; the Tabs generic ties the panel keys to this list.
+const TAB_IDS = ['add', 'awaiting', 'registered'] as const;
+type TabId = (typeof TAB_IDS)[number];
+
+export default async function EntriesPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ 'comp-slug': string }>;
+  searchParams: Promise<{ tab?: string | string[] }>;
+}) {
+  const [{ 'comp-slug': slug }, { tab }] = await Promise.all([params, searchParams]);
   const comp = await getCompBySlug(slug);
 
   if (!comp) {
@@ -43,7 +55,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
       supabase
         .from('entry_submissions')
         .select(
-          'id, first_name, surname, gender, date_of_birth, club, ipf_member_id, division, weight_class, predicted_total_kg, kit_choice, event_choice, instagram, email, phone, disclaimer_accepted_at, created_at',
+          'id, first_name, surname, gender, date_of_birth, club, ipf_member_id, division, weight_class, predicted_total_kg, recent_best_total_kg, kit_choice, event_choice, instagram, email, phone, disclaimer_accepted_at, created_at',
         )
         .eq('competition_id', comp.id)
         .eq('status', 'pending')
@@ -86,6 +98,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
     division: row.division,
     weightClass: row.weight_class,
     predictedTotalKg: row.predicted_total_kg,
+    recentBestTotalKg: row.recent_best_total_kg,
     kitChoice: row.kit_choice,
     eventChoice: row.event_choice,
     instagram: row.instagram,
@@ -98,31 +111,58 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
     ),
   }));
 
+  // A ?tab= in the URL (written by the Tabs control, or a shared link) wins; otherwise a fresh
+  // comp opens onto registering its first lifters, and once entries exist the day-to-day working
+  // view (weigh-in corrections, search) is the list.
+  const requestedTab = TAB_IDS.find((id) => id === tab);
+  const initialTabId: TabId = requestedTab ?? (entries.length > 0 ? 'registered' : 'add');
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Entries &amp; weigh-in</h1>
       </div>
 
-      <SubmissionsInbox competitionId={comp.id} submissions={submissions} />
-
-      <EntriesManager
-        competitionId={comp.id}
-        competitionName={comp.name}
-        competitionStatus={comp.status}
-        competitionStartsOn={comp.starts_on}
-        lifts={LIFTS_FOR_EVENT[comp.event_type]}
-        ageCategories={ageCategories ?? []}
-        weightClasses={weightClasses ?? []}
-        entries={entries}
-      />
-
-      <EntryFormDesigner
-        competitionId={comp.id}
-        slug={comp.slug}
-        competitionStatus={comp.status}
-        initialConfig={parseEntryFormConfig(comp.entry_form)}
-        initialOpen={comp.entry_form_open}
+      <Tabs
+        tabs={[
+          { id: 'add', label: 'Add lifters' },
+          { id: 'awaiting', label: 'Awaiting approval', badge: submissions.length },
+          { id: 'registered', label: 'Registered lifters' },
+        ]}
+        initialTabId={initialTabId}
+        searchParam="tab"
+        panels={{
+          add: (
+            <div className="space-y-6">
+              <AddLiftersPanel
+                competitionId={comp.id}
+                competitionStartsOn={comp.starts_on}
+                lifts={LIFTS_FOR_EVENT[comp.event_type]}
+                entries={entries}
+              />
+              <EntryFormDesigner
+                competitionId={comp.id}
+                slug={comp.slug}
+                competitionStatus={comp.status}
+                initialConfig={parseEntryFormConfig(comp.entry_form)}
+                initialOpen={comp.entry_form_open}
+              />
+            </div>
+          ),
+          awaiting: <SubmissionsInbox competitionId={comp.id} submissions={submissions} />,
+          registered: (
+            <RegisteredLiftersPanel
+              competitionId={comp.id}
+              competitionName={comp.name}
+              competitionStatus={comp.status}
+              competitionStartsOn={comp.starts_on}
+              lifts={LIFTS_FOR_EVENT[comp.event_type]}
+              ageCategories={ageCategories ?? []}
+              weightClasses={weightClasses ?? []}
+              entries={entries}
+            />
+          ),
+        }}
       />
     </div>
   );

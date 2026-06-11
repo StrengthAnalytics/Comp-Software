@@ -463,6 +463,7 @@ export type Database = {
           division: string | null;
           weight_class: string | null;
           predicted_total_kg: number | null;
+          recent_best_total_kg: number | null;
           kit_choice: string | null;
           event_choice: string | null;
           instagram: string | null;
@@ -487,6 +488,7 @@ export type Database = {
           division?: string | null;
           weight_class?: string | null;
           predicted_total_kg?: number | null;
+          recent_best_total_kg?: number | null;
           kit_choice?: string | null;
           event_choice?: string | null;
           instagram?: string | null;
@@ -511,6 +513,7 @@ export type Database = {
           division?: string | null;
           weight_class?: string | null;
           predicted_total_kg?: number | null;
+          recent_best_total_kg?: number | null;
           kit_choice?: string | null;
           event_choice?: string | null;
           instagram?: string | null;

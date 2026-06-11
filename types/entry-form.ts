@@ -40,6 +40,7 @@ export const entryFormConfigSchema = z.object({
     division: fieldState,
     weight_class: fieldState,
     predicted_total: fieldState,
+    recent_best_total: fieldState,
     kit: fieldState,
     event: fieldState,
     instagram: fieldState,
@@ -65,6 +66,7 @@ export const ENTRY_FORM_DEFAULTS: EntryFormConfig = {
     division: 'off',
     weight_class: 'optional',
     predicted_total: 'optional',
+    recent_best_total: 'off',
     kit: 'off',
     event: 'off',
     instagram: 'off',
@@ -165,15 +167,18 @@ function toggledInstagram(state: EntryFormFieldState) {
   return z.preprocess(blankToNull, instagramHandle('Enter your Instagram handle.').nullable());
 }
 
-function toggledPredictedTotal(state: EntryFormFieldState) {
+// A toggleable kg-total question (predicted total / best recent total), named so each field's
+// messages read naturally.
+function toggledTotalKg(state: EntryFormFieldState, noun: string) {
   if (state === 'off') {
     return z.preprocess(() => null, z.null());
   }
+  const capitalised = noun.charAt(0).toUpperCase() + noun.slice(1);
   // Kg to 1 dp like every lift weight; clients convert a blank input to null before calling.
   const total = z
-    .number({ message: 'Enter your predicted total in kg.' })
-    .gt(0, 'Predicted total must be greater than zero.')
-    .max(9999.9, 'Predicted total is too large.')
+    .number({ message: `Enter your ${noun} in kg.` })
+    .gt(0, `${capitalised} must be greater than zero.`)
+    .max(9999.9, `${capitalised} is too large.`)
     .transform(roundToOneDecimal);
   return state === 'required'
     ? z.preprocess(blankToNull, total)
@@ -236,7 +241,8 @@ export function buildSubmissionSchema(config: EntryFormConfig) {
     ),
     division: toggledEnum(f.division, BP_DIVISIONS, 'Choose your division.'),
     weightClass: toggledText(f.weight_class, 40, 'Weight class is too long.', 'Choose a weight class.'),
-    predictedTotalKg: toggledPredictedTotal(f.predicted_total),
+    predictedTotalKg: toggledTotalKg(f.predicted_total, 'predicted total'),
+    recentBestTotalKg: toggledTotalKg(f.recent_best_total, 'best total from the last 12 months'),
     kitChoice: toggledEnum(f.kit, ENTRY_FORM_KIT_CHOICES, 'Choose Raw or Equipped.'),
     eventChoice: toggledEnum(f.event, ENTRY_FORM_EVENT_CHOICES, 'Choose your event.'),
     instagram: toggledInstagram(f.instagram),

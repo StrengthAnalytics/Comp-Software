@@ -107,6 +107,7 @@ export type SubmitEntryFormInput = {
   division?: string;
   weightClass?: string;
   predictedTotalKg?: number | null;
+  recentBestTotalKg?: number | null;
   kitChoice?: string;
   eventChoice?: string;
   instagram?: string;
@@ -187,6 +188,7 @@ export async function submitEntryFormAction(input: SubmitEntryFormInput): Promis
       division: parsed.data.division,
       weight_class: parsed.data.weightClass,
       predicted_total_kg: parsed.data.predictedTotalKg,
+      recent_best_total_kg: parsed.data.recentBestTotalKg,
       kit_choice: parsed.data.kitChoice,
       event_choice: parsed.data.eventChoice,
       instagram: parsed.data.instagram,
