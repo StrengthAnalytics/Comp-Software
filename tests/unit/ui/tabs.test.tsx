@@ -8,7 +8,7 @@ const tabs = [
   { id: 'registered', label: 'Registered lifters' },
 ];
 
-function renderTabs(overrides?: { initialTabId?: string; badge?: number }) {
+function renderTabs(overrides?: { initialTabId?: string; badge?: number; searchParam?: string }) {
   const withBadge =
     overrides?.badge === undefined
       ? tabs
@@ -17,6 +17,7 @@ function renderTabs(overrides?: { initialTabId?: string; badge?: number }) {
     <Tabs
       tabs={withBadge}
       initialTabId={overrides?.initialTabId ?? 'add'}
+      searchParam={overrides?.searchParam}
       panels={{
         add: <p>Add panel</p>,
         awaiting: <p>Awaiting panel</p>,
@@ -26,7 +27,11 @@ function renderTabs(overrides?: { initialTabId?: string; badge?: number }) {
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // The searchParam tests write to the (jsdom) URL; reset it so tests stay independent.
+  globalThis.history.replaceState(null, '', '/');
+});
 
 describe('Tabs', () => {
   it('shows the initial tab as selected with only its panel visible', () => {
@@ -98,5 +103,24 @@ describe('Tabs', () => {
   it('falls back to the first tab when the initial id is unknown', () => {
     renderTabs({ initialTabId: 'nope' });
     expect(screen.getByRole('tab', { name: 'Add lifters' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('focuses the tab on click (Safari does not focus a clicked button natively)', () => {
+    renderTabs();
+    const tab = screen.getByRole('tab', { name: /Awaiting approval/ });
+    fireEvent.click(tab);
+    expect(tab).toHaveFocus();
+  });
+
+  it('mirrors the selected tab into the URL only when searchParam is set', () => {
+    renderTabs({ searchParam: 'tab' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Registered lifters' }));
+    expect(globalThis.location.search).toContain('tab=registered');
+
+    cleanup();
+    globalThis.history.replaceState(null, '', '/');
+    renderTabs();
+    fireEvent.click(screen.getByRole('tab', { name: 'Registered lifters' }));
+    expect(globalThis.location.search).toBe('');
   });
 });

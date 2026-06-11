@@ -9,6 +9,7 @@ import {
   ENTRY_FORM_KIT_CHOICES,
   ENTRY_FORM_KIT_LABELS,
 } from '@/lib/constants';
+import { parseOptionalNumber } from '@/lib/number-input';
 import type { EntryFormConfig } from '@/types/entry-form';
 import type { FieldErrors } from '@/types/action-result';
 import { Button } from '@/components/ui/button';
@@ -108,8 +109,6 @@ export function PublicEntryForm({
     setFormError(null);
     setFieldErrors(undefined);
 
-    const predicted = predictedTotal.trim() === '' ? null : Number(predictedTotal);
-    const recentBest = recentBestTotal.trim() === '' ? null : Number(recentBestTotal);
     const input: SubmitEntryFormInput = {
       competitionId,
       website,
@@ -121,8 +120,8 @@ export function PublicEntryForm({
       ipfMemberId,
       division,
       weightClass,
-      predictedTotalKg: predicted !== null && Number.isNaN(predicted) ? null : predicted,
-      recentBestTotalKg: recentBest !== null && Number.isNaN(recentBest) ? null : recentBest,
+      predictedTotalKg: parseOptionalNumber(predictedTotal),
+      recentBestTotalKg: parseOptionalNumber(recentBestTotal),
       kitChoice,
       eventChoice,
       instagram,

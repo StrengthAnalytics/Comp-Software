@@ -2,63 +2,83 @@
 
 import { useId, useRef, useState, type ReactNode } from 'react';
 
-export type TabDef = {
-  id: string;
+export type TabDef<T extends string> = {
+  id: T;
   label: string;
   // Attention count rendered as a badge after the label (e.g. submissions awaiting approval).
   // Hidden at 0 — the badge means "something needs you", not "here is a count".
   badge?: number;
 };
 
-type TabsProps = {
-  tabs: TabDef[];
+type TabsProps<T extends string> = {
+  tabs: TabDef<T>[];
   // The tab shown on first render; selection after that is the user's and survives server
   // refreshes (router.refresh re-renders the panels but leaves this client state alone).
-  initialTabId: string;
-  // Panel content keyed by tab id. Every panel stays mounted — inactive ones are hidden, not
-  // unmounted — so realtime subscriptions keep running and mid-edit form state survives a
-  // tab switch.
-  panels: Record<string, ReactNode>;
+  initialTabId: T;
+  // Panel content keyed by tab id. The generic ties this to the tabs array's ids, so a missing
+  // or misspelled panel key is a compile error rather than a silently empty tabpanel. Every
+  // panel stays mounted — inactive ones are hidden, not unmounted — so realtime subscriptions
+  // keep running and mid-edit form state survives a tab switch.
+  panels: Record<T, ReactNode>;
+  // When set, the selected tab is mirrored into this URL search param (history.replaceState —
+  // no server round-trip, no history spam), so the tab can be deep-linked and survives
+  // navigating away and back. The page reads the param server-side into initialTabId.
+  searchParam?: string;
   className?: string;
 };
 
 // The standard tab bar: an underlined tablist segmenting one screen into views (first used on the
 // entries screen: Add lifters / Awaiting approval / Registered lifters). Follows the WAI-ARIA tabs
 // pattern — roving tabindex, arrow-key navigation with automatic activation, Home/End.
-export function Tabs({ tabs, initialTabId, panels, className }: TabsProps) {
+export function Tabs<const T extends string>({
+  tabs,
+  initialTabId,
+  panels,
+  searchParam,
+  className,
+}: TabsProps<T>) {
   const baseId = useId();
-  const [activeId, setActiveId] = useState(
-    tabs.some((tab) => tab.id === initialTabId) ? initialTabId : (tabs[0]?.id ?? ''),
+  const [activeId, setActiveId] = useState<T>(
+    // The runtime fallback backstops an out-of-list id (e.g. a hand-edited URL param a caller
+    // passed through unvalidated); the generic makes the usual callers safe at compile time.
+    tabs.some((tab) => tab.id === initialTabId) ? initialTabId : (tabs[0]?.id ?? initialTabId),
   );
-  const tabRefs = useRef(new Map<string, HTMLButtonElement>());
+  const tabRefs = useRef(new Map<T, HTMLButtonElement>());
 
-  function tabDomId(id: string): string {
+  function tabDomId(id: T): string {
     return `${baseId}-tab-${id}`;
   }
 
-  function panelDomId(id: string): string {
+  function panelDomId(id: T): string {
     return `${baseId}-panel-${id}`;
   }
 
-  // Selects and focuses the tab `step` places along, wrapping (the roving-tabindex pattern).
-  function move(fromId: string, step: number) {
+  // Activates a tab and focuses it (the WAI-ARIA pattern expects focus to follow activation on
+  // click and keyboard alike — Safari does not focus a clicked button natively). Mirrors the
+  // choice into the URL when the caller asked for that.
+  function select(id: T) {
+    setActiveId(id);
+    tabRefs.current.get(id)?.focus();
+    if (searchParam) {
+      const url = new URL(globalThis.location.href);
+      url.searchParams.set(searchParam, id);
+      globalThis.history.replaceState(null, '', url);
+    }
+  }
+
+  // Selects the tab `step` places along, wrapping (the roving-tabindex pattern).
+  function move(fromId: T, step: number) {
     const fromIndex = tabs.findIndex((tab) => tab.id === fromId);
     if (fromIndex === -1) {
       return;
     }
     const next = tabs[(fromIndex + step + tabs.length) % tabs.length];
     if (next) {
-      setActiveId(next.id);
-      tabRefs.current.get(next.id)?.focus();
+      select(next.id);
     }
   }
 
-  function select(id: string) {
-    setActiveId(id);
-    tabRefs.current.get(id)?.focus();
-  }
-
-  function onKeyDown(event: React.KeyboardEvent, id: string) {
+  function onKeyDown(event: React.KeyboardEvent, id: T) {
     switch (event.key) {
       case 'ArrowRight': {
         event.preventDefault();
@@ -112,7 +132,7 @@ export function Tabs({ tabs, initialTabId, panels, className }: TabsProps) {
               aria-selected={active}
               aria-controls={panelDomId(tab.id)}
               tabIndex={active ? 0 : -1}
-              onClick={() => setActiveId(tab.id)}
+              onClick={() => select(tab.id)}
               onKeyDown={(event) => onKeyDown(event, tab.id)}
               className={`-mb-px flex items-center gap-2 border-b-2 px-1 pb-3 pt-1 text-sm font-medium transition-colors ${
                 active

@@ -14,8 +14,18 @@ import { EntryFormDesigner } from '@/components/entries/entry-form-designer';
 import { SubmissionsInbox, type PendingSubmission } from '@/components/entries/submissions-inbox';
 import { Tabs } from '@/components/ui/tabs';
 
-export default async function EntriesPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
-  const { 'comp-slug': slug } = await params;
+// The three views of the entries screen; the Tabs generic ties the panel keys to this list.
+const TAB_IDS = ['add', 'awaiting', 'registered'] as const;
+type TabId = (typeof TAB_IDS)[number];
+
+export default async function EntriesPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ 'comp-slug': string }>;
+  searchParams: Promise<{ tab?: string | string[] }>;
+}) {
+  const [{ 'comp-slug': slug }, { tab }] = await Promise.all([params, searchParams]);
   const comp = await getCompBySlug(slug);
 
   if (!comp) {
@@ -101,6 +111,12 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
     ),
   }));
 
+  // A ?tab= in the URL (written by the Tabs control, or a shared link) wins; otherwise a fresh
+  // comp opens onto registering its first lifters, and once entries exist the day-to-day working
+  // view (weigh-in corrections, search) is the list.
+  const requestedTab = TAB_IDS.find((id) => id === tab);
+  const initialTabId: TabId = requestedTab ?? (entries.length > 0 ? 'registered' : 'add');
+
   return (
     <div className="space-y-6">
       <div>
@@ -113,9 +129,8 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
           { id: 'awaiting', label: 'Awaiting approval', badge: submissions.length },
           { id: 'registered', label: 'Registered lifters' },
         ]}
-        // A fresh comp opens onto registering its first lifters; once entries exist the day-to-day
-        // working view (weigh-in corrections, search) is the list.
-        initialTabId={entries.length > 0 ? 'registered' : 'add'}
+        initialTabId={initialTabId}
+        searchParam="tab"
         panels={{
           add: (
             <div className="space-y-6">
