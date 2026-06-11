@@ -54,12 +54,13 @@ afterEach(() => {
 });
 
 describe('SubmissionsInbox', () => {
-  it('renders nothing when there are no pending submissions', () => {
-    const { container } = render(<SubmissionsInbox competitionId={COMP_ID} submissions={[]} />);
-    expect(container).toBeEmptyDOMElement();
+  it('shows a teaching empty state when there are no pending submissions', () => {
+    render(<SubmissionsInbox competitionId={COMP_ID} submissions={[]} />);
+    expect(screen.getByText('No entries awaiting approval')).toBeInTheDocument();
+    expect(screen.getByText(/Share the form from the Add lifters tab/)).toBeInTheDocument();
   });
 
-  it('shows a red card with only the answers the lifter gave, plus the count', () => {
+  it('shows a red card with only the answers the lifter gave', () => {
     render(
       <SubmissionsInbox
         competitionId={COMP_ID}
@@ -67,7 +68,6 @@ describe('SubmissionsInbox', () => {
       />,
     );
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument();
     expect(screen.getByText('Iron Works')).toBeInTheDocument();
     expect(screen.getByText('410 kg')).toBeInTheDocument();
     expect(screen.getByText('487.5 kg')).toBeInTheDocument();

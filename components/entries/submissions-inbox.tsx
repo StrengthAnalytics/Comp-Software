@@ -11,6 +11,7 @@ import {
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { useEntrySubmissionsSubscription } from '@/lib/realtime/use-entry-submissions-subscription';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 
 // What the entries page passes per pending submission — the card shows exactly what the lifter
 // answered, so every toggleable field is nullable.
@@ -200,25 +201,25 @@ function SubmissionCard({
   );
 }
 
-// The public entry form's review inbox at the top of the entries screen: every pending submission
-// as a red card, refreshing live as lifters submit (or another device reviews). Renders nothing
-// when the inbox is empty — the screen stays exactly as it was before the feature.
+// The public entry form's review inbox — the "Awaiting approval" tab on the entries screen: every
+// pending submission as a red card, refreshing live as lifters submit (or another device reviews).
+// The tab's count badge comes from the same server-snapshot list, so a review here updates it too.
+// The label and count live on the tab, so the panel itself is just the cards (or the empty state).
 export function SubmissionsInbox({ competitionId, submissions }: SubmissionsInboxProps) {
   const scheduleRefresh = useDebouncedRefresh();
   useEntrySubmissionsSubscription(competitionId, scheduleRefresh);
 
   if (submissions.length === 0) {
-    return null;
+    return (
+      <EmptyState
+        title="No entries awaiting approval"
+        description="When lifters register through the public entry form, their submissions wait here for your review — nothing joins the competition until you approve it. Share the form from the Add lifters tab."
+      />
+    );
   }
 
   return (
     <section aria-label="Entry submissions awaiting approval">
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="text-base font-semibold tracking-tight">Entry submissions</h2>
-        <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
-          {submissions.length}
-        </span>
-      </div>
       <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {submissions.map((submission) => (
           <SubmissionCard

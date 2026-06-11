@@ -5,12 +5,14 @@ import { LIFTS_FOR_EVENT } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
 import { parseEntryFormConfig } from '@/types/entry-form';
 import {
-  EntriesManager,
+  AddLiftersPanel,
+  RegisteredLiftersPanel,
   type EntryLifter,
   type EntryWithLifter,
 } from '@/components/entries/entries-manager';
 import { EntryFormDesigner } from '@/components/entries/entry-form-designer';
 import { SubmissionsInbox, type PendingSubmission } from '@/components/entries/submissions-inbox';
+import { Tabs } from '@/components/ui/tabs';
 
 export default async function EntriesPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
@@ -100,30 +102,52 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
   }));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Entries &amp; weigh-in</h1>
       </div>
 
-      <SubmissionsInbox competitionId={comp.id} submissions={submissions} />
-
-      <EntriesManager
-        competitionId={comp.id}
-        competitionName={comp.name}
-        competitionStatus={comp.status}
-        competitionStartsOn={comp.starts_on}
-        lifts={LIFTS_FOR_EVENT[comp.event_type]}
-        ageCategories={ageCategories ?? []}
-        weightClasses={weightClasses ?? []}
-        entries={entries}
-      />
-
-      <EntryFormDesigner
-        competitionId={comp.id}
-        slug={comp.slug}
-        competitionStatus={comp.status}
-        initialConfig={parseEntryFormConfig(comp.entry_form)}
-        initialOpen={comp.entry_form_open}
+      <Tabs
+        tabs={[
+          { id: 'add', label: 'Add lifters' },
+          { id: 'awaiting', label: 'Awaiting approval', badge: submissions.length },
+          { id: 'registered', label: 'Registered lifters' },
+        ]}
+        // A fresh comp opens onto registering its first lifters; once entries exist the day-to-day
+        // working view (weigh-in corrections, search) is the list.
+        initialTabId={entries.length > 0 ? 'registered' : 'add'}
+        panels={{
+          add: (
+            <div className="space-y-6">
+              <AddLiftersPanel
+                competitionId={comp.id}
+                competitionStartsOn={comp.starts_on}
+                lifts={LIFTS_FOR_EVENT[comp.event_type]}
+                entries={entries}
+              />
+              <EntryFormDesigner
+                competitionId={comp.id}
+                slug={comp.slug}
+                competitionStatus={comp.status}
+                initialConfig={parseEntryFormConfig(comp.entry_form)}
+                initialOpen={comp.entry_form_open}
+              />
+            </div>
+          ),
+          awaiting: <SubmissionsInbox competitionId={comp.id} submissions={submissions} />,
+          registered: (
+            <RegisteredLiftersPanel
+              competitionId={comp.id}
+              competitionName={comp.name}
+              competitionStatus={comp.status}
+              competitionStartsOn={comp.starts_on}
+              lifts={LIFTS_FOR_EVENT[comp.event_type]}
+              ageCategories={ageCategories ?? []}
+              weightClasses={weightClasses ?? []}
+              entries={entries}
+            />
+          ),
+        }}
       />
     </div>
   );

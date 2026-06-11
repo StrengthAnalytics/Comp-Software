@@ -939,7 +939,49 @@ function RecalculateAgeCategories({
   );
 }
 
-export function EntriesManager({
+// The "Add lifters" tab: the two admin registration paths — single registration and bulk import —
+// gated on the comp having a date (age categories derive from it). The public entry form designer
+// (the third way lifters join) is composed alongside this panel by the entries page.
+export function AddLiftersPanel({
+  competitionId,
+  competitionStartsOn,
+  lifts,
+  entries,
+}: {
+  competitionId: string;
+  competitionStartsOn: string | null;
+  lifts: Lifts;
+  entries: EntryWithLifter[];
+}) {
+  const registeredLifterIds = new Set(entries.map((entry) => entry.lifter.id));
+
+  if (competitionStartsOn === null) {
+    return (
+      <section className="rounded-lg border border-amber-300 bg-amber-50 p-6">
+        <h2 className="text-lg font-semibold tracking-tight text-amber-900">Set a competition date first</h2>
+        <p className="mt-1 text-sm text-amber-800">
+          Lifters are assigned an age category automatically from the competition date and each lifter&rsquo;s date
+          of birth, so adding lifters is disabled until this competition has a date. Add one on the{' '}
+          <a className="font-medium underline" href={`/comps/${competitionId}/edit`}>
+            Setup screen
+          </a>
+          , then come back to register lifters.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <AddEntry competitionId={competitionId} registeredLifterIds={registeredLifterIds} />
+      <BulkImport competitionId={competitionId} lifts={lifts} />
+    </div>
+  );
+}
+
+// The "Registered lifters" tab: the lifter list with search and inline weigh-in editing, the
+// recalculate/export controls, and the delete-all danger zone.
+export function RegisteredLiftersPanel({
   competitionId,
   competitionName,
   competitionStatus,
@@ -958,7 +1000,6 @@ export function EntriesManager({
   weightClasses: WeightClassOption[];
   entries: EntryWithLifter[];
 }) {
-  const registeredLifterIds = new Set(entries.map((entry) => entry.lifter.id));
   const [query, setQuery] = useState('');
 
   // Real-time: when an entry changes on another screen — a weigh-in save, or the head table correcting
@@ -966,7 +1007,10 @@ export function EntriesManager({
   // reconciles the change. A card with no unsaved edits adopts it; one mid-edit keeps the operator's
   // edits and flags the incoming change (see EntryCard / reconcileForm). Coalesced into one refresh, and
   // scoped to this competition (inherits RLS). New registrations and removals from elsewhere arrive the
-  // same way, re-running the server fetch that joins the lifter and re-sorts the list.
+  // same way, re-running the server fetch that joins the lifter and re-sorts the list. This panel owns
+  // the page's entries subscription: the tab panels all stay mounted (inactive ones are hidden, not
+  // unmounted), so it keeps running — and keeps the other tabs' server props fresh — whichever tab is
+  // showing.
   const scheduleRefresh = useDebouncedRefresh();
   useEntriesSubscription(competitionId, scheduleRefresh);
 
@@ -983,25 +1027,6 @@ export function EntriesManager({
 
   return (
     <div className="space-y-6">
-      {hasDate ? (
-        <>
-          <AddEntry competitionId={competitionId} registeredLifterIds={registeredLifterIds} />
-          <BulkImport competitionId={competitionId} lifts={lifts} />
-        </>
-      ) : (
-        <section className="rounded-lg border border-amber-300 bg-amber-50 p-6">
-          <h2 className="text-lg font-semibold tracking-tight text-amber-900">Set a competition date first</h2>
-          <p className="mt-1 text-sm text-amber-800">
-            Lifters are assigned an age category automatically from the competition date and each lifter&rsquo;s date
-            of birth, so adding lifters is disabled until this competition has a date. Add one on the{' '}
-            <a className="font-medium underline" href={`/comps/${competitionId}/edit`}>
-              Setup screen
-            </a>
-            , then come back to register lifters.
-          </p>
-        </section>
-      )}
-
       <div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-tight">
@@ -1033,7 +1058,7 @@ export function EntriesManager({
           <EmptyState
             className="mt-4"
             title="No lifters registered yet"
-            description="Register each lifter individually with the Add a lifter card above, or paste a whole start list at once with Bulk import. Age categories are assigned automatically from each lifter's date of birth."
+            description="Register lifters on the Add lifters tab — individually, with Bulk import, or by sharing the public entry form. Age categories are assigned automatically from each lifter's date of birth."
           />
         ) : (
           <div className="mt-4 space-y-4">
