@@ -43,7 +43,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
       supabase
         .from('entry_submissions')
         .select(
-          'id, first_name, surname, gender, date_of_birth, club, ipf_member_id, division, weight_class, predicted_total_kg, kit_choice, event_choice, instagram, email, phone, disclaimer_accepted_at, created_at',
+          'id, first_name, surname, gender, date_of_birth, club, ipf_member_id, division, weight_class, predicted_total_kg, recent_best_total_kg, kit_choice, event_choice, instagram, email, phone, disclaimer_accepted_at, created_at',
         )
         .eq('competition_id', comp.id)
         .eq('status', 'pending')
@@ -86,6 +86,7 @@ export default async function EntriesPage({ params }: { params: Promise<{ 'comp-
     division: row.division,
     weightClass: row.weight_class,
     predictedTotalKg: row.predicted_total_kg,
+    recentBestTotalKg: row.recent_best_total_kg,
     kitChoice: row.kit_choice,
     eventChoice: row.event_choice,
     instagram: row.instagram,

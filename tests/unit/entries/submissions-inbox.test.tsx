@@ -35,6 +35,7 @@ function submission(overrides?: Partial<PendingSubmission>): PendingSubmission {
     division: null,
     weightClass: '-63 kg',
     predictedTotalKg: 410,
+    recentBestTotalKg: null,
     kitChoice: 'classic',
     eventChoice: null,
     instagram: null,
@@ -59,11 +60,17 @@ describe('SubmissionsInbox', () => {
   });
 
   it('shows a red card with only the answers the lifter gave, plus the count', () => {
-    render(<SubmissionsInbox competitionId={COMP_ID} submissions={[submission()]} />);
+    render(
+      <SubmissionsInbox
+        competitionId={COMP_ID}
+        submissions={[submission({ recentBestTotalKg: 487.5 })]}
+      />,
+    );
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
     expect(screen.getByText('1')).toBeInTheDocument();
     expect(screen.getByText('Iron Works')).toBeInTheDocument();
     expect(screen.getByText('410 kg')).toBeInTheDocument();
+    expect(screen.getByText('487.5 kg')).toBeInTheDocument();
     // The classic code shows as the lifter-facing "Raw".
     expect(screen.getByText('Raw')).toBeInTheDocument();
     expect(screen.getByText('Accepted')).toBeInTheDocument();

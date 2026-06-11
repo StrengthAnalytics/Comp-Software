@@ -25,6 +25,7 @@ export type PendingSubmission = {
   division: string | null;
   weightClass: string | null;
   predictedTotalKg: number | null;
+  recentBestTotalKg: number | null;
   kitChoice: string | null;
   eventChoice: string | null;
   instagram: string | null;
@@ -136,6 +137,10 @@ function SubmissionCard({
         <Detail
           label="Predicted total"
           value={submission.predictedTotalKg === null ? null : `${submission.predictedTotalKg} kg`}
+        />
+        <Detail
+          label="Best total (12 months)"
+          value={submission.recentBestTotalKg === null ? null : `${submission.recentBestTotalKg} kg`}
         />
         <Detail label="Kit" value={submission.kitChoice === null ? null : kitLabel(submission.kitChoice)} />
         <Detail

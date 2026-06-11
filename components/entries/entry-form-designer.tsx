@@ -32,6 +32,7 @@ const FIELD_HINTS: Partial<Record<EntryFormField, string>> = {
   division: 'The BP region / home nation they compete for.',
   weight_class: 'Lifters choose from this comp’s weight classes.',
   predicted_total: 'Their predicted total, in kg.',
+  recent_best_total: 'Their best competition total from the last 12 months, in kg — helps seed prime-time flights.',
   kit: 'Asked as “Raw or Equipped” (their preference — kit is still set per comp).',
   event: 'Asked as “Full power (SBD) or Bench only” (their preference — the event is still set per comp).',
   email: 'So you can reach them about their entry.',

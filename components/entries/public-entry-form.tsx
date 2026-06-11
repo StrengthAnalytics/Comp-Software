@@ -72,6 +72,7 @@ export function PublicEntryForm({
   const [division, setDivision] = useState('');
   const [weightClass, setWeightClass] = useState('');
   const [predictedTotal, setPredictedTotal] = useState('');
+  const [recentBestTotal, setRecentBestTotal] = useState('');
   const [kitChoice, setKitChoice] = useState('');
   const [eventChoice, setEventChoice] = useState('');
   const [instagram, setInstagram] = useState('');
@@ -108,6 +109,7 @@ export function PublicEntryForm({
     setFieldErrors(undefined);
 
     const predicted = predictedTotal.trim() === '' ? null : Number(predictedTotal);
+    const recentBest = recentBestTotal.trim() === '' ? null : Number(recentBestTotal);
     const input: SubmitEntryFormInput = {
       competitionId,
       website,
@@ -120,6 +122,7 @@ export function PublicEntryForm({
       division,
       weightClass,
       predictedTotalKg: predicted !== null && Number.isNaN(predicted) ? null : predicted,
+      recentBestTotalKg: recentBest !== null && Number.isNaN(recentBest) ? null : recentBest,
       kitChoice,
       eventChoice,
       instagram,
@@ -390,6 +393,33 @@ export function PublicEntryForm({
             className={INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.predictedTotalKg} />
+        </div>
+      )}
+
+      {f.recent_best_total === 'off' ? null : (
+        <div>
+          <label htmlFor="entry-recent-best-total" className={LABEL_CLASS}>
+            Best comp total from the last 12 months (kg)
+            <RequiredMark required={f.recent_best_total === 'required'} />
+          </label>
+          <input
+            id="entry-recent-best-total"
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.5"
+            required={f.recent_best_total === 'required'}
+            value={recentBestTotal}
+            onChange={(event) => setRecentBestTotal(event.target.value)}
+            className={INPUT_CLASS}
+          />
+          <p className="mt-1 text-xs text-neutral-500">
+            Your best total from a competition in the last 12 months
+            {f.recent_best_total === 'required'
+              ? '.'
+              : ' — leave blank if you haven’t competed in that time.'}
+          </p>
+          <FieldError messages={fieldErrors?.recentBestTotalKg} />
         </div>
       )}
 
