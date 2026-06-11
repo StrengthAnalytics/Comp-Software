@@ -43,6 +43,8 @@ import { numberToInput, parseOptionalNumber } from '@/lib/number-input';
 import { buttonClasses } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { IconChevronDown } from '@/components/shell/icons';
+import { usePersistentIdSet } from '@/lib/use-persistent-id-set';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
 
@@ -82,7 +84,7 @@ export type AgeCategoryOption = { id: string; name: string };
 export type WeightClassOption = { id: string; name: string; gender: string };
 
 const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+  'rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
 const GHOST_BUTTON = buttonClasses('secondary');
 const PRIMARY_BUTTON = buttonClasses('primary');
@@ -260,12 +262,16 @@ function EntryCard({
   lifts,
   ageCategories,
   weightClasses,
+  expanded,
+  onToggle,
 }: {
   competitionId: string;
   entry: EntryWithLifter;
   lifts: Lifts;
   ageCategories: AgeCategoryOption[];
   weightClasses: WeightClassOption[];
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<EntryFormValues>(() => entryToForm(entry));
@@ -373,204 +379,234 @@ function EntryCard({
     });
   }
 
+  // The collapsed row's at-a-glance summary, from the saved entry (not the in-edit form values).
+  const weightClassName =
+    entry.weight_class_id === null
+      ? null
+      : (weightClasses.find((weightClass) => weightClass.id === entry.weight_class_id)?.name ?? null);
+
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold tracking-tight">{fullName(entry.lifter)}</h3>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            {GENDER_LABELS[asGender(entry.lifter.gender)]}
-            {entry.lifter.ipf_member_id ? ` · Membership ${entry.lifter.ipf_member_id}` : ''}
-            {entry.lifter.club ? ` · ${entry.lifter.club}` : ''}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setEditingLifter((value) => !value)}
-            disabled={pending}
-            className={GHOST_BUTTON}
-          >
-            {editingLifter ? 'Close' : 'Edit lifter'}
-          </button>
-          <button type="button" onClick={remove} disabled={pending} className={GHOST_BUTTON}>
-            Remove
-          </button>
-        </div>
-      </div>
-
-      {editingLifter ? (
-        <LifterDetailsEditor lifter={entry.lifter} onClose={() => setEditingLifter(false)} />
-      ) : null}
-
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <label className="flex flex-col gap-1">
-          <span className={LABEL_CLASS}>Weight class</span>
-          <select
-            value={form.weightClassId}
-            onChange={(event) => update('weightClassId', event.target.value)}
-            className={INPUT_CLASS}
-          >
-            <option value="">—</option>
-            {classOptions.map((weightClass) => (
-              <option key={weightClass.id} value={weightClass.id}>
-                {weightClass.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className={LABEL_CLASS}>Age category</span>
-          <select
-            value={form.ageCategoryId}
-            onChange={(event) => update('ageCategoryId', event.target.value)}
-            className={INPUT_CLASS}
-          >
-            <option value="">—</option>
-            {ageCategories.map((ageCategory) => (
-              <option key={ageCategory.id} value={ageCategory.id}>
-                {ageCategory.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className={LABEL_CLASS}>Division</span>
-          <select
-            value={form.division}
-            onChange={(event) => update('division', event.target.value)}
-            className={INPUT_CLASS}
-          >
-            <option value="">—</option>
-            {BP_DIVISIONS.map((division) => (
-              <option key={division} value={division}>
-                {division}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <NumberField label="Lot number" value={form.lotNumber} onChange={(value) => update('lotNumber', value)} step="1" />
-        <NumberField
-          label="Bodyweight (kg)"
-          value={form.bodyweight}
-          onChange={(value) => update('bodyweight', value)}
-          step="0.01"
+    <section className="rounded-lg border border-emerald-200 bg-emerald-50">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 text-left"
+      >
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-900">
+          {fullName(entry.lifter)}
+        </span>
+        <span className="text-xs text-neutral-500">
+          {GENDER_LABELS[asGender(entry.lifter.gender)]}
+          {weightClassName ? ` · ${weightClassName}` : ''}
+          {entry.bodyweight_kg === null ? '' : ` · ${entry.bodyweight_kg} kg`}
+          {entry.lifter.club ? ` · ${entry.lifter.club}` : ''}
+        </span>
+        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+          {ENTRY_STATUS_LABELS[entry.status]}
+        </span>
+        <IconChevronDown
+          className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${expanded ? 'rotate-180' : ''}`}
         />
+      </button>
 
-        {lifts.squat ? (
-          <NumberField
-            label="Opening squat (kg)"
-            value={form.openerSquat}
-            onChange={(value) => update('openerSquat', value)}
-            step="0.5"
-          />
-        ) : null}
-        {lifts.bench ? (
-          <NumberField
-            label="Opening bench (kg)"
-            value={form.openerBench}
-            onChange={(value) => update('openerBench', value)}
-            step="0.5"
-          />
-        ) : null}
-        {lifts.deadlift ? (
-          <NumberField
-            label="Opening deadlift (kg)"
-            value={form.openerDeadlift}
-            onChange={(value) => update('openerDeadlift', value)}
-            step="0.5"
-          />
-        ) : null}
+      {expanded ? (
+        <div className="border-t border-emerald-100 px-4 pb-4">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-neutral-500">
+              {GENDER_LABELS[asGender(entry.lifter.gender)]}
+              {entry.lifter.ipf_member_id ? ` · Membership ${entry.lifter.ipf_member_id}` : ''}
+              {entry.lifter.club ? ` · ${entry.lifter.club}` : ''}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingLifter((value) => !value)}
+                disabled={pending}
+                className={GHOST_BUTTON}
+              >
+                {editingLifter ? 'Close' : 'Edit lifter'}
+              </button>
+              <button type="button" onClick={remove} disabled={pending} className={GHOST_BUTTON}>
+                Remove
+              </button>
+            </div>
+          </div>
 
-        {lifts.squat ? (
-          <NumberField
-            label="Squat rack height"
-            value={form.rackSquat}
-            onChange={(value) => update('rackSquat', value)}
-            step="1"
-          />
-        ) : null}
-        {lifts.squat ? (
-          <OptionalSelectField
-            label="Squat rack setting"
-            value={form.squatSetting}
-            onChange={(value) => update('squatSetting', value)}
-            options={SQUAT_RACK_SETTINGS}
-            labels={SQUAT_RACK_SETTING_LABELS}
-          />
-        ) : null}
-        {lifts.bench ? (
-          <NumberField
-            label="Bench height"
-            value={form.rackBench}
-            onChange={(value) => update('rackBench', value)}
-            step="1"
-          />
-        ) : null}
-        {lifts.bench ? (
-          <NumberField
-            label="Bench safety height"
-            value={form.benchSafety}
-            onChange={(value) => update('benchSafety', value)}
-            step="1"
-          />
-        ) : null}
-        {lifts.bench ? (
-          <OptionalSelectField
-            label="Bench spotting"
-            value={form.benchSpotting}
-            onChange={(value) => update('benchSpotting', value)}
-            options={BENCH_SPOTTINGS}
-            labels={BENCH_SPOTTING_LABELS}
-          />
-        ) : null}
+          {editingLifter ? (
+            <LifterDetailsEditor lifter={entry.lifter} onClose={() => setEditingLifter(false)} />
+          ) : null}
 
-        <label className="flex flex-col gap-1">
-          <span className={LABEL_CLASS}>Status</span>
-          <select
-            value={form.status}
-            onChange={(event) => {
-              // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
-              update('status', event.target.value as EntryStatus);
-            }}
-            className={INPUT_CLASS}
-          >
-            {ENTRY_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {ENTRY_STATUS_LABELS[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <label className="flex flex-col gap-1">
+              <span className={LABEL_CLASS}>Weight class</span>
+              <select
+                value={form.weightClassId}
+                onChange={(event) => update('weightClassId', event.target.value)}
+                className={INPUT_CLASS}
+              >
+                <option value="">—</option>
+                {classOptions.map((weightClass) => (
+                  <option key={weightClass.id} value={weightClass.id}>
+                    {weightClass.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-      {externalUpdate ? (
-        <p
-          role="status"
-          className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
-        >
-          This lifter was updated on another screen while you were editing. Saving will overwrite that
-          change.
-          <button type="button" onClick={loadExternalUpdate} className="font-medium underline">
-            Load their changes
-          </button>
-          <span className="text-amber-700">(discards your unsaved edits)</span>
-        </p>
+            <label className="flex flex-col gap-1">
+              <span className={LABEL_CLASS}>Age category</span>
+              <select
+                value={form.ageCategoryId}
+                onChange={(event) => update('ageCategoryId', event.target.value)}
+                className={INPUT_CLASS}
+              >
+                <option value="">—</option>
+                {ageCategories.map((ageCategory) => (
+                  <option key={ageCategory.id} value={ageCategory.id}>
+                    {ageCategory.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className={LABEL_CLASS}>Division</span>
+              <select
+                value={form.division}
+                onChange={(event) => update('division', event.target.value)}
+                className={INPUT_CLASS}
+              >
+                <option value="">—</option>
+                {BP_DIVISIONS.map((division) => (
+                  <option key={division} value={division}>
+                    {division}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <NumberField label="Lot number" value={form.lotNumber} onChange={(value) => update('lotNumber', value)} step="1" />
+            <NumberField
+              label="Bodyweight (kg)"
+              value={form.bodyweight}
+              onChange={(value) => update('bodyweight', value)}
+              step="0.01"
+            />
+
+            {lifts.squat ? (
+              <NumberField
+                label="Opening squat (kg)"
+                value={form.openerSquat}
+                onChange={(value) => update('openerSquat', value)}
+                step="0.5"
+              />
+            ) : null}
+            {lifts.bench ? (
+              <NumberField
+                label="Opening bench (kg)"
+                value={form.openerBench}
+                onChange={(value) => update('openerBench', value)}
+                step="0.5"
+              />
+            ) : null}
+            {lifts.deadlift ? (
+              <NumberField
+                label="Opening deadlift (kg)"
+                value={form.openerDeadlift}
+                onChange={(value) => update('openerDeadlift', value)}
+                step="0.5"
+              />
+            ) : null}
+
+            {lifts.squat ? (
+              <NumberField
+                label="Squat rack height"
+                value={form.rackSquat}
+                onChange={(value) => update('rackSquat', value)}
+                step="1"
+              />
+            ) : null}
+            {lifts.squat ? (
+              <OptionalSelectField
+                label="Squat rack setting"
+                value={form.squatSetting}
+                onChange={(value) => update('squatSetting', value)}
+                options={SQUAT_RACK_SETTINGS}
+                labels={SQUAT_RACK_SETTING_LABELS}
+              />
+            ) : null}
+            {lifts.bench ? (
+              <NumberField
+                label="Bench height"
+                value={form.rackBench}
+                onChange={(value) => update('rackBench', value)}
+                step="1"
+              />
+            ) : null}
+            {lifts.bench ? (
+              <NumberField
+                label="Bench safety height"
+                value={form.benchSafety}
+                onChange={(value) => update('benchSafety', value)}
+                step="1"
+              />
+            ) : null}
+            {lifts.bench ? (
+              <OptionalSelectField
+                label="Bench spotting"
+                value={form.benchSpotting}
+                onChange={(value) => update('benchSpotting', value)}
+                options={BENCH_SPOTTINGS}
+                labels={BENCH_SPOTTING_LABELS}
+              />
+            ) : null}
+
+            <label className="flex flex-col gap-1">
+              <span className={LABEL_CLASS}>Status</span>
+              <select
+                value={form.status}
+                onChange={(event) => {
+                  // The select only renders ENTRY_STATUSES values, so this narrowing is exact.
+                  update('status', event.target.value as EntryStatus);
+                }}
+                className={INPUT_CLASS}
+              >
+                {ENTRY_STATUSES.map((value) => (
+                  <option key={value} value={value}>
+                    {ENTRY_STATUS_LABELS[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {externalUpdate ? (
+            <p
+              role="status"
+              className="mt-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+            >
+              This lifter was updated on another screen while you were editing. Saving will overwrite that
+              change.
+              <button type="button" onClick={loadExternalUpdate} className="font-medium underline">
+                Load their changes
+              </button>
+              <span className="text-amber-700">(discards your unsaved edits)</span>
+            </p>
+          ) : null}
+
+          <div className="mt-4 flex items-center gap-3">
+            <button type="button" onClick={save} disabled={pending} className={PRIMARY_BUTTON}>
+              {pending ? 'Saving…' : 'Save'}
+            </button>
+            {error ? (
+              <p role="alert" className="text-sm text-red-600">
+                {error}
+              </p>
+            ) : null}
+          </div>
+        </div>
       ) : null}
-
-      <div className="mt-4 flex items-center gap-3">
-        <button type="button" onClick={save} disabled={pending} className={PRIMARY_BUTTON}>
-          {pending ? 'Saving…' : 'Save'}
-        </button>
-        {error ? (
-          <p role="alert" className="text-sm text-red-600">
-            {error}
-          </p>
-        ) : null}
-      </div>
     </section>
   );
 }
@@ -1014,6 +1050,10 @@ export function RegisteredLiftersPanel({
   const scheduleRefresh = useDebouncedRefresh();
   useEntriesSubscription(competitionId, scheduleRefresh);
 
+  // Which lifter cards are open, remembered per browser and per comp (collapsed is the default,
+  // so the list reads as one row per lifter on first open).
+  const [isExpanded, toggleExpanded] = usePersistentIdSet(`entries:expanded:${competitionId}`);
+
   const normalizedQuery = query.trim().toLowerCase();
   const visibleEntries = useMemo(
     () =>
@@ -1061,7 +1101,7 @@ export function RegisteredLiftersPanel({
             description="Register lifters on the Add lifters tab — individually, with Bulk import, or by sharing the public entry form. Age categories are assigned automatically from each lifter's date of birth."
           />
         ) : (
-          <div className="mt-4 space-y-4">
+          <div className="mt-4 space-y-3">
             {visibleEntries.length === 0 ? (
               <p className="text-sm text-neutral-500">No lifters match “{query.trim()}”.</p>
             ) : (
@@ -1073,6 +1113,8 @@ export function RegisteredLiftersPanel({
                   lifts={lifts}
                   ageCategories={ageCategories}
                   weightClasses={weightClasses}
+                  expanded={isExpanded(entry.id)}
+                  onToggle={() => toggleExpanded(entry.id)}
                 />
               ))
             )}

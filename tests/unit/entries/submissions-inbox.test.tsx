@@ -51,7 +51,14 @@ function submission(overrides?: Partial<PendingSubmission>): PendingSubmission {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  // Expanded-card state persists per browser; clear it so each test starts collapsed.
+  globalThis.localStorage.clear();
 });
+
+// Cards collapse to a summary row by default; the details and actions are behind a click.
+function expandCard(name: RegExp | string) {
+  fireEvent.click(screen.getByRole('button', { name }));
+}
 
 describe('SubmissionsInbox', () => {
   it('shows a teaching empty state when there are no pending submissions', () => {
@@ -60,14 +67,29 @@ describe('SubmissionsInbox', () => {
     expect(screen.getByText(/Share the form from the Add lifters tab/)).toBeInTheDocument();
   });
 
-  it('shows a red card with only the answers the lifter gave', () => {
+  it('collapses each card to a summary row until clicked open', () => {
+    render(<SubmissionsInbox competitionId={COMP_ID} submissions={[submission()]} />);
+    // The summary row shows who and when…
+    expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    expect(screen.getByText('Awaiting approval')).toBeInTheDocument();
+    // …but the details and actions wait behind the expand.
+    expect(screen.queryByText('Iron Works')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Approve entry' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Jane Smith/ })).toHaveAttribute('aria-expanded', 'false');
+
+    expandCard(/Jane Smith/);
+    expect(screen.getByText('Iron Works')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve entry' })).toBeInTheDocument();
+  });
+
+  it('shows only the answers the lifter gave once expanded', () => {
     render(
       <SubmissionsInbox
         competitionId={COMP_ID}
         submissions={[submission({ recentBestTotalKg: 487.5 })]}
       />,
     );
-    expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+    expandCard(/Jane Smith/);
     expect(screen.getByText('Iron Works')).toBeInTheDocument();
     expect(screen.getByText('410 kg')).toBeInTheDocument();
     expect(screen.getByText('487.5 kg')).toBeInTheDocument();
@@ -79,16 +101,27 @@ describe('SubmissionsInbox', () => {
     expect(screen.queryByText('Phone')).toBeNull();
   });
 
-  it('flags a likely duplicate', () => {
+  it('remembers an expanded card in localStorage', () => {
+    render(<SubmissionsInbox competitionId={COMP_ID} submissions={[submission()]} />);
+    expandCard(/Jane Smith/);
+    expect(
+      JSON.parse(globalThis.localStorage.getItem(`submissions:expanded:${COMP_ID}`) ?? '[]'),
+    ).toEqual(['sub-1']);
+  });
+
+  it('flags a likely duplicate on the collapsed row and explains when expanded', () => {
     render(
       <SubmissionsInbox competitionId={COMP_ID} submissions={[submission({ possibleDuplicate: true })]} />,
     );
+    expect(screen.getByText('Possible duplicate')).toBeInTheDocument();
+    expandCard(/Jane Smith/);
     expect(screen.getByText(/already registered in this competition/)).toBeInTheDocument();
   });
 
   it('approves through the action', async () => {
     approveAction.mockResolvedValue({ status: 'ok', data: undefined });
     render(<SubmissionsInbox competitionId={COMP_ID} submissions={[submission()]} />);
+    expandCard(/Jane Smith/);
     fireEvent.click(screen.getByRole('button', { name: 'Approve entry' }));
     await waitFor(() =>
       expect(approveAction).toHaveBeenCalledWith({ competitionId: COMP_ID, submissionId: 'sub-1' }),
@@ -101,6 +134,7 @@ describe('SubmissionsInbox', () => {
       message: 'A lifter with this name is already registered in this competition.',
     });
     render(<SubmissionsInbox competitionId={COMP_ID} submissions={[submission()]} />);
+    expandCard(/Jane Smith/);
     fireEvent.click(screen.getByRole('button', { name: 'Approve entry' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('already registered'));
   });
@@ -108,6 +142,7 @@ describe('SubmissionsInbox', () => {
   it('rejects only after an inline confirm', async () => {
     rejectAction.mockResolvedValue({ status: 'ok', data: undefined });
     render(<SubmissionsInbox competitionId={COMP_ID} submissions={[submission()]} />);
+    expandCard(/Jane Smith/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     expect(rejectAction).not.toHaveBeenCalled();
@@ -120,6 +155,7 @@ describe('SubmissionsInbox', () => {
 
   it('backs out of a reject with Cancel', () => {
     render(<SubmissionsInbox competitionId={COMP_ID} submissions={[submission()]} />);
+    expandCard(/Jane Smith/);
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('button', { name: 'Approve entry' })).toBeInTheDocument();

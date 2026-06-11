@@ -10,8 +10,10 @@ import {
 } from '@/lib/constants';
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { useEntrySubmissionsSubscription } from '@/lib/realtime/use-entry-submissions-subscription';
+import { usePersistentIdSet } from '@/lib/use-persistent-id-set';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { IconChevronDown } from '@/components/shell/icons';
 
 // What the entries page passes per pending submission — the card shows exactly what the lifter
 // answered, so every toggleable field is nullable.
@@ -76,16 +78,21 @@ function Detail({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-// One pending submission: a red-tinted review card. Approve runs the standard registration path
-// server-side; Reject asks for an inline confirm first. Both reconcile via router.refresh — the
-// card leaves the inbox when the server snapshot no longer lists it as pending.
+// One pending submission: a full-width red-tinted review card, collapsed to a one-line summary row
+// (name, duplicate flag, when it arrived) until the row is clicked open. Approve runs the standard
+// registration path server-side; Reject asks for an inline confirm first. Both reconcile via
+// router.refresh — the card leaves the inbox when the server snapshot no longer lists it as pending.
 function SubmissionCard({
   competitionId,
   submission,
+  expanded,
+  onToggle,
   onResolved,
 }: {
   competitionId: string;
   submission: PendingSubmission;
+  expanded: boolean;
+  onToggle: () => void;
   onResolved: () => void;
 }) {
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null);
@@ -109,94 +116,109 @@ function SubmissionCard({
   const name = `${submission.firstName} ${submission.surname}`.trim();
 
   return (
-    <li className="rounded-lg border border-red-200 bg-red-50 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-neutral-900">{name}</p>
-          <p className="text-xs text-neutral-500">
-            Submitted {formatSubmittedAt(submission.createdAt)}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+    <li className="rounded-lg border border-red-200 bg-red-50">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-4 py-3 text-left"
+      >
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-900">{name}</span>
+        {submission.possibleDuplicate ? (
+          <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+            Possible duplicate
+          </span>
+        ) : null}
+        <span className="text-xs text-neutral-500">
+          Submitted {formatSubmittedAt(submission.createdAt)}
+        </span>
+        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
           Awaiting approval
         </span>
-      </div>
+        <IconChevronDown
+          className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${expanded ? 'rotate-180' : ''}`}
+        />
+      </button>
 
-      {submission.possibleDuplicate ? (
-        <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
-          A lifter with this name is already registered in this competition — check before approving.
-        </p>
+      {expanded ? (
+        <div className="border-t border-red-100 px-4 pb-4">
+          {submission.possibleDuplicate ? (
+            <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
+              A lifter with this name is already registered in this competition — check before approving.
+            </p>
+          ) : null}
+
+          <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
+            <Detail label="Sex" value={submission.gender === 'male' ? 'Male' : 'Female'} />
+            <Detail label="Date of birth" value={submission.dateOfBirth} />
+            <Detail label="Club" value={submission.club} />
+            <Detail label="Membership no." value={submission.ipfMemberId} />
+            <Detail label="Division" value={submission.division} />
+            <Detail label="Weight class" value={submission.weightClass} />
+            <Detail
+              label="Predicted total"
+              value={submission.predictedTotalKg === null ? null : `${submission.predictedTotalKg} kg`}
+            />
+            <Detail
+              label="Best total (12 months)"
+              value={submission.recentBestTotalKg === null ? null : `${submission.recentBestTotalKg} kg`}
+            />
+            <Detail label="Kit" value={submission.kitChoice === null ? null : kitLabel(submission.kitChoice)} />
+            <Detail
+              label="Event"
+              value={submission.eventChoice === null ? null : eventLabel(submission.eventChoice)}
+            />
+            <Detail
+              label="Instagram"
+              value={submission.instagram === null ? null : `@${submission.instagram}`}
+            />
+            <Detail label="Email" value={submission.email} />
+            <Detail label="Phone" value={submission.phone} />
+            <Detail
+              label="Disclaimer"
+              value={submission.disclaimerAcceptedAt === null ? null : 'Accepted'}
+            />
+          </dl>
+
+          <div className="mt-3 flex items-center gap-2 border-t border-red-100 pt-3">
+            {confirmingReject ? (
+              <>
+                <Button variant="danger" size="sm" disabled={busy !== null} onClick={() => review('reject')}>
+                  {busy === 'reject' ? 'Rejecting…' : 'Confirm reject'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy !== null}
+                  onClick={() => setConfirmingReject(false)}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button size="sm" disabled={busy !== null} onClick={() => review('approve')}>
+                  {busy === 'approve' ? 'Approving…' : 'Approve entry'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy !== null}
+                  onClick={() => setConfirmingReject(true)}
+                >
+                  Reject
+                </Button>
+              </>
+            )}
+          </div>
+
+          {error === null ? null : (
+            <p role="alert" className="mt-2 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+        </div>
       ) : null}
-
-      <dl className="mt-3 space-y-1 border-t border-red-100 pt-3">
-        <Detail label="Sex" value={submission.gender === 'male' ? 'Male' : 'Female'} />
-        <Detail label="Date of birth" value={submission.dateOfBirth} />
-        <Detail label="Club" value={submission.club} />
-        <Detail label="Membership no." value={submission.ipfMemberId} />
-        <Detail label="Division" value={submission.division} />
-        <Detail label="Weight class" value={submission.weightClass} />
-        <Detail
-          label="Predicted total"
-          value={submission.predictedTotalKg === null ? null : `${submission.predictedTotalKg} kg`}
-        />
-        <Detail
-          label="Best total (12 months)"
-          value={submission.recentBestTotalKg === null ? null : `${submission.recentBestTotalKg} kg`}
-        />
-        <Detail label="Kit" value={submission.kitChoice === null ? null : kitLabel(submission.kitChoice)} />
-        <Detail
-          label="Event"
-          value={submission.eventChoice === null ? null : eventLabel(submission.eventChoice)}
-        />
-        <Detail
-          label="Instagram"
-          value={submission.instagram === null ? null : `@${submission.instagram}`}
-        />
-        <Detail label="Email" value={submission.email} />
-        <Detail label="Phone" value={submission.phone} />
-        <Detail
-          label="Disclaimer"
-          value={submission.disclaimerAcceptedAt === null ? null : 'Accepted'}
-        />
-      </dl>
-
-      <div className="mt-3 flex items-center gap-2 border-t border-red-100 pt-3">
-        {confirmingReject ? (
-          <>
-            <Button variant="danger" size="sm" disabled={busy !== null} onClick={() => review('reject')}>
-              {busy === 'reject' ? 'Rejecting…' : 'Confirm reject'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy !== null}
-              onClick={() => setConfirmingReject(false)}
-            >
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button size="sm" disabled={busy !== null} onClick={() => review('approve')}>
-              {busy === 'approve' ? 'Approving…' : 'Approve entry'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={busy !== null}
-              onClick={() => setConfirmingReject(true)}
-            >
-              Reject
-            </Button>
-          </>
-        )}
-      </div>
-
-      {error === null ? null : (
-        <p role="alert" className="mt-2 text-sm text-red-700">
-          {error}
-        </p>
-      )}
     </li>
   );
 }
@@ -208,6 +230,8 @@ function SubmissionCard({
 export function SubmissionsInbox({ competitionId, submissions }: SubmissionsInboxProps) {
   const scheduleRefresh = useDebouncedRefresh();
   useEntrySubmissionsSubscription(competitionId, scheduleRefresh);
+  // Which cards are open, remembered per browser and per comp (collapsed is the default).
+  const [isExpanded, toggleExpanded] = usePersistentIdSet(`submissions:expanded:${competitionId}`);
 
   if (submissions.length === 0) {
     return (
@@ -220,12 +244,14 @@ export function SubmissionsInbox({ competitionId, submissions }: SubmissionsInbo
 
   return (
     <section aria-label="Entry submissions awaiting approval">
-      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <ul className="space-y-3">
         {submissions.map((submission) => (
           <SubmissionCard
             key={submission.id}
             competitionId={competitionId}
             submission={submission}
+            expanded={isExpanded(submission.id)}
+            onToggle={() => toggleExpanded(submission.id)}
             onResolved={scheduleRefresh}
           />
         ))}
