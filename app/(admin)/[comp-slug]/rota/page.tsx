@@ -37,15 +37,19 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
         .select('id, role_id, name, email, phone, created_at')
         .eq('competition_id', comp.id)
         .order('created_at', { ascending: true }),
-      // For the "Generate from sessions" card: how many sessions exist and how many lack a column.
-      supabase.from('sessions').select('id').eq('competition_id', comp.id),
+      // For the "Generate from sessions" card and the per-column "Duplicate to…" control: the comp's
+      // sessions — those without a column are the available targets.
+      supabase.from('sessions').select('id, name').eq('competition_id', comp.id).order('sort_order', { ascending: true }),
     ]);
 
   const linkedSessionIds = new Set(
     (sectionRows ?? []).map((section) => section.session_id).filter((id): id is string => id !== null),
   );
   const sessionCount = (sessionRows ?? []).length;
-  const pendingSessionCount = (sessionRows ?? []).filter((session) => !linkedSessionIds.has(session.id)).length;
+  const availableSessions = (sessionRows ?? [])
+    .filter((session) => !linkedSessionIds.has(session.id))
+    .map((session) => ({ id: session.id, name: session.name }));
+  const pendingSessionCount = availableSessions.length;
 
   const signupsByRole = new Map<string, RotaSignupSummary[]>();
   for (const row of signupRows ?? []) {
@@ -96,6 +100,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
         initialWithdrawalContact={comp.rota_withdrawal_contact}
         sessionCount={sessionCount}
         pendingSessionCount={pendingSessionCount}
+        availableSessions={availableSessions}
         sections={sections}
       />
     </div>

@@ -8,6 +8,7 @@ import {
   createRotaSectionAction,
   deleteRotaRoleAction,
   deleteRotaSectionAction,
+  duplicateRotaSectionToSessionAction,
   generateRotaFromSessionsAction,
   moveRotaRoleAction,
   moveRotaSectionAction,
@@ -56,6 +57,9 @@ export type RotaBuilderSection = {
   sort_order: number;
   roles: RotaBuilderRole[];
 };
+
+// A comp session that has no rota column yet — a possible target for "duplicate this column to…".
+export type RotaAvailableSession = { id: string; name: string };
 
 const INPUT_CLASS =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
@@ -623,6 +627,74 @@ function AddRoleForm({ competitionId, sectionId }: { competitionId: string; sect
   );
 }
 
+// Copies this column's roles onto a session that has no column yet (the new column's header comes
+// from that session). Hidden when every session already has a column.
+function DuplicateSectionControl({
+  competitionId,
+  sourceSectionId,
+  availableSessions,
+}: {
+  competitionId: string;
+  sourceSectionId: string;
+  availableSessions: RotaAvailableSession[];
+}) {
+  const router = useRouter();
+  const [targetId, setTargetId] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  if (availableSessions.length === 0) {
+    return null;
+  }
+
+  function duplicate() {
+    if (targetId === '') {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await duplicateRotaSectionToSessionAction({
+        competitionId,
+        sourceSectionId,
+        targetSessionId: targetId,
+      });
+      if (result.status === 'error') {
+        setError(result.message);
+        return;
+      }
+      setTargetId('');
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-3">
+      <span className="text-xs text-neutral-500">Copy these roles to a session with no column yet:</span>
+      <select
+        aria-label="Duplicate to session"
+        value={targetId}
+        onChange={(event) => setTargetId(event.target.value)}
+        className={`${INPUT_CLASS} min-w-0 flex-1`}
+      >
+        <option value="">Choose a session…</option>
+        {availableSessions.map((session) => (
+          <option key={session.id} value={session.id}>
+            {session.name}
+          </option>
+        ))}
+      </select>
+      <Button variant="secondary" onClick={duplicate} disabled={pending || targetId === ''}>
+        Duplicate
+      </Button>
+      {error ? (
+        <p role="alert" className="w-full text-sm text-red-600">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 // --- A section (a column of the rota grid) --------------------------------------------------------
 
 function SectionBlock({
@@ -630,11 +702,13 @@ function SectionBlock({
   section,
   isFirst,
   isLast,
+  availableSessions,
 }: {
   competitionId: string;
   section: RotaBuilderSection;
   isFirst: boolean;
   isLast: boolean;
+  availableSessions: RotaAvailableSession[];
 }) {
   const router = useRouter();
   const [dayLabel, setDayLabel] = useState(section.day_label ?? '');
@@ -750,6 +824,12 @@ function SectionBlock({
       </div>
 
       <AddRoleForm competitionId={competitionId} sectionId={section.id} />
+
+      <DuplicateSectionControl
+        competitionId={competitionId}
+        sourceSectionId={section.id}
+        availableSessions={availableSessions}
+      />
 
       {error ? (
         <p role="alert" className="mt-2 text-sm text-red-600">
@@ -963,6 +1043,7 @@ type RotaBuilderProps = {
   initialWithdrawalContact: string | null;
   sessionCount: number;
   pendingSessionCount: number;
+  availableSessions: RotaAvailableSession[];
   sections: RotaBuilderSection[];
 };
 
@@ -978,6 +1059,7 @@ export function RotaBuilder({
   initialWithdrawalContact,
   sessionCount,
   pendingSessionCount,
+  availableSessions,
   sections,
 }: RotaBuilderProps) {
   const ordered = sections.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
@@ -1064,6 +1146,7 @@ export function RotaBuilder({
               section={section}
               isFirst={index === 0}
               isLast={index === ordered.length - 1}
+              availableSessions={availableSessions}
             />
           ))}
         </div>

@@ -12,6 +12,7 @@ vi.mock('@/actions/rota', () => ({
   createRotaSectionAction: vi.fn(),
   deleteRotaRoleAction: vi.fn(),
   deleteRotaSectionAction: vi.fn(),
+  duplicateRotaSectionToSessionAction: vi.fn(),
   generateRotaFromSessionsAction: vi.fn(),
   moveRotaRoleAction: vi.fn(),
   moveRotaSectionAction: vi.fn(),
@@ -32,6 +33,7 @@ import {
   createRotaRoleAction,
   createRotaSectionAction,
   deleteRotaRoleAction,
+  duplicateRotaSectionToSessionAction,
   generateRotaFromSessionsAction,
   removeRotaSignupAction,
   setRotaOpenAction,
@@ -44,6 +46,7 @@ const addSignup = vi.mocked(addRotaSignupAction);
 const createRole = vi.mocked(createRotaRoleAction);
 const createSection = vi.mocked(createRotaSectionAction);
 const deleteRole = vi.mocked(deleteRotaRoleAction);
+const duplicateAction = vi.mocked(duplicateRotaSectionToSessionAction);
 const generateAction = vi.mocked(generateRotaFromSessionsAction);
 const removeSignup = vi.mocked(removeRotaSignupAction);
 const setOpen = vi.mocked(setRotaOpenAction);
@@ -94,6 +97,7 @@ function renderBuilder(
   initialOpen = false,
   sessionCount = 0,
   pendingSessionCount = 0,
+  availableSessions: { id: string; name: string }[] = [],
 ) {
   return render(
     <RotaBuilder
@@ -105,6 +109,7 @@ function renderBuilder(
       initialWithdrawalContact={null}
       sessionCount={sessionCount}
       pendingSessionCount={pendingSessionCount}
+      availableSessions={availableSessions}
       sections={sections}
     />,
   );
@@ -264,5 +269,26 @@ describe('RotaBuilder', () => {
     renderBuilder([sectionWithRole]);
     expect(screen.getByRole('button', { name: 'Export contacts (CSV)' })).toBeInTheDocument();
     expect(screen.getByText('1 volunteer signed up.')).toBeInTheDocument();
+  });
+
+  it("duplicates a column's roles onto a chosen column-less session", async () => {
+    duplicateAction.mockResolvedValue({ status: 'ok', data: { id: 'sec-new' } });
+    renderBuilder([sectionWithRole], false, 2, 1, [{ id: 'sess-new', name: 'Sunday PM' }]);
+
+    fireEvent.change(screen.getByLabelText('Duplicate to session'), { target: { value: 'sess-new' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }));
+
+    await waitFor(() =>
+      expect(duplicateAction).toHaveBeenCalledWith({
+        competitionId: COMP_ID,
+        sourceSectionId: 'sec-1',
+        targetSessionId: 'sess-new',
+      }),
+    );
+  });
+
+  it('hides the duplicate control when every session already has a column', () => {
+    renderBuilder([sectionWithRole]);
+    expect(screen.queryByLabelText('Duplicate to session')).toBeNull();
   });
 });

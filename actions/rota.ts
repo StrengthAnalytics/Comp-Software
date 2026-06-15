@@ -495,6 +495,135 @@ export async function generateRotaFromSessionsAction(
   });
 }
 
+// --- Duplicate a column's roles onto another session ----------------------------------------------
+
+const duplicateRotaSectionSchema = z.object({
+  competitionId: z.uuid(),
+  sourceSectionId: z.uuid(),
+  targetSessionId: z.uuid(),
+});
+
+// Copies an existing column's roles (verbatim — titles, capacities and arrive-by; sign-ups are NOT
+// copied) into a new column linked to a session that doesn't have one yet. The new column's header
+// (day / title / subtitle) comes from the TARGET session, like Generate, so it represents the new
+// session — only the role layout is duplicated. For reusing a customised column on a session added
+// after the rota was built.
+export async function duplicateRotaSectionToSessionAction(input: {
+  competitionId: string;
+  sourceSectionId: string;
+  targetSessionId: string;
+}): Promise<ActionResult<{ id: string }>> {
+  return Sentry.withServerActionInstrumentation('duplicateRotaSectionToSession', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = duplicateRotaSectionSchema.safeParse(input);
+    if (!parsed.success) return fail(GENERIC_ERROR);
+
+    const supabase = await createClient();
+
+    // The source column must belong to this comp.
+    const { data: source, error: sourceError } = await supabase
+      .from('rota_sections')
+      .select('competition_id')
+      .eq('id', parsed.data.sourceSectionId)
+      .maybeSingle();
+    if (sourceError) {
+      Sentry.captureException(sourceError);
+      return fail(GENERIC_ERROR);
+    }
+    if (!source || source.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that column to duplicate.');
+    }
+
+    // The target session must belong to this comp and not already have a column.
+    const { data: session, error: sessionError } = await supabase
+      .from('sessions')
+      .select('id, competition_id, name, session_date, weigh_in_time, lift_off_time, platform_id, sort_order')
+      .eq('id', parsed.data.targetSessionId)
+      .maybeSingle();
+    if (sessionError) {
+      Sentry.captureException(sessionError);
+      return fail(GENERIC_ERROR);
+    }
+    if (!session || session.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that session.');
+    }
+
+    const { data: existing, error: existingError } = await supabase
+      .from('rota_sections')
+      .select('id')
+      .eq('session_id', parsed.data.targetSessionId)
+      .maybeSingle();
+    if (existingError) {
+      Sentry.captureException(existingError);
+      return fail(GENERIC_ERROR);
+    }
+    if (existing) {
+      return fail('That session already has a column.');
+    }
+
+    const [rolesResult, platformsResult, countResult] = await Promise.all([
+      supabase
+        .from('rota_roles')
+        .select('title, arrive_by, capacity, sort_order')
+        .eq('section_id', parsed.data.sourceSectionId)
+        .order('sort_order', { ascending: true }),
+      supabase.from('platforms').select('id, name').eq('competition_id', parsed.data.competitionId),
+      supabase
+        .from('rota_sections')
+        .select('id', { count: 'exact', head: true })
+        .eq('competition_id', parsed.data.competitionId),
+    ]);
+    if (rolesResult.error || platformsResult.error || countResult.error) {
+      Sentry.captureException(rolesResult.error ?? platformsResult.error ?? countResult.error);
+      return fail(GENERIC_ERROR);
+    }
+
+    const platformNamesById = new Map((platformsResult.data ?? []).map((platform) => [platform.id, platform.name]));
+    // The header comes from the target session, via the same mapping Generate uses.
+    const [planned] = planRotaSectionsFromSessions([session], new Set(), platformNamesById);
+    if (!planned) {
+      return fail(GENERIC_ERROR);
+    }
+
+    const { data: newSection, error: insertError } = await supabase
+      .from('rota_sections')
+      .insert({
+        competition_id: parsed.data.competitionId,
+        session_id: parsed.data.targetSessionId,
+        day_label: planned.dayLabel,
+        title: planned.title,
+        subtitle: planned.subtitle,
+        sort_order: countResult.count ?? 0,
+      })
+      .select('id')
+      .single();
+    if (insertError || !newSection) {
+      Sentry.captureException(insertError);
+      return fail(GENERIC_ERROR);
+    }
+
+    const roleRows = (rolesResult.data ?? []).map((role, index) => ({
+      competition_id: parsed.data.competitionId,
+      section_id: newSection.id,
+      title: role.title,
+      arrive_by: role.arrive_by,
+      capacity: role.capacity,
+      sort_order: index,
+    }));
+    if (roleRows.length > 0) {
+      const { error: roleError } = await supabase.from('rota_roles').insert(roleRows);
+      if (roleError) {
+        Sentry.captureException(roleError);
+        return fail('The column was created, but its roles could not be copied. Add them, or delete the column and try again.');
+      }
+    }
+
+    return ok({ id: newSection.id });
+  });
+}
+
 // --- The public sign-up (the app's SECOND server action without adminGuard) -----------------------
 
 const ROTA_CLOSED_MESSAGE = 'This rota is not open for sign-ups right now.';
