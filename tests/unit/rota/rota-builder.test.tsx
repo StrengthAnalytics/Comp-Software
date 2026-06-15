@@ -75,7 +75,7 @@ afterEach(() => {
 describe('RotaBuilder', () => {
   it('renders the sign-up link and each role with its fill count', () => {
     renderBuilder([sectionWithRole]);
-    expect(screen.getByText('/summer-open/rota')).toBeInTheDocument();
+    expect(screen.getByText('/summer-open/volunteer')).toBeInTheDocument();
     expect(screen.getByDisplayValue('MC')).toBeInTheDocument();
     expect(screen.getByText('1 / 1 filled')).toBeInTheDocument();
   });

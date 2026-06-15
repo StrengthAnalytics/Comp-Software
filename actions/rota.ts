@@ -4,18 +4,21 @@ import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
+import { isUniqueViolation } from '@/lib/supabase/errors';
 import { toFieldErrors } from '@/lib/validation';
 import {
   rotaRoleCreateSchema,
   rotaRoleUpdateSchema,
   rotaSectionCreateSchema,
   rotaSectionUpdateSchema,
+  rotaSignupSchema,
   rotaWithdrawalContactSchema,
   setRotaOpenSchema,
   type RotaRoleCreateInput,
   type RotaRoleUpdateInput,
   type RotaSectionCreateInput,
   type RotaSectionUpdateInput,
+  type RotaSignupInput,
   type RotaWithdrawalContactInput,
   type SetRotaOpenInput,
 } from '@/types/rota';
@@ -355,5 +358,79 @@ export async function moveRotaRoleAction(
       return fail(GENERIC_ERROR);
     }
     return moveWithin(supabase, 'rota_roles', roles ?? [], parsed.data.id, parsed.data.direction);
+  });
+}
+
+// --- The public sign-up (the app's SECOND server action without adminGuard) -----------------------
+
+const ROTA_CLOSED_MESSAGE = 'This rota is not open for sign-ups right now.';
+const SLOT_FULL_MESSAGE = 'Sorry — that slot was just filled. Please pick another.';
+const SLOT_GONE_MESSAGE = 'That slot is no longer available. Please refresh the page and try again.';
+const ALREADY_SIGNED_MESSAGE = 'You have already signed up for this slot with that email address.';
+
+// A volunteer claiming a rota slot. Like submitEntryFormAction (ARCHITECTURE.md §3/§7) it runs on the
+// visitor's own anon session with NO adminGuard, so RLS is the real gate — the INSERT is only allowed
+// while comp_rota_open() holds — and the database capacity trigger is the true ceiling. Validated by
+// Zod; never .select()s the insert back (anon has no read on rota_signups, by design).
+export async function submitRotaSignupAction(input: RotaSignupInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('submitRotaSignup', async () => {
+    // Bot tripped the honeypot: claim success, store nothing.
+    if (typeof input.website === 'string' && input.website.trim() !== '') {
+      return ok();
+    }
+
+    const parsed = rotaSignupSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+
+    // The role must belong to the comp the form named — anon can read rota_roles only while the rota
+    // is open, so a not-found row also covers a closed rota. Guards against a forged role_id from
+    // another comp being inserted under this competition_id.
+    const { data: role, error: roleError } = await supabase
+      .from('rota_roles')
+      .select('competition_id')
+      .eq('id', parsed.data.roleId)
+      .maybeSingle();
+    if (roleError) {
+      Sentry.captureException(roleError);
+      return fail('Could not sign you up. Please try again.');
+    }
+    if (!role || role.competition_id !== parsed.data.competitionId) {
+      return fail(SLOT_GONE_MESSAGE);
+    }
+
+    // No .select(): anon has no read on rota_signups.
+    const { error } = await supabase.from('rota_signups').insert({
+      competition_id: parsed.data.competitionId,
+      role_id: parsed.data.roleId,
+      name: parsed.data.name,
+      email: parsed.data.email,
+      phone: parsed.data.phone,
+    });
+
+    if (error) {
+      // P0001 = our capacity / role-missing triggers (see migration 20260615000001).
+      if (error.code === 'P0001' && error.message.includes('rota_slot_full')) {
+        return fail(SLOT_FULL_MESSAGE);
+      }
+      if (error.code === 'P0001' && error.message.includes('rota_role_missing')) {
+        return fail(SLOT_GONE_MESSAGE);
+      }
+      // 23505 = the (role_id, lower(email)) unique index: same person, same slot, twice.
+      if (isUniqueViolation(error)) {
+        return fail(ALREADY_SIGNED_MESSAGE);
+      }
+      // 42501 = RLS denied: the rota closed between page load and submit.
+      if (error.code === '42501') {
+        return fail(ROTA_CLOSED_MESSAGE);
+      }
+      Sentry.captureException(error);
+      return fail('Could not sign you up. Please try again.');
+    }
+
+    return ok();
   });
 }

@@ -101,7 +101,8 @@ function RotaShareCard({
   initialWithdrawalContact: string | null;
 }) {
   const router = useRouter();
-  const rotaPath = `/${slug}/rota`;
+  // The public sign-up board lives at /[slug]/volunteer (this admin builder owns /[slug]/rota).
+  const rotaPath = `/${slug}/volunteer`;
 
   const [open, setOpen] = useState(initialOpen);
   const [openPending, setOpenPending] = useState(false);
