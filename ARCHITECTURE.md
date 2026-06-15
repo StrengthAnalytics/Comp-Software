@@ -99,6 +99,7 @@ Which screens subscribe to which tables.
 | `/(public)/[comp]/warm-up` | attempts, entries, flights | `competition_id` (warm-up board, scoped to one platform via `?platform`; sign-in-free, anon, RLS-gated to public comps) |
 | `/(admin)/[comp]/entries` | entries, entry_submissions | `competition_id` (debounced `router.refresh()`: live opener edits + the review inbox) |
 | `/(admin)/[comp]/rack-heights` | entries, flights | `competition_id` |
+| `/(admin)/[comp]/rota` | rota_signups | `competition_id` (admin rota view: live sign-ups; anon can't subscribe — no read on the base table) |
 | `/(admin)/[comp]/flights` | flights, entries | `competition_id` |
 | `/(overlay)/[comp]/scoreboard` | attempts, entries | `competition_id` + current session |
 | `/(overlay)/[comp]/lifter` | attempts, entries, flights | `competition_id` (anon, RLS-gated to public comps; current lifter derived per platform via `?platform`) |

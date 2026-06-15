@@ -1,7 +1,12 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
-import { RotaBuilder, type RotaBuilderRole, type RotaBuilderSection } from '@/components/rota/rota-builder';
+import {
+  RotaBuilder,
+  type RotaBuilderRole,
+  type RotaBuilderSection,
+  type RotaSignupSummary,
+} from '@/components/rota/rota-builder';
 
 export default async function RotaPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
@@ -25,8 +30,13 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
         .select('id, section_id, title, arrive_by, capacity, sort_order')
         .eq('competition_id', comp.id)
         .order('sort_order', { ascending: true }),
-      // Admin reads the base table (contact details load in Phase 4); here we only tally per role.
-      supabase.from('rota_signups').select('role_id').eq('competition_id', comp.id),
+      // Admin reads the base table for the full contact list (RLS admin-only); the public board uses
+      // the PII-free view instead.
+      supabase
+        .from('rota_signups')
+        .select('id, role_id, name, email, phone, created_at')
+        .eq('competition_id', comp.id)
+        .order('created_at', { ascending: true }),
       // For the "Generate from sessions" card: how many sessions exist and how many lack a column.
       supabase.from('sessions').select('id').eq('competition_id', comp.id),
     ]);
@@ -37,9 +47,11 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
   const sessionCount = (sessionRows ?? []).length;
   const pendingSessionCount = (sessionRows ?? []).filter((session) => !linkedSessionIds.has(session.id)).length;
 
-  const countByRole = new Map<string, number>();
+  const signupsByRole = new Map<string, RotaSignupSummary[]>();
   for (const row of signupRows ?? []) {
-    countByRole.set(row.role_id, (countByRole.get(row.role_id) ?? 0) + 1);
+    const list = signupsByRole.get(row.role_id) ?? [];
+    list.push({ id: row.id, name: row.name, email: row.email, phone: row.phone, created_at: row.created_at });
+    signupsByRole.set(row.role_id, list);
   }
 
   const rolesBySection = new Map<string, RotaBuilderRole[]>();
@@ -51,7 +63,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
       arrive_by: role.arrive_by,
       capacity: role.capacity,
       sort_order: role.sort_order,
-      signupCount: countByRole.get(role.id) ?? 0,
+      signups: signupsByRole.get(role.id) ?? [],
     });
     rolesBySection.set(role.section_id, list);
   }

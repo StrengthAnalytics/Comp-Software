@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  addRotaSignupAction,
   createRotaRoleAction,
   createRotaSectionAction,
   deleteRotaRoleAction,
@@ -10,12 +11,16 @@ import {
   generateRotaFromSessionsAction,
   moveRotaRoleAction,
   moveRotaSectionAction,
+  removeRotaSignupAction,
   setRotaOpenAction,
   setRotaWithdrawalContactAction,
   updateRotaRoleAction,
   updateRotaSectionAction,
 } from '@/actions/rota';
 import { DEFAULT_ROTA_ROLE_TEMPLATE, MAX_ROTA_SLOT_CAPACITY, SUGGESTED_ROTA_ROLES } from '@/lib/constants';
+import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
+import { useRotaSignupsSubscription } from '@/lib/realtime/use-rota-signups-subscription';
+import { buildRotaContactsCsv } from '@/lib/rota/export-csv';
 import { ROTA_WITHDRAWAL_CONTACT_MAX } from '@/types/rota';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -24,14 +29,22 @@ import type { Database } from '@/types/database.types';
 
 type CompStatus = Database['public']['Enums']['comp_status'];
 
+export type RotaSignupSummary = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  created_at: string;
+};
+
 export type RotaBuilderRole = {
   id: string;
   title: string;
   arrive_by: string | null;
   capacity: number;
   sort_order: number;
-  // How many volunteers have claimed this role (admin-only contact details are loaded in Phase 4).
-  signupCount: number;
+  // The volunteers who have claimed this role, with their admin-only contact details.
+  signups: RotaSignupSummary[];
 };
 
 export type RotaBuilderSection = {
@@ -280,6 +293,163 @@ function RotaShareCard({
   );
 }
 
+// --- A signed-up volunteer, with their admin-only contact details and a remove control -----------
+
+function SignupRow({ signup }: { signup: RotaSignupSummary }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function remove() {
+    if (!confirming) {
+      setConfirming(true);
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await removeRotaSignupAction({ id: signup.id });
+      if (result.status === 'error') {
+        setError(result.message);
+        setConfirming(false);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded bg-neutral-50 px-2 py-1 text-xs">
+      <span className="font-medium text-neutral-900">{signup.name}</span>
+      <a href={`mailto:${signup.email}`} className="text-neutral-600 hover:underline">
+        {signup.email}
+      </a>
+      <a href={`tel:${signup.phone}`} className="text-neutral-600 hover:underline">
+        {signup.phone}
+      </a>
+      <button
+        type="button"
+        onClick={remove}
+        disabled={pending}
+        className="ml-auto font-medium text-red-600 hover:underline disabled:opacity-50"
+      >
+        {confirming ? 'Confirm remove' : 'Remove'}
+      </button>
+      {error ? (
+        <p role="alert" className="w-full text-red-600">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function AdminAddVolunteerForm({
+  competitionId,
+  roleId,
+  onDone,
+}: {
+  competitionId: string;
+  roleId: string;
+  onDone: () => void;
+}) {
+  const router = useRouter();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function add() {
+    setError(null);
+    startTransition(async () => {
+      const result = await addRotaSignupAction({ competitionId, roleId, name, email, phone });
+      if (result.status === 'error') {
+        setError(result.message);
+        return;
+      }
+      router.refresh();
+      onDone();
+    });
+  }
+
+  const incomplete = name.trim() === '' || email.trim() === '' || phone.trim() === '';
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded border border-neutral-200 bg-white p-2">
+      <input
+        aria-label="Volunteer name"
+        placeholder="Name"
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        className={`${INPUT_CLASS} w-32`}
+      />
+      <input
+        aria-label="Volunteer email"
+        type="email"
+        placeholder="Email"
+        value={email}
+        onChange={(event) => setEmail(event.target.value)}
+        className={`${INPUT_CLASS} w-44`}
+      />
+      <input
+        aria-label="Volunteer mobile"
+        type="tel"
+        placeholder="Mobile"
+        value={phone}
+        onChange={(event) => setPhone(event.target.value)}
+        className={`${INPUT_CLASS} w-32`}
+      />
+      <Button variant="secondary" onClick={add} disabled={pending || incomplete}>
+        Add
+      </Button>
+      <Button variant="ghost" onClick={onDone} disabled={pending}>
+        Cancel
+      </Button>
+      {error ? (
+        <p role="alert" className="w-full text-sm text-red-600">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// The volunteers signed up to one role, plus the admin's add-a-volunteer control on an open slot.
+function RoleVolunteers({ competitionId, role }: { competitionId: string; role: RotaBuilderRole }) {
+  const [adding, setAdding] = useState(false);
+  const openSlots = Math.max(role.capacity - role.signups.length, 0);
+
+  if (role.signups.length === 0 && openSlots === 0) {
+    return null;
+  }
+
+  return (
+    <div className="ml-12 mt-1 space-y-1">
+      {role.signups.map((signup) => (
+        <SignupRow key={signup.id} signup={signup} />
+      ))}
+      {openSlots > 0 ? (
+        adding ? (
+          <AdminAddVolunteerForm
+            competitionId={competitionId}
+            roleId={role.id}
+            onDone={() => setAdding(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="text-xs font-medium text-brand-700 hover:underline"
+          >
+            + Add volunteer
+          </button>
+        )
+      ) : null}
+    </div>
+  );
+}
+
 // --- A single role row within a section -----------------------------------------------------------
 
 function RoleRow({
@@ -302,7 +472,7 @@ function RoleRow({
   const [pending, startTransition] = useTransition();
 
   const dirty = title !== role.title || arriveBy !== (role.arrive_by ?? '') || capacity !== role.capacity;
-  const full = role.signupCount >= role.capacity;
+  const full = role.signups.length >= role.capacity;
 
   function save() {
     setError(null);
@@ -317,7 +487,7 @@ function RoleRow({
   }
 
   function remove() {
-    if (role.signupCount > 0 && !confirming) {
+    if (role.signups.length > 0 && !confirming) {
       setConfirming(true);
       return;
     }
@@ -374,7 +544,7 @@ function RoleRow({
         className={`w-20 text-center text-xs font-medium ${full ? 'text-emerald-700' : 'text-neutral-500'}`}
         title="Volunteers signed up / slots"
       >
-        {role.signupCount} / {role.capacity} filled
+        {role.signups.length} / {role.capacity} filled
       </span>
       <Button variant="secondary" onClick={save} disabled={pending || !dirty}>
         Save
@@ -475,7 +645,7 @@ function SectionBlock({
 
   const dirty =
     dayLabel !== (section.day_label ?? '') || title !== section.title || subtitle !== (section.subtitle ?? '');
-  const hasSignups = section.roles.some((role) => role.signupCount > 0);
+  const hasSignups = section.roles.some((role) => role.signups.length > 0);
   const roles = section.roles.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
 
   function save() {
@@ -565,13 +735,15 @@ function SectionBlock({
           <p className="py-2 text-sm text-neutral-500">No roles in this column yet.</p>
         ) : (
           roles.map((role, index) => (
-            <RoleRow
-              key={role.id}
-              role={role}
-              sectionId={section.id}
-              isFirst={index === 0}
-              isLast={index === roles.length - 1}
-            />
+            <div key={role.id} className="py-1">
+              <RoleRow
+                role={role}
+                sectionId={section.id}
+                isFirst={index === 0}
+                isLast={index === roles.length - 1}
+              />
+              <RoleVolunteers competitionId={competitionId} role={role} />
+            </div>
           ))
         )}
       </div>
@@ -795,8 +967,50 @@ export function RotaBuilder({
 }: RotaBuilderProps) {
   const ordered = sections.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
 
+  // Live updates as volunteers claim slots (or another device removes one). Admin-only in practice —
+  // anon has no read on rota_signups, so it never receives these events.
+  const scheduleRefresh = useDebouncedRefresh();
+  useRotaSignupsSubscription(competitionId, scheduleRefresh);
+
+  const contactRows = ordered.flatMap((section) =>
+    section.roles.flatMap((role) =>
+      role.signups.map((signup) => ({
+        day: section.day_label,
+        section: section.title,
+        role: role.title,
+        arriveBy: role.arrive_by,
+        name: signup.name,
+        email: signup.email,
+        phone: signup.phone,
+        signedUpAt: signup.created_at,
+      })),
+    ),
+  );
+
+  function exportContacts() {
+    const csv = buildRotaContactsCsv(contactRows);
+    const blob = new globalThis.Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = globalThis.URL.createObjectURL(blob);
+    const link = globalThis.document.createElement('a');
+    link.href = url;
+    link.download = `${slug}-rota-contacts.csv`;
+    link.click();
+    globalThis.URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-6">
+      {contactRows.length > 0 ? (
+        <div className="flex items-center justify-between gap-3 rounded-md bg-neutral-100 px-4 py-2">
+          <p className="text-sm text-neutral-700">
+            {contactRows.length} volunteer{contactRows.length === 1 ? '' : 's'} signed up.
+          </p>
+          <Button variant="secondary" onClick={exportContacts}>
+            Export contacts (CSV)
+          </Button>
+        </div>
+      ) : null}
+
       <RotaShareCard
         competitionId={competitionId}
         slug={slug}

@@ -7,6 +7,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: refreshMock }),
 }));
 vi.mock('@/actions/rota', () => ({
+  addRotaSignupAction: vi.fn(),
   createRotaRoleAction: vi.fn(),
   createRotaSectionAction: vi.fn(),
   deleteRotaRoleAction: vi.fn(),
@@ -14,27 +15,36 @@ vi.mock('@/actions/rota', () => ({
   generateRotaFromSessionsAction: vi.fn(),
   moveRotaRoleAction: vi.fn(),
   moveRotaSectionAction: vi.fn(),
+  removeRotaSignupAction: vi.fn(),
   setRotaOpenAction: vi.fn(),
   setRotaWithdrawalContactAction: vi.fn(),
   updateRotaRoleAction: vi.fn(),
   updateRotaSectionAction: vi.fn(),
 }));
+// The admin builder subscribes to live sign-ups; stub the hook so the test needs no Supabase client.
+vi.mock('@/lib/realtime/use-rota-signups-subscription', () => ({
+  useRotaSignupsSubscription: vi.fn(),
+}));
 
 import {
+  addRotaSignupAction,
   createRotaRoleAction,
   createRotaSectionAction,
   deleteRotaRoleAction,
   generateRotaFromSessionsAction,
+  removeRotaSignupAction,
   setRotaOpenAction,
   updateRotaRoleAction,
 } from '@/actions/rota';
 import { DEFAULT_ROTA_ROLE_TEMPLATE } from '@/lib/constants';
 import { RotaBuilder, type RotaBuilderSection } from '@/components/rota/rota-builder';
 
+const addSignup = vi.mocked(addRotaSignupAction);
 const createRole = vi.mocked(createRotaRoleAction);
 const createSection = vi.mocked(createRotaSectionAction);
 const deleteRole = vi.mocked(deleteRotaRoleAction);
 const generateAction = vi.mocked(generateRotaFromSessionsAction);
+const removeSignup = vi.mocked(removeRotaSignupAction);
 const setOpen = vi.mocked(setRotaOpenAction);
 const updateRole = vi.mocked(updateRotaRoleAction);
 
@@ -46,7 +56,27 @@ const sectionWithRole: RotaBuilderSection = {
   title: 'AM',
   subtitle: null,
   sort_order: 0,
-  roles: [{ id: 'role-1', title: 'MC', arrive_by: '9:30am', capacity: 1, sort_order: 0, signupCount: 1 }],
+  roles: [
+    {
+      id: 'role-1',
+      title: 'MC',
+      arrive_by: '9:30am',
+      capacity: 1,
+      sort_order: 0,
+      signups: [
+        { id: 'su-1', name: 'Mike R', email: 'mike@example.com', phone: '07700900000', created_at: '2026-06-15T10:00:00Z' },
+      ],
+    },
+  ],
+};
+
+const sectionOpenRole: RotaBuilderSection = {
+  id: 'sec-1',
+  day_label: 'Sat',
+  title: 'AM',
+  subtitle: null,
+  sort_order: 0,
+  roles: [{ id: 'role-1', title: 'Refs', arrive_by: null, capacity: 4, sort_order: 0, signups: [] }],
 };
 
 const emptySection: RotaBuilderSection = {
@@ -189,5 +219,45 @@ describe('RotaBuilder', () => {
     renderBuilder([], false, 0, 0);
     expect(screen.getByRole('link', { name: 'Sessions & flights' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Generate/ })).toBeNull();
+  });
+
+  it("shows a signed-up volunteer's contact details and removes them after a confirm", async () => {
+    removeSignup.mockResolvedValue({ status: 'ok', data: undefined });
+    renderBuilder([sectionWithRole]);
+
+    expect(screen.getByText('Mike R')).toBeInTheDocument();
+    expect(screen.getByText('mike@example.com')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(removeSignup).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    await waitFor(() => expect(removeSignup).toHaveBeenCalledWith({ id: 'su-1' }));
+  });
+
+  it('lets the admin add a volunteer to an open slot', async () => {
+    addSignup.mockResolvedValue({ status: 'ok', data: undefined });
+    renderBuilder([sectionOpenRole]);
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Add volunteer' }));
+    fireEvent.change(screen.getByLabelText('Volunteer name'), { target: { value: 'Dana' } });
+    fireEvent.change(screen.getByLabelText('Volunteer email'), { target: { value: 'dana@example.com' } });
+    fireEvent.change(screen.getByLabelText('Volunteer mobile'), { target: { value: '07700900001' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    await waitFor(() =>
+      expect(addSignup).toHaveBeenCalledWith({
+        competitionId: COMP_ID,
+        roleId: 'role-1',
+        name: 'Dana',
+        email: 'dana@example.com',
+        phone: '07700900001',
+      }),
+    );
+  });
+
+  it('offers a contacts CSV export once anyone has signed up', () => {
+    renderBuilder([sectionWithRole]);
+    expect(screen.getByRole('button', { name: 'Export contacts (CSV)' })).toBeInTheDocument();
+    expect(screen.getByText('1 volunteer signed up.')).toBeInTheDocument();
   });
 });

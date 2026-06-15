@@ -561,3 +561,73 @@ export async function submitRotaSignupAction(input: RotaSignupInput): Promise<Ac
     return ok();
   });
 }
+
+// --- Admin sign-up management (the rota screen's contact view) -------------------------------------
+
+// Removes a volunteer from a slot (admin-only — there is no self-service cancel; this is how a
+// withdrawal request is actioned). Frees the slot for someone else.
+export async function removeRotaSignupAction(input: RotaIdInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('removeRotaSignup', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = idSchema.safeParse(input);
+    if (!parsed.success) return fail('Could not remove that volunteer. Please try again.');
+
+    const supabase = await createClient();
+    const { error } = await supabase.from('rota_signups').delete().eq('id', parsed.data.id);
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not remove that volunteer. Please try again.');
+    }
+    return ok();
+  });
+}
+
+// Adds a volunteer to a slot on the admin's behalf (e.g. someone who signed up by phone). Same name +
+// email + mobile the public form collects, the same capacity ceiling (the BEFORE INSERT trigger fires
+// for this insert too — raise the role's slot count to add beyond it).
+export async function addRotaSignupAction(input: RotaSignupInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('addRotaSignup', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = rotaSignupSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+    const { data: role, error: roleError } = await supabase
+      .from('rota_roles')
+      .select('competition_id')
+      .eq('id', parsed.data.roleId)
+      .maybeSingle();
+    if (roleError) {
+      Sentry.captureException(roleError);
+      return fail('Could not add that volunteer. Please try again.');
+    }
+    if (!role || role.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that slot.');
+    }
+
+    const { error } = await supabase.from('rota_signups').insert({
+      competition_id: parsed.data.competitionId,
+      role_id: parsed.data.roleId,
+      name: parsed.data.name,
+      email: parsed.data.email,
+      phone: parsed.data.phone,
+    });
+    if (error) {
+      if (error.code === 'P0001' && error.message.includes('rota_slot_full')) {
+        return fail('That slot is full — raise its position count to add more.');
+      }
+      if (isUniqueViolation(error)) {
+        return fail('That email is already signed up for this slot.');
+      }
+      Sentry.captureException(error);
+      return fail('Could not add that volunteer. Please try again.');
+    }
+    return ok();
+  });
+}
