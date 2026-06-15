@@ -410,7 +410,7 @@ export async function generateRotaFromSessionsAction(
     const [sessionsResult, sectionsResult, platformsResult] = await Promise.all([
       supabase
         .from('sessions')
-        .select('id, name, session_date, start_time, platform_id, sort_order')
+        .select('id, name, session_date, weigh_in_time, lift_off_time, platform_id, sort_order')
         .eq('competition_id', parsed.data.competitionId),
       supabase.from('rota_sections').select('id, session_id').eq('competition_id', parsed.data.competitionId),
       supabase.from('platforms').select('id, name').eq('competition_id', parsed.data.competitionId),

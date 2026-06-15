@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRotaSubtitle,
   formatRotaDayLabel,
-  formatRotaStartTime,
+  formatRotaTime,
   planRotaSectionsFromSessions,
   type SessionForRota,
 } from '@/lib/rota/generate';
@@ -20,33 +20,52 @@ describe('formatRotaDayLabel', () => {
   });
 });
 
-describe('formatRotaStartTime', () => {
+describe('formatRotaTime', () => {
   it('trims seconds to HH:MM', () => {
-    expect(formatRotaStartTime('10:00:00')).toBe('10:00');
-    expect(formatRotaStartTime('14:30')).toBe('14:30');
+    expect(formatRotaTime('10:00:00')).toBe('10:00');
+    expect(formatRotaTime('14:30')).toBe('14:30');
   });
 
   it('returns null when absent or unrecognised', () => {
-    expect(formatRotaStartTime(null)).toBeNull();
-    expect(formatRotaStartTime('morning')).toBeNull();
+    expect(formatRotaTime(null)).toBeNull();
+    expect(formatRotaTime('morning')).toBeNull();
   });
 });
 
 describe('buildRotaSubtitle', () => {
-  it('joins the time and platform', () => {
-    expect(buildRotaSubtitle('10:00:00', 'Platform 1')).toBe('10:00 · Platform 1');
+  it('labels the weigh-in and lift-off times and adds the platform', () => {
+    expect(buildRotaSubtitle('08:00:00', '10:00:00', 'Platform 1')).toBe(
+      'Weigh-in 08:00 · Lift-off 10:00 · Platform 1',
+    );
   });
 
-  it('uses just the time without a platform, and null when neither', () => {
-    expect(buildRotaSubtitle('10:00:00', null)).toBe('10:00');
-    expect(buildRotaSubtitle(null, null)).toBeNull();
+  it('drops any absent part, and is null when there is nothing', () => {
+    expect(buildRotaSubtitle('08:00:00', null, null)).toBe('Weigh-in 08:00');
+    expect(buildRotaSubtitle(null, '10:00:00', null)).toBe('Lift-off 10:00');
+    expect(buildRotaSubtitle(null, null, null)).toBeNull();
   });
 });
 
 describe('planRotaSectionsFromSessions', () => {
   const sessions: SessionForRota[] = [
-    { id: 's2', name: 'PM', session_date: '2026-06-13', start_time: '14:00:00', platform_id: 'p1', sort_order: 1 },
-    { id: 's1', name: 'AM', session_date: '2026-06-13', start_time: '10:00:00', platform_id: 'p1', sort_order: 0 },
+    {
+      id: 's2',
+      name: 'PM',
+      session_date: '2026-06-13',
+      weigh_in_time: '12:30:00',
+      lift_off_time: '14:30:00',
+      platform_id: 'p1',
+      sort_order: 1,
+    },
+    {
+      id: 's1',
+      name: 'AM',
+      session_date: '2026-06-13',
+      weigh_in_time: '08:00:00',
+      lift_off_time: '10:00:00',
+      platform_id: 'p1',
+      sort_order: 0,
+    },
   ];
   const onePlatform = new Map([['p1', 'Platform 1']]);
 
@@ -54,7 +73,12 @@ describe('planRotaSectionsFromSessions', () => {
     const planned = planRotaSectionsFromSessions(sessions, new Set(), onePlatform);
     expect(planned.map((section) => section.sessionId)).toEqual(['s1', 's2']);
     // Single platform → no platform name in the subtitle.
-    expect(planned[0]).toEqual({ sessionId: 's1', dayLabel: 'Sat', title: 'AM', subtitle: '10:00' });
+    expect(planned[0]).toEqual({
+      sessionId: 's1',
+      dayLabel: 'Sat',
+      title: 'AM',
+      subtitle: 'Weigh-in 08:00 · Lift-off 10:00',
+    });
   });
 
   it('skips sessions that already have a section', () => {
@@ -68,6 +92,6 @@ describe('planRotaSectionsFromSessions', () => {
       ['p2', 'Platform 2'],
     ]);
     const planned = planRotaSectionsFromSessions(sessions, new Set(), twoPlatforms);
-    expect(planned[0].subtitle).toBe('10:00 · Platform 1');
+    expect(planned[0].subtitle).toBe('Weigh-in 08:00 · Lift-off 10:00 · Platform 1');
   });
 });

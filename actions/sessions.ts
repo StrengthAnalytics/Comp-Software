@@ -54,7 +54,8 @@ export async function createSessionAction(input: {
   competitionId: string;
   name: string;
   sessionDate: string | null;
-  startTime: string | null;
+  weighInTime: string | null;
+  liftOffTime: string | null;
   platformId: string | null;
   sortOrder?: number;
 }): Promise<ActionResult> {
@@ -76,7 +77,8 @@ export async function createSessionAction(input: {
       competition_id: parsed.data.competitionId,
       name: parsed.data.name,
       session_date: parsed.data.sessionDate,
-      start_time: parsed.data.startTime,
+      weigh_in_time: parsed.data.weighInTime,
+      lift_off_time: parsed.data.liftOffTime,
       platform_id: parsed.data.platformId,
       sort_order: parsed.data.sortOrder,
     });
@@ -95,7 +97,8 @@ export async function updateSessionAction(input: {
   competitionId: string;
   name: string;
   sessionDate: string | null;
-  startTime: string | null;
+  weighInTime: string | null;
+  liftOffTime: string | null;
   platformId: string | null;
   sortOrder: number;
 }): Promise<ActionResult> {
@@ -122,7 +125,8 @@ export async function updateSessionAction(input: {
       .update({
         name: parsed.data.name,
         session_date: parsed.data.sessionDate,
-        start_time: parsed.data.startTime,
+        weigh_in_time: parsed.data.weighInTime,
+        lift_off_time: parsed.data.liftOffTime,
         platform_id: parsed.data.platformId,
         sort_order: parsed.data.sortOrder,
       })

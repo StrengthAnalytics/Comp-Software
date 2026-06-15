@@ -177,7 +177,8 @@ export type Database = {
           platform_id: string | null;
           name: string;
           session_date: string | null;
-          start_time: string | null;
+          weigh_in_time: string | null;
+          lift_off_time: string | null;
           sort_order: number;
           created_at: string;
         };
@@ -187,7 +188,8 @@ export type Database = {
           platform_id?: string | null;
           name: string;
           session_date?: string | null;
-          start_time?: string | null;
+          weigh_in_time?: string | null;
+          lift_off_time?: string | null;
           sort_order?: number;
           created_at?: string;
         };
@@ -197,7 +199,8 @@ export type Database = {
           platform_id?: string | null;
           name?: string;
           session_date?: string | null;
-          start_time?: string | null;
+          weigh_in_time?: string | null;
+          lift_off_time?: string | null;
           sort_order?: number;
           created_at?: string;
         };

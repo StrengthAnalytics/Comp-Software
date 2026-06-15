@@ -5,7 +5,8 @@ export type SessionForRota = {
   id: string;
   name: string;
   session_date: string | null;
-  start_time: string | null;
+  weigh_in_time: string | null;
+  lift_off_time: string | null;
   platform_id: string | null;
   sort_order: number;
 };
@@ -23,20 +24,29 @@ export function formatRotaDayLabel(sessionDate: string | null): string | null {
 }
 
 // "10:00:00" / "10:00" → "10:00"; anything unrecognised → null.
-export function formatRotaStartTime(startTime: string | null): string | null {
-  if (!startTime) {
+export function formatRotaTime(time: string | null): string | null {
+  if (!time) {
     return null;
   }
-  const match = /^(\d{2}:\d{2})/.exec(startTime);
+  const match = /^(\d{2}:\d{2})/.exec(time);
   return match ? match[1] : null;
 }
 
-// The free-text subtitle line under a generated section's heading: the start time, and the platform
-// name when the comp runs more than one platform (otherwise it's redundant).
-export function buildRotaSubtitle(startTime: string | null, platformName: string | null): string | null {
-  const parts = [formatRotaStartTime(startTime), platformName].filter(
-    (part): part is string => part !== null && part !== '',
-  );
+// The free-text subtitle line under a generated section's heading: the session's weigh-in and
+// lift-off times (each labelled), plus the platform name when the comp runs more than one platform
+// (otherwise it's redundant). Any absent part is dropped.
+export function buildRotaSubtitle(
+  weighInTime: string | null,
+  liftOffTime: string | null,
+  platformName: string | null,
+): string | null {
+  const weighIn = formatRotaTime(weighInTime);
+  const liftOff = formatRotaTime(liftOffTime);
+  const parts = [
+    weighIn ? `Weigh-in ${weighIn}` : null,
+    liftOff ? `Lift-off ${liftOff}` : null,
+    platformName,
+  ].filter((part): part is string => part !== null && part !== '');
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
@@ -66,7 +76,7 @@ export function planRotaSectionsFromSessions(
         sessionId: session.id,
         dayLabel: formatRotaDayLabel(session.session_date),
         title: session.name,
-        subtitle: buildRotaSubtitle(session.start_time, platformName),
+        subtitle: buildRotaSubtitle(session.weigh_in_time, session.lift_off_time, platformName),
       };
     });
 }

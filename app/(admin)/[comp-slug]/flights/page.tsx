@@ -55,7 +55,7 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
     supabase.from('platforms').select('id, name').eq('competition_id', comp.id).order('name', { ascending: true }),
     supabase
       .from('sessions')
-      .select('id, name, session_date, start_time, platform_id, sort_order')
+      .select('id, name, session_date, weigh_in_time, lift_off_time, platform_id, sort_order')
       .eq('competition_id', comp.id)
       .order('sort_order', { ascending: true }),
     supabase
