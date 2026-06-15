@@ -483,11 +483,20 @@ export async function generateRotaFromSessionsAction(
     if (roleRows.length > 0) {
       const { error: roleError } = await supabase.from('rota_roles').insert(roleRows);
       if (roleError) {
-        // The columns landed; be honest that their roles didn't rather than reporting clean success.
         Sentry.captureException(roleError);
-        return fail(
-          'The columns were added, but their roles could not be created. Add roles to them, or delete the columns and try again.',
-        );
+        // Roll back the just-created columns so a retry starts clean — otherwise the session_id link
+        // makes Generate skip these sessions forever as empty columns the admin can't repopulate.
+        const { error: rollbackError } = await supabase
+          .from('rota_sections')
+          .delete()
+          .in(
+            'id',
+            createdSections.map((section) => section.id),
+          );
+        if (rollbackError) {
+          Sentry.captureException(rollbackError);
+        }
+        return fail('Could not generate the rota. Please try again.');
       }
     }
 
@@ -616,7 +625,13 @@ export async function duplicateRotaSectionToSessionAction(input: {
       const { error: roleError } = await supabase.from('rota_roles').insert(roleRows);
       if (roleError) {
         Sentry.captureException(roleError);
-        return fail('The column was created, but its roles could not be copied. Add them, or delete the column and try again.');
+        // Roll back the empty column so a retry starts clean, and the session stays available to
+        // Generate / Duplicate rather than being skipped as already-linked.
+        const { error: rollbackError } = await supabase.from('rota_sections').delete().eq('id', newSection.id);
+        if (rollbackError) {
+          Sentry.captureException(rollbackError);
+        }
+        return fail('Could not duplicate the column. Please try again.');
       }
     }
 
@@ -662,7 +677,15 @@ export async function submitRotaSignupAction(input: RotaSignupInput): Promise<Ac
       return fail('Could not sign you up. Please try again.');
     }
     if (!role || role.competition_id !== parsed.data.competitionId) {
-      return fail(SLOT_GONE_MESSAGE);
+      // A null role can mean the rota closed (anon lost its read on rota_roles) or the slot was
+      // deleted. public_rota_comps is readable only while the rota is open, so use it to tell the two
+      // apart and show the volunteer the right message.
+      const { data: openComp } = await supabase
+        .from('public_rota_comps')
+        .select('id')
+        .eq('id', parsed.data.competitionId)
+        .maybeSingle();
+      return fail(openComp ? SLOT_GONE_MESSAGE : ROTA_CLOSED_MESSAGE);
     }
 
     // No .select(): anon has no read on rota_signups.
