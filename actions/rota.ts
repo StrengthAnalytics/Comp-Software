@@ -638,3 +638,29 @@ export async function addRotaSignupAction(input: RotaSignupInput): Promise<Actio
     return ok();
   });
 }
+
+// Wipes a comp's entire rota — every column and role, and (the careful bit) every volunteer sign-up
+// with their contact details. The FK cascades do the rest: deleting the sections cascades to roles,
+// and roles to sign-ups. Destructive and unrecoverable, so the UI gates it behind a type-the-comp-name
+// confirm and an export-contacts-first prompt. A setup write — not status-gated. The rota's open/closed
+// setting and withdrawal-contact line are left untouched (they're comp settings, not rota content).
+export async function resetRotaAction(input: { competitionId: string }): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('resetRota', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = z.object({ competitionId: z.uuid() }).safeParse(input);
+    if (!parsed.success) return fail('Could not reset the rota. Please try again.');
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from('rota_sections')
+      .delete()
+      .eq('competition_id', parsed.data.competitionId);
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not reset the rota. Please try again.');
+    }
+    return ok();
+  });
+}

@@ -16,6 +16,7 @@ vi.mock('@/actions/rota', () => ({
   moveRotaRoleAction: vi.fn(),
   moveRotaSectionAction: vi.fn(),
   removeRotaSignupAction: vi.fn(),
+  resetRotaAction: vi.fn(),
   setRotaOpenAction: vi.fn(),
   setRotaWithdrawalContactAction: vi.fn(),
   updateRotaRoleAction: vi.fn(),
@@ -97,6 +98,7 @@ function renderBuilder(
   return render(
     <RotaBuilder
       competitionId={COMP_ID}
+      competitionName="Summer Open"
       slug="summer-open"
       competitionStatus="draft"
       initialOpen={initialOpen}

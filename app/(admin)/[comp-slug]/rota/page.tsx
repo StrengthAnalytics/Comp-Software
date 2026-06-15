@@ -89,6 +89,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
 
       <RotaBuilder
         competitionId={comp.id}
+        competitionName={comp.name}
         slug={comp.slug}
         competitionStatus={comp.status}
         initialOpen={comp.rota_open}

@@ -22,6 +22,7 @@ import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { useRotaSignupsSubscription } from '@/lib/realtime/use-rota-signups-subscription';
 import { buildRotaContactsCsv } from '@/lib/rota/export-csv';
 import { ROTA_WITHDRAWAL_CONTACT_MAX } from '@/types/rota';
+import { ResetRota } from '@/components/rota/reset-rota';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -955,6 +956,7 @@ function GenerateFromSessionsCard({
 
 type RotaBuilderProps = {
   competitionId: string;
+  competitionName: string;
   slug: string;
   competitionStatus: CompStatus;
   initialOpen: boolean;
@@ -969,6 +971,7 @@ type RotaBuilderProps = {
 // contact line, and copy the shareable link. Volunteers fill the slots from the public board.
 export function RotaBuilder({
   competitionId,
+  competitionName,
   slug,
   competitionStatus,
   initialOpen,
@@ -998,6 +1001,8 @@ export function RotaBuilder({
       })),
     ),
   );
+
+  const roleCount = ordered.reduce((sum, section) => sum + section.roles.length, 0);
 
   function exportContacts() {
     const csv = buildRotaContactsCsv(contactRows);
@@ -1065,6 +1070,15 @@ export function RotaBuilder({
       )}
 
       <AddSectionForm competitionId={competitionId} />
+
+      <ResetRota
+        competitionId={competitionId}
+        competitionName={competitionName}
+        sectionCount={ordered.length}
+        roleCount={roleCount}
+        signupCount={contactRows.length}
+        onExport={exportContacts}
+      />
     </div>
   );
 }
