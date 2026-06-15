@@ -52,8 +52,14 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
       .select('id, section_id, title, arrive_by, capacity, sort_order')
       .eq('competition_id', compId)
       .order('sort_order', { ascending: true }),
-    // Names only — the PII-free public view. Email/phone never reach this page.
-    supabase.from('public_rota_signups').select('role_id, name').eq('competition_id', compId),
+    // Names only — the PII-free public view. Email/phone never reach this page. Ordered (name, id)
+    // so the board is stable across refreshes (the view exposes no created_at to sort by sign-up time).
+    supabase
+      .from('public_rota_signups')
+      .select('role_id, name')
+      .eq('competition_id', compId)
+      .order('name', { ascending: true })
+      .order('id', { ascending: true }),
   ]);
 
   const namesByRole = new Map<string, string[]>();
