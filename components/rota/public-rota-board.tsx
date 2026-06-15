@@ -67,14 +67,21 @@ function SignupForm({
     setFormError(null);
     setFieldErrors(undefined);
 
-    const result = await submitRotaSignupAction({ competitionId, roleId: role.id, name, email, phone, website });
-    setSubmitting(false);
-    if (result.status === 'error') {
-      setFormError(result.message);
-      setFieldErrors(result.fieldErrors);
-      return;
+    try {
+      const result = await submitRotaSignupAction({ competitionId, roleId: role.id, name, email, phone, website });
+      if (result.status === 'error') {
+        setFormError(result.message);
+        setFieldErrors(result.fieldErrors);
+        return;
+      }
+      onSuccess(name.trim());
+    } catch {
+      // A dropped connection (the venue/mobile networks this is built for) rejects the action rather
+      // than returning an error result; surface it instead of leaving the button stuck on "Signing up…".
+      setFormError('Could not reach the server — please try again.');
+    } finally {
+      setSubmitting(false);
     }
-    onSuccess(name.trim());
   }
 
   return (

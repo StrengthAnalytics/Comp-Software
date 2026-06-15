@@ -66,6 +66,13 @@ const INPUT_CLASS =
 
 const COPY_RESET_MS = 2000;
 
+// A slot count must be a whole number ≥ 1. Clearing a number input yields Number('') === 0 and a
+// partial entry yields NaN; guard the submit so neither is sent (the server's Zod .int().min(1)
+// would otherwise reject them with only a generic banner and no field highlight).
+function isValidCapacity(value: number): boolean {
+  return Number.isInteger(value) && value >= 1;
+}
+
 // A tiny up/down reorder control pair. The list edges disable the relevant arrow.
 function MoveControls({
   onMove,
@@ -142,31 +149,44 @@ function RotaShareCard({
     setOpenError(null);
     setOpenPending(true);
     setOpen(next);
-    const result = await setRotaOpenAction({ competitionId, open: next });
-    setOpenPending(false);
-    if (result.status === 'error') {
+    try {
+      const result = await setRotaOpenAction({ competitionId, open: next });
+      if (result.status === 'error') {
+        setOpen(!next);
+        setOpenError(result.message);
+        return;
+      }
+      router.refresh();
+    } catch {
+      // A dropped connection rejects the action rather than returning an error result; roll the
+      // optimistic flip back so the switch can't get stuck showing "on" while the rota is still off.
       setOpen(!next);
-      setOpenError(result.message);
-      return;
+      setOpenError('Could not reach the server — please try again.');
+    } finally {
+      setOpenPending(false);
     }
-    router.refresh();
   }
 
   async function saveContact() {
     setContactSaving(true);
     setContactSaved(false);
     setContactError(null);
-    const result = await setRotaWithdrawalContactAction({
-      competitionId,
-      withdrawalContact: contact.trim() === '' ? null : contact,
-    });
-    setContactSaving(false);
-    if (result.status === 'error') {
-      setContactError(result.message);
-      return;
+    try {
+      const result = await setRotaWithdrawalContactAction({
+        competitionId,
+        withdrawalContact: contact.trim() === '' ? null : contact,
+      });
+      if (result.status === 'error') {
+        setContactError(result.message);
+        return;
+      }
+      setContactSaved(true);
+      router.refresh();
+    } catch {
+      setContactError('Could not reach the server — please try again.');
+    } finally {
+      setContactSaving(false);
     }
-    setContactSaved(true);
-    router.refresh();
   }
 
   async function copyLink() {
@@ -551,7 +571,7 @@ function RoleRow({
       >
         {role.signups.length} / {role.capacity} filled
       </span>
-      <Button variant="secondary" onClick={save} disabled={pending || !dirty}>
+      <Button variant="secondary" onClick={save} disabled={pending || !dirty || !isValidCapacity(capacity)}>
         Save
       </Button>
       <Button variant="secondary" onClick={remove} disabled={pending}>
@@ -615,7 +635,7 @@ function AddRoleForm({ competitionId, sectionId }: { competitionId: string; sect
         onChange={(event) => setCapacity(Number(event.target.value))}
         className={`${INPUT_CLASS} w-20`}
       />
-      <Button onClick={add} disabled={pending || title.trim() === ''}>
+      <Button onClick={add} disabled={pending || title.trim() === '' || !isValidCapacity(capacity)}>
         Add role
       </Button>
       {error ? (
@@ -1016,7 +1036,14 @@ function GenerateFromSessionsCard({
       </ul>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button onClick={generate} disabled={pending || pendingSessionCount === 0}>
+        <Button
+          onClick={generate}
+          disabled={
+            pending ||
+            pendingSessionCount === 0 ||
+            roles.some((role) => role.included && !isValidCapacity(role.capacity))
+          }
+        >
           {buttonLabel}
         </Button>
         {message ? (

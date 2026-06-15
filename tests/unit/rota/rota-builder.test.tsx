@@ -192,6 +192,13 @@ describe('RotaBuilder', () => {
     );
   });
 
+  it('disables Save when the slot count is cleared to an invalid value', () => {
+    renderBuilder([sectionWithRole]);
+    const row = screen.getByLabelText('Role title').closest('div') as HTMLElement;
+    fireEvent.change(within(row).getByLabelText('Slots'), { target: { value: '' } });
+    expect(within(row).getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
   it('requires a second click to delete a role that has sign-ups', async () => {
     deleteRole.mockResolvedValue({ status: 'ok', data: undefined });
     renderBuilder([sectionWithRole]);

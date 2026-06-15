@@ -121,4 +121,19 @@ describe('PublicRotaBoard', () => {
     // The form stays so the volunteer can read the message and pick another slot.
     expect(screen.getByLabelText('Your name')).toBeInTheDocument();
   });
+
+  it('recovers from a thrown action instead of getting stuck on "Signing up…"', async () => {
+    submitAction.mockRejectedValue(new Error('network down'));
+    renderBoard(sections);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up' }));
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Dana' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'dana@example.com' } });
+    fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '07700900000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up for Spotters / Loaders' }));
+
+    await waitFor(() => expect(screen.getByText(/Could not reach the server/)).toBeInTheDocument());
+    // The button is re-enabled, not stuck disabled.
+    expect(screen.getByRole('button', { name: 'Sign up for Spotters / Loaders' })).not.toBeDisabled();
+  });
 });
