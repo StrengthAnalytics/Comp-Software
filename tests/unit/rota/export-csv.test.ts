@@ -31,4 +31,24 @@ describe('buildRotaContactsCsv', () => {
     expect(line).toContain('"Say ""hi"""');
     expect(line).toContain('"Line1\nLine2"');
   });
+
+  it("neutralises leading formula triggers (=, @, -) with a ' prefix", () => {
+    expect(buildRotaContactsCsv([{ ...row, name: '=HYPERLINK("http://evil")' }]).split('\r\n')[1]).toContain(
+      "'=HYPERLINK",
+    );
+    expect(buildRotaContactsCsv([{ ...row, name: '@cmd' }]).split('\r\n')[1]).toContain("'@cmd");
+    expect(buildRotaContactsCsv([{ ...row, name: '-2+3' }]).split('\r\n')[1]).toContain("'-2+3");
+  });
+
+  it('guards a phone starting with + (kept as text — the quote is hidden in spreadsheets)', () => {
+    expect(buildRotaContactsCsv([{ ...row, phone: '+44 7700 900000' }]).split('\r\n')[1]).toContain(
+      "'+44 7700 900000",
+    );
+  });
+
+  it('leaves ordinary values untouched', () => {
+    expect(buildRotaContactsCsv([row]).split('\r\n')[1]).toBe(
+      'Sat,AM,MC,9:30am,Mike R,mike@example.com,07700900000,2026-06-15T10:00:00Z',
+    );
+  });
 });
