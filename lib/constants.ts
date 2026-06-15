@@ -373,3 +373,24 @@ export const SUGGESTED_RECORD_REGIONS: readonly string[] = [
   'South Midlands',
   'South East',
 ];
+
+// Volunteer staff rota vocabulary ------------------------------------------------------------------
+
+// An upper bound on a single slot's capacity, so the builder's number input can't be set absurdly
+// high. A real meet's largest crew (spotters/loaders, refs) is a handful per session.
+export const MAX_ROTA_SLOT_CAPACITY = 50;
+
+// Suggested role titles for the rota builder's quick-add, in the order our Google-Sheet rota lists
+// them. Free text on the row — an organiser can name a role anything — so this is only a convenience
+// list, not a constraint.
+export const SUGGESTED_ROTA_ROLES: readonly string[] = [
+  'MC',
+  'Platform Manager',
+  'Spotters / Loaders',
+  'Refs',
+  'Weigh-in',
+  'Livestream',
+  'Refreshments',
+  'Set-up',
+  'Take Down',
+];
