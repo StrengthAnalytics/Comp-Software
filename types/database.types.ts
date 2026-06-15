@@ -585,6 +585,7 @@ export type Database = {
         Row: {
           id: string;
           competition_id: string;
+          session_id: string | null;
           day_label: string | null;
           title: string;
           subtitle: string | null;
@@ -594,6 +595,7 @@ export type Database = {
         Insert: {
           id?: string;
           competition_id: string;
+          session_id?: string | null;
           day_label?: string | null;
           title: string;
           subtitle?: string | null;
@@ -603,6 +605,7 @@ export type Database = {
         Update: {
           id?: string;
           competition_id?: string;
+          session_id?: string | null;
           day_label?: string | null;
           title?: string;
           subtitle?: string | null;

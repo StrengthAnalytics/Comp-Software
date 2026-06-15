@@ -11,6 +11,7 @@ vi.mock('@/actions/rota', () => ({
   createRotaSectionAction: vi.fn(),
   deleteRotaRoleAction: vi.fn(),
   deleteRotaSectionAction: vi.fn(),
+  generateRotaFromSessionsAction: vi.fn(),
   moveRotaRoleAction: vi.fn(),
   moveRotaSectionAction: vi.fn(),
   setRotaOpenAction: vi.fn(),
@@ -23,14 +24,17 @@ import {
   createRotaRoleAction,
   createRotaSectionAction,
   deleteRotaRoleAction,
+  generateRotaFromSessionsAction,
   setRotaOpenAction,
   updateRotaRoleAction,
 } from '@/actions/rota';
+import { DEFAULT_ROTA_ROLE_TEMPLATE } from '@/lib/constants';
 import { RotaBuilder, type RotaBuilderSection } from '@/components/rota/rota-builder';
 
 const createRole = vi.mocked(createRotaRoleAction);
 const createSection = vi.mocked(createRotaSectionAction);
 const deleteRole = vi.mocked(deleteRotaRoleAction);
+const generateAction = vi.mocked(generateRotaFromSessionsAction);
 const setOpen = vi.mocked(setRotaOpenAction);
 const updateRole = vi.mocked(updateRotaRoleAction);
 
@@ -54,7 +58,12 @@ const emptySection: RotaBuilderSection = {
   roles: [],
 };
 
-function renderBuilder(sections: RotaBuilderSection[], initialOpen = false) {
+function renderBuilder(
+  sections: RotaBuilderSection[],
+  initialOpen = false,
+  sessionCount = 0,
+  pendingSessionCount = 0,
+) {
   return render(
     <RotaBuilder
       competitionId={COMP_ID}
@@ -62,6 +71,8 @@ function renderBuilder(sections: RotaBuilderSection[], initialOpen = false) {
       competitionStatus="draft"
       initialOpen={initialOpen}
       initialWithdrawalContact={null}
+      sessionCount={sessionCount}
+      pendingSessionCount={pendingSessionCount}
       sections={sections}
     />,
   );
@@ -155,5 +166,28 @@ describe('RotaBuilder', () => {
 
     fireEvent.click(within(row).getByRole('button', { name: 'Confirm delete' }));
     await waitFor(() => expect(deleteRole).toHaveBeenCalledWith({ id: 'role-1' }));
+  });
+
+  it('generates columns from sessions with only the ticked roles', async () => {
+    generateAction.mockResolvedValue({ status: 'ok', data: { created: 3 } });
+    renderBuilder([], false, 3, 3);
+
+    // Untick one default role, then generate.
+    fireEvent.click(screen.getByLabelText('Refs'));
+    fireEvent.click(screen.getByRole('button', { name: /Generate 3 columns/ }));
+
+    await waitFor(() => expect(generateAction).toHaveBeenCalled());
+    const arg = generateAction.mock.calls[0][0];
+    expect(arg.competitionId).toBe(COMP_ID);
+    const titles = arg.roles.map((role) => role.title);
+    expect(titles).toContain('MC');
+    expect(titles).not.toContain('Refs');
+    expect(arg.roles).toHaveLength(DEFAULT_ROTA_ROLE_TEMPLATE.length - 1);
+  });
+
+  it('points to Sessions & flights when the comp has no sessions', () => {
+    renderBuilder([], false, 0, 0);
+    expect(screen.getByRole('link', { name: 'Sessions & flights' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Generate/ })).toBeNull();
   });
 });

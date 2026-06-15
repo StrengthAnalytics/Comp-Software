@@ -389,8 +389,26 @@ export const SUGGESTED_ROTA_ROLES: readonly string[] = [
   'Spotters / Loaders',
   'Refs',
   'Weigh-in',
+  'Table',
+  'Registration table',
   'Livestream',
   'Refreshments',
   'Set-up',
   'Take Down',
+];
+
+// The default staffing roles the rota's "Generate from sessions" builder offers, each with the number
+// of positions it gets per session. The admin ticks/unticks and can tweak the counts before
+// generating; after generation every role is editable per column like any other. Matches our
+// standard meet crew.
+export type RotaRoleTemplate = { title: string; capacity: number };
+
+export const DEFAULT_ROTA_ROLE_TEMPLATE: readonly RotaRoleTemplate[] = [
+  { title: 'MC', capacity: 1 },
+  { title: 'Platform Manager', capacity: 1 },
+  { title: 'Spotters / Loaders', capacity: 5 },
+  { title: 'Refs', capacity: 4 },
+  { title: 'Weigh-in', capacity: 2 },
+  { title: 'Table', capacity: 2 },
+  { title: 'Registration table', capacity: 2 },
 ];

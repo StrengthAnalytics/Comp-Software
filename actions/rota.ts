@@ -6,7 +6,10 @@ import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { toFieldErrors } from '@/lib/validation';
+import { MAX_ROTA_SLOT_CAPACITY } from '@/lib/constants';
+import { planRotaSectionsFromSessions } from '@/lib/rota/generate';
 import {
+  ROTA_ROLE_TITLE_MAX,
   rotaRoleCreateSchema,
   rotaRoleUpdateSchema,
   rotaSectionCreateSchema,
@@ -358,6 +361,130 @@ export async function moveRotaRoleAction(
       return fail(GENERIC_ERROR);
     }
     return moveWithin(supabase, 'rota_roles', roles ?? [], parsed.data.id, parsed.data.direction);
+  });
+}
+
+// --- Generate the rota from the comp's sessions ---------------------------------------------------
+
+const generateRotaSchema = z.object({
+  competitionId: z.uuid(),
+  // The ticked default roles (title + position count), chosen in the builder before generating.
+  roles: z
+    .array(
+      z.object({
+        title: z
+          .string()
+          .trim()
+          .min(1, 'A role needs a title.')
+          .max(ROTA_ROLE_TITLE_MAX, 'That role title is too long.'),
+        capacity: z
+          .number()
+          .int('Use a whole number.')
+          .min(1, 'A role needs at least one slot.')
+          .max(MAX_ROTA_SLOT_CAPACITY, `A role can have at most ${MAX_ROTA_SLOT_CAPACITY} slots.`),
+      }),
+    )
+    .min(1, 'Tick at least one role to generate.')
+    .max(50),
+});
+
+export type GenerateRotaInput = z.infer<typeof generateRotaSchema>;
+
+// Creates one rota section per comp session that doesn't already have one (the section_id link makes
+// this idempotent — re-running only adds columns for new sessions, never duplicating or overwriting
+// the admin's edits), each pre-filled with the ticked roles. Returns how many columns were created.
+export async function generateRotaFromSessionsAction(
+  input: GenerateRotaInput,
+): Promise<ActionResult<{ created: number }>> {
+  return Sentry.withServerActionInstrumentation('generateRotaFromSessions', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = generateRotaSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Tick at least one role to generate.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+
+    const [sessionsResult, sectionsResult, platformsResult] = await Promise.all([
+      supabase
+        .from('sessions')
+        .select('id, name, session_date, start_time, platform_id, sort_order')
+        .eq('competition_id', parsed.data.competitionId),
+      supabase.from('rota_sections').select('id, session_id').eq('competition_id', parsed.data.competitionId),
+      supabase.from('platforms').select('id, name').eq('competition_id', parsed.data.competitionId),
+    ]);
+    if (sessionsResult.error || sectionsResult.error || platformsResult.error) {
+      Sentry.captureException(sessionsResult.error ?? sectionsResult.error ?? platformsResult.error);
+      return fail(GENERIC_ERROR);
+    }
+
+    const sessions = sessionsResult.data ?? [];
+    if (sessions.length === 0) {
+      return fail('Add sessions on the Sessions & flights screen before generating the rota.');
+    }
+
+    const existing = sectionsResult.data ?? [];
+    const linkedSessionIds = new Set(
+      existing.map((section) => section.session_id).filter((id): id is string => id !== null),
+    );
+    const platformNamesById = new Map((platformsResult.data ?? []).map((platform) => [platform.id, platform.name]));
+
+    const planned = planRotaSectionsFromSessions(sessions, linkedSessionIds, platformNamesById);
+    if (planned.length === 0) {
+      // Every session already has a column — a no-op, reported so the UI can say "already up to date".
+      return ok({ created: 0 });
+    }
+
+    // New columns append after any existing ones.
+    const baseSortOrder = existing.length;
+    const sectionRows = planned.map((section, index) => ({
+      competition_id: parsed.data.competitionId,
+      session_id: section.sessionId,
+      day_label: section.dayLabel,
+      title: section.title,
+      subtitle: section.subtitle,
+      sort_order: baseSortOrder + index,
+    }));
+
+    const { data: createdSections, error: sectionError } = await supabase
+      .from('rota_sections')
+      .insert(sectionRows)
+      .select('id, session_id');
+    if (sectionError || !createdSections) {
+      Sentry.captureException(sectionError);
+      return fail(GENERIC_ERROR);
+    }
+
+    const sectionIdBySession = new Map(createdSections.map((section) => [section.session_id, section.id]));
+    const roleRows = planned.flatMap((section) => {
+      const sectionId = sectionIdBySession.get(section.sessionId);
+      if (!sectionId) {
+        return [];
+      }
+      return parsed.data.roles.map((role, index) => ({
+        competition_id: parsed.data.competitionId,
+        section_id: sectionId,
+        title: role.title,
+        arrive_by: null,
+        capacity: role.capacity,
+        sort_order: index,
+      }));
+    });
+
+    if (roleRows.length > 0) {
+      const { error: roleError } = await supabase.from('rota_roles').insert(roleRows);
+      if (roleError) {
+        // The columns landed; be honest that their roles didn't rather than reporting clean success.
+        Sentry.captureException(roleError);
+        return fail(
+          'The columns were added, but their roles could not be created. Add roles to them, or delete the columns and try again.',
+        );
+      }
+    }
+
+    return ok({ created: planned.length });
   });
 }
 

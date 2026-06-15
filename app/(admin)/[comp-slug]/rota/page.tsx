@@ -13,20 +13,29 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
 
   const supabase = await createClient();
 
-  const [{ data: sectionRows }, { data: roleRows }, { data: signupRows }] = await Promise.all([
-    supabase
-      .from('rota_sections')
-      .select('id, day_label, title, subtitle, sort_order')
-      .eq('competition_id', comp.id)
-      .order('sort_order', { ascending: true }),
-    supabase
-      .from('rota_roles')
-      .select('id, section_id, title, arrive_by, capacity, sort_order')
-      .eq('competition_id', comp.id)
-      .order('sort_order', { ascending: true }),
-    // Admin reads the base table (contact details load in Phase 4); here we only tally per role.
-    supabase.from('rota_signups').select('role_id').eq('competition_id', comp.id),
-  ]);
+  const [{ data: sectionRows }, { data: roleRows }, { data: signupRows }, { data: sessionRows }] =
+    await Promise.all([
+      supabase
+        .from('rota_sections')
+        .select('id, session_id, day_label, title, subtitle, sort_order')
+        .eq('competition_id', comp.id)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('rota_roles')
+        .select('id, section_id, title, arrive_by, capacity, sort_order')
+        .eq('competition_id', comp.id)
+        .order('sort_order', { ascending: true }),
+      // Admin reads the base table (contact details load in Phase 4); here we only tally per role.
+      supabase.from('rota_signups').select('role_id').eq('competition_id', comp.id),
+      // For the "Generate from sessions" card: how many sessions exist and how many lack a column.
+      supabase.from('sessions').select('id').eq('competition_id', comp.id),
+    ]);
+
+  const linkedSessionIds = new Set(
+    (sectionRows ?? []).map((section) => section.session_id).filter((id): id is string => id !== null),
+  );
+  const sessionCount = (sessionRows ?? []).length;
+  const pendingSessionCount = (sessionRows ?? []).filter((session) => !linkedSessionIds.has(session.id)).length;
 
   const countByRole = new Map<string, number>();
   for (const row of signupRows ?? []) {
@@ -72,6 +81,8 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
         competitionStatus={comp.status}
         initialOpen={comp.rota_open}
         initialWithdrawalContact={comp.rota_withdrawal_contact}
+        sessionCount={sessionCount}
+        pendingSessionCount={pendingSessionCount}
         sections={sections}
       />
     </div>

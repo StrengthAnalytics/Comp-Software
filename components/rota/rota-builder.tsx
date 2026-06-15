@@ -7,6 +7,7 @@ import {
   createRotaSectionAction,
   deleteRotaRoleAction,
   deleteRotaSectionAction,
+  generateRotaFromSessionsAction,
   moveRotaRoleAction,
   moveRotaSectionAction,
   setRotaOpenAction,
@@ -14,7 +15,7 @@ import {
   updateRotaRoleAction,
   updateRotaSectionAction,
 } from '@/actions/rota';
-import { MAX_ROTA_SLOT_CAPACITY, SUGGESTED_ROTA_ROLES } from '@/lib/constants';
+import { DEFAULT_ROTA_ROLE_TEMPLATE, MAX_ROTA_SLOT_CAPACITY, SUGGESTED_ROTA_ROLES } from '@/lib/constants';
 import { ROTA_WITHDRAWAL_CONTACT_MAX } from '@/types/rota';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -637,12 +638,145 @@ function AddSectionForm({ competitionId }: { competitionId: string }) {
   );
 }
 
+// Quick-start: create a column per comp session, pre-filled with the ticked default roles. Linked by
+// session_id so it's idempotent — only sessions without a column are added, and the admin's edits are
+// never overwritten.
+function GenerateFromSessionsCard({
+  competitionId,
+  slug,
+  sessionCount,
+  pendingSessionCount,
+}: {
+  competitionId: string;
+  slug: string;
+  sessionCount: number;
+  pendingSessionCount: number;
+}) {
+  const router = useRouter();
+  const [roles, setRoles] = useState(() =>
+    DEFAULT_ROTA_ROLE_TEMPLATE.map((role) => ({ title: role.title, capacity: role.capacity, included: true })),
+  );
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function setIncluded(index: number, included: boolean) {
+    setRoles((current) => current.map((role, i) => (i === index ? { ...role, included } : role)));
+  }
+  function setCapacity(index: number, capacity: number) {
+    setRoles((current) => current.map((role, i) => (i === index ? { ...role, capacity } : role)));
+  }
+
+  function generate() {
+    const selected = roles.filter((role) => role.included).map((role) => ({ title: role.title, capacity: role.capacity }));
+    if (selected.length === 0) {
+      setError('Tick at least one role to generate.');
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    startTransition(async () => {
+      const result = await generateRotaFromSessionsAction({ competitionId, roles: selected });
+      if (result.status === 'error') {
+        setError(result.message);
+        return;
+      }
+      const created = result.data.created;
+      setMessage(
+        created === 0
+          ? 'All your sessions already have a column.'
+          : `Added ${created} column${created === 1 ? '' : 's'} — one per session. Tweak the roles below as needed.`,
+      );
+      router.refresh();
+    });
+  }
+
+  if (sessionCount === 0) {
+    return (
+      <Card title="Generate from sessions">
+        <p className="-mt-3 text-sm text-neutral-600">
+          Set up your sessions on the{' '}
+          <a className="font-medium text-brand-700 underline" href={`/${slug}/flights`}>
+            Sessions &amp; flights
+          </a>{' '}
+          screen, then come back here to create a rota column for each one in a click.
+        </p>
+      </Card>
+    );
+  }
+
+  let buttonLabel = `Generate ${pendingSessionCount} column${pendingSessionCount === 1 ? '' : 's'}`;
+  if (pending) {
+    buttonLabel = 'Generating…';
+  } else if (pendingSessionCount === 0) {
+    buttonLabel = 'All sessions added';
+  }
+
+  return (
+    <Card title="Generate from sessions">
+      <p className="-mt-3 mb-4 text-sm text-neutral-600">
+        Create a column for each session in one click, pre-filled with the roles you tick below.{' '}
+        {pendingSessionCount === 0
+          ? 'All your sessions already have a column — add a session and come back to generate it.'
+          : `${pendingSessionCount} of ${sessionCount} session${sessionCount === 1 ? '' : 's'} need a column.`}
+      </p>
+
+      <ul className="divide-y divide-neutral-100">
+        {roles.map((role, index) => (
+          <li key={role.title} className="flex items-center justify-between gap-3 py-2">
+            <label className="flex items-center gap-2 text-sm text-neutral-800">
+              <input
+                type="checkbox"
+                checked={role.included}
+                onChange={(event) => setIncluded(index, event.target.checked)}
+                className="h-4 w-4 rounded border-neutral-300"
+              />
+              {role.title}
+            </label>
+            <label className="flex items-center gap-2 text-xs text-neutral-500">
+              Positions
+              <input
+                type="number"
+                min={1}
+                max={MAX_ROTA_SLOT_CAPACITY}
+                value={role.capacity}
+                disabled={!role.included}
+                aria-label={`${role.title} positions`}
+                onChange={(event) => setCapacity(index, Number(event.target.value))}
+                className={`${INPUT_CLASS} w-16 disabled:opacity-50`}
+              />
+            </label>
+          </li>
+        ))}
+      </ul>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button onClick={generate} disabled={pending || pendingSessionCount === 0}>
+          {buttonLabel}
+        </Button>
+        {message ? (
+          <p role="status" className="text-sm text-green-700">
+            {message}
+          </p>
+        ) : null}
+        {error ? (
+          <p role="alert" className="text-sm text-red-600">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
 type RotaBuilderProps = {
   competitionId: string;
   slug: string;
   competitionStatus: CompStatus;
   initialOpen: boolean;
   initialWithdrawalContact: string | null;
+  sessionCount: number;
+  pendingSessionCount: number;
   sections: RotaBuilderSection[];
 };
 
@@ -655,6 +789,8 @@ export function RotaBuilder({
   competitionStatus,
   initialOpen,
   initialWithdrawalContact,
+  sessionCount,
+  pendingSessionCount,
   sections,
 }: RotaBuilderProps) {
   const ordered = sections.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
@@ -667,6 +803,13 @@ export function RotaBuilder({
         competitionStatus={competitionStatus}
         initialOpen={initialOpen}
         initialWithdrawalContact={initialWithdrawalContact}
+      />
+
+      <GenerateFromSessionsCard
+        competitionId={competitionId}
+        slug={slug}
+        sessionCount={sessionCount}
+        pendingSessionCount={pendingSessionCount}
       />
 
       {/* Datalist of common role names, shared by every section's add-role input. */}
