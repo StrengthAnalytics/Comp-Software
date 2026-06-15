@@ -36,7 +36,8 @@ export const sessionInputSchema = z.object({
   competitionId: z.uuid(),
   name: name(80),
   sessionDate: optionalDate,
-  startTime: optionalTime,
+  weighInTime: optionalTime,
+  liftOffTime: optionalTime,
   platformId: optionalUuid,
   sortOrder: sortOrder.default(0),
 });
@@ -45,7 +46,8 @@ export const sessionUpdateSchema = z.object({
   id: z.uuid(),
   name: name(80),
   sessionDate: optionalDate,
-  startTime: optionalTime,
+  weighInTime: optionalTime,
+  liftOffTime: optionalTime,
   platformId: optionalUuid,
   sortOrder,
 });

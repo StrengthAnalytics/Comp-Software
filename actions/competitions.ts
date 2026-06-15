@@ -282,7 +282,7 @@ async function copyCompetitionChildren(
   // sessions (platform_id → copied platform)
   const sessions = await supabase
     .from('sessions')
-    .select('id, platform_id, name, session_date, start_time, sort_order')
+    .select('id, platform_id, name, session_date, weigh_in_time, lift_off_time, sort_order')
     .eq('competition_id', sourceId);
   if (sessions.error) return duplicateFailed(sessions.error);
   const sessionIds = new Map<string, string>();
@@ -295,7 +295,8 @@ async function copyCompetitionChildren(
       platform_id: mappedId(platformIds, row.platform_id),
       name: row.name,
       session_date: row.session_date,
-      start_time: row.start_time,
+      weigh_in_time: row.weigh_in_time,
+      lift_off_time: row.lift_off_time,
       sort_order: row.sort_order,
     };
   });

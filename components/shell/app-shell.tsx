@@ -12,6 +12,7 @@ import {
   IconCalendar,
   IconChevronsLeft,
   IconChevronsRight,
+  IconClipboard,
   IconClose,
   IconExternalLink,
   IconFlag,
@@ -56,6 +57,7 @@ function compNavGroups(comp: ShellComp): NavGroup[] {
         { label: 'Setup', href: `/comps/${comp.id}/edit`, icon: IconSliders },
         { label: 'Lifters', href: `/${comp.slug}/entries`, icon: IconUsers },
         { label: 'Sessions & flights', href: `/${comp.slug}/flights`, icon: IconCalendar },
+        { label: 'Staff rota', href: `/${comp.slug}/rota`, icon: IconClipboard },
         { label: 'Weigh-in', href: `/${comp.slug}/weigh-in`, icon: IconScale },
         { label: 'Rack heights', href: `/${comp.slug}/rack-heights`, icon: IconBarbell },
         ...(comp.isTeamCompetition

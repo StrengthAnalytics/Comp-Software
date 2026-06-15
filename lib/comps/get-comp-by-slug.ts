@@ -6,13 +6,14 @@ import { createClient } from '@/lib/supabase/server';
 // columns the layout (name, is_team_competition) and the operational pages (event_type, status,
 // kit_type for the run screen's IPF GL column, starts_on for the entries screen's age-category
 // gating, ends_on and federation for the Checklist page, entry_form/entry_form_open for the
-// entries screen's form designer) need, so every caller reads from the same memoized result.
+// entries screen's form designer, rota_open/rota_withdrawal_contact for the rota builder) need, so every caller reads
+// from the same memoized result.
 export const getCompBySlug = cache(async (slug: string) => {
   const supabase = await createClient();
   const { data } = await supabase
     .from('competitions')
     .select(
-      'id, name, slug, federation, event_type, status, is_team_competition, kit_type, starts_on, ends_on, entry_form, entry_form_open',
+      'id, name, slug, federation, event_type, status, is_team_competition, kit_type, starts_on, ends_on, entry_form, entry_form_open, rota_open, rota_withdrawal_contact',
     )
     .eq('slug', slug)
     .maybeSingle();

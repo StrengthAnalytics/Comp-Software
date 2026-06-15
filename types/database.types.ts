@@ -49,6 +49,8 @@ export type Database = {
           is_team_competition: boolean;
           entry_form: Json;
           entry_form_open: boolean;
+          rota_open: boolean;
+          rota_withdrawal_contact: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -65,6 +67,8 @@ export type Database = {
           is_team_competition?: boolean;
           entry_form?: Json;
           entry_form_open?: boolean;
+          rota_open?: boolean;
+          rota_withdrawal_contact?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -81,6 +85,8 @@ export type Database = {
           is_team_competition?: boolean;
           entry_form?: Json;
           entry_form_open?: boolean;
+          rota_open?: boolean;
+          rota_withdrawal_contact?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -171,7 +177,8 @@ export type Database = {
           platform_id: string | null;
           name: string;
           session_date: string | null;
-          start_time: string | null;
+          weigh_in_time: string | null;
+          lift_off_time: string | null;
           sort_order: number;
           created_at: string;
         };
@@ -181,7 +188,8 @@ export type Database = {
           platform_id?: string | null;
           name: string;
           session_date?: string | null;
-          start_time?: string | null;
+          weigh_in_time?: string | null;
+          lift_off_time?: string | null;
           sort_order?: number;
           created_at?: string;
         };
@@ -191,7 +199,8 @@ export type Database = {
           platform_id?: string | null;
           name?: string;
           session_date?: string | null;
-          start_time?: string | null;
+          weigh_in_time?: string | null;
+          lift_off_time?: string | null;
           sort_order?: number;
           created_at?: string;
         };
@@ -575,6 +584,102 @@ export type Database = {
         };
         Relationships: [];
       };
+      rota_sections: {
+        Row: {
+          id: string;
+          competition_id: string;
+          session_id: string | null;
+          day_label: string | null;
+          title: string;
+          subtitle: string | null;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          competition_id: string;
+          session_id?: string | null;
+          day_label?: string | null;
+          title: string;
+          subtitle?: string | null;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          competition_id?: string;
+          session_id?: string | null;
+          day_label?: string | null;
+          title?: string;
+          subtitle?: string | null;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      rota_roles: {
+        Row: {
+          id: string;
+          competition_id: string;
+          section_id: string;
+          title: string;
+          arrive_by: string | null;
+          capacity: number;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          competition_id: string;
+          section_id: string;
+          title: string;
+          arrive_by?: string | null;
+          capacity?: number;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          competition_id?: string;
+          section_id?: string;
+          title?: string;
+          arrive_by?: string | null;
+          capacity?: number;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      rota_signups: {
+        Row: {
+          id: string;
+          competition_id: string;
+          role_id: string;
+          name: string;
+          email: string;
+          phone: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          competition_id: string;
+          role_id: string;
+          name: string;
+          email: string;
+          phone: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          competition_id?: string;
+          role_id?: string;
+          name?: string;
+          email?: string;
+          phone?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       // Public-safe lifter projection (no DOB, no IPF member ID). Columns are nullable to match
@@ -587,6 +692,32 @@ export type Database = {
           gender: string | null;
           club: string | null;
           country: string | null;
+        };
+        Relationships: [];
+      };
+      // Public-safe rota sign-ups: name + which slot only, never email/phone. Rows limited to
+      // rota-open comps. Columns nullable to match Supabase's view type generation. See migration
+      // 20260615000001.
+      public_rota_signups: {
+        Row: {
+          id: string | null;
+          competition_id: string | null;
+          role_id: string | null;
+          name: string | null;
+        };
+        Relationships: [];
+      };
+      // Minimal public identity of a rota-open comp, so the public board header renders even while
+      // the comp is still a draft, without exposing the rest of the competitions row.
+      public_rota_comps: {
+        Row: {
+          id: string | null;
+          slug: string | null;
+          name: string | null;
+          starts_on: string | null;
+          ends_on: string | null;
+          rota_open: boolean | null;
+          rota_withdrawal_contact: string | null;
         };
         Relationships: [];
       };

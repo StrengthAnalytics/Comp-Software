@@ -28,7 +28,8 @@ export type SessionRow = {
   id: string;
   name: string;
   session_date: string | null;
-  start_time: string | null;
+  weigh_in_time: string | null;
+  lift_off_time: string | null;
   platform_id: string | null;
   sort_order: number;
 };
@@ -310,7 +311,8 @@ function SessionCard({
   const router = useRouter();
   const [name, setName] = useState(session.name);
   const [sessionDate, setSessionDate] = useState(session.session_date ?? '');
-  const [startTime, setStartTime] = useState(timeForInput(session.start_time));
+  const [weighInTime, setWeighInTime] = useState(timeForInput(session.weigh_in_time));
+  const [liftOffTime, setLiftOffTime] = useState(timeForInput(session.lift_off_time));
   const [platformId, setPlatformId] = useState(session.platform_id ?? '');
   const [sortOrder, setSortOrder] = useState(session.sort_order);
   const [error, setError] = useState<string | null>(null);
@@ -326,7 +328,8 @@ function SessionCard({
         competitionId,
         name,
         sessionDate: sessionDate.trim() || null,
-        startTime: startTime.trim() || null,
+        weighInTime: weighInTime.trim() || null,
+        liftOffTime: liftOffTime.trim() || null,
         platformId: platformId === '' ? null : platformId,
         sortOrder,
       });
@@ -367,11 +370,20 @@ function SessionCard({
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className={LABEL_CLASS}>Start time</span>
+          <span className={LABEL_CLASS}>Weigh-ins open at</span>
           <input
             type="time"
-            value={startTime}
-            onChange={(event) => setStartTime(event.target.value)}
+            value={weighInTime}
+            onChange={(event) => setWeighInTime(event.target.value)}
+            className={INPUT_CLASS}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className={LABEL_CLASS}>Lifting starts at</span>
+          <input
+            type="time"
+            value={liftOffTime}
+            onChange={(event) => setLiftOffTime(event.target.value)}
             className={INPUT_CLASS}
           />
         </label>
@@ -431,7 +443,8 @@ function AddSession({ competitionId, nextSortOrder }: { competitionId: string; n
         competitionId,
         name,
         sessionDate: null,
-        startTime: null,
+        weighInTime: null,
+        liftOffTime: null,
         platformId: null,
         sortOrder: nextSortOrder,
       });

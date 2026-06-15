@@ -34,7 +34,10 @@ const classes: PublicWeightClass[] = [
   { name: '-63 kg', gender: 'female' },
 ];
 
-function renderForm(config?: Partial<EntryFormConfig>, weightClasses: PublicWeightClass[] = []) {
+function renderForm(
+  config?: { fields?: Partial<EntryFormConfig['fields']>; disclaimer?: string | null },
+  weightClasses: PublicWeightClass[] = [],
+) {
   return render(
     <PublicEntryForm
       competitionId={COMP_ID}

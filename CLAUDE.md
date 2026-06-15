@@ -49,6 +49,7 @@ This project is developed online-only against the hosted Supabase dev project an
       /run                      ← scorekeeper interface
       /refs                     ← ref panel (v2)
       /flights                  ← sessions & flight management
+      /rota                     ← staff rota builder (volunteer sign-up admin)
       /teams                    ← team management (team competitions only)
   /(display)                    ← auth-gated full-screen venue displays, no chrome (sidebar/header)
     /[comp-slug]
@@ -66,6 +67,7 @@ This project is developed online-only against the hosted Supabase dev project an
     /[comp-slug]/warm-up        ← warm-up room board: read-only run scoresheet + up-next, sign-in-free (per-platform via ?platform=)
     /[comp-slug]/results        ← final results
     /[comp-slug]/enter          ← public entry form: lifters self-register into the review inbox
+    /[comp-slug]/volunteer      ← public staff-rota sign-up board (volunteers claim slots, sign-in-free)
   /auth                         ← sign-in (email + password; OTP for production)
   /account                      ← profile management
 /components                     ← shared UI
@@ -124,7 +126,7 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 ## Supabase conventions
 
 - Row Level Security (RLS) on every table. No exceptions.
-- Permissions model: admins (email in `ADMIN_EMAILS`) can read and write everything; anon can read data belonging to publicly visible competitions only. There are no per-comp roles. One deliberate exception: `entry_submissions` (the public entry form's inbox) carries the app's single anon write — INSERT only, gated by `comp_accepts_entries()`, with no anon read (submissions carry PII). See ARCHITECTURE.md §3/§7.
+- Permissions model: admins (email in `ADMIN_EMAILS`) can read and write everything; anon can read data belonging to publicly visible competitions only. There are no per-comp roles. Two deliberate anon-write exceptions, each a single INSERT-only policy with no anon read of the base table (both carry PII): `entry_submissions` (the public entry form's inbox, gated by `comp_accepts_entries()`); and `rota_signups` (the public volunteer staff rota, gated by `comp_rota_open()` — the volunteer's name, but never email/phone, is exposed through the `public_rota_signups` view). See ARCHITECTURE.md §3/§7.
 - Typed Supabase client generated from the database schema. Regenerate types after every migration.
 - Anon key used in client-side Supabase client only.
 - Service role key only in server-side admin actions. Never exposed to the client.
@@ -185,7 +187,7 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 ### Public entry form
 - Lifters can self-register via a shareable, comp-specific public form (`/[comp-slug]/enter`). Submissions land in the `entry_submissions` holding table — never directly in `lifters`/`entries` — and wait as red-tinted review cards on the entries screen until an admin approves (which runs the standard registration path and stamps the submission) or rejects them. See the ADR in ARCHITECTURE.md §7.
 - The form's design is per comp (`competitions.entry_form` jsonb + the `entry_form_open` accepting-entries toggle): name, sex and date of birth are always collected; club, membership number, division, weight class, predicted total, best comp total from the last 12 months (to help seed prime-time flights), kit (Raw/Equipped) and event (SBD/Bench-only) preference, instagram, email and phone are each off/optional/required; an optional disclaimer, when set, makes its acceptance tick mandatory. The submission Zod schema is built from the design (`buildSubmissionSchema`, `types/entry-form.ts`), so the server enforces exactly what the admin chose to ask.
-- This is the app's only anonymous write: an INSERT-only RLS policy on `entry_submissions`, gated by `comp_accepts_entries()` (comp publicly visible + form open), no anon read. The submit action is the one server action without `adminGuard()`; abuse is bounded by a honeypot plus a database insert trigger capping a comp at 500 pending submissions. Kit/event preference and the total questions are informational for the admin (kit and event remain per-comp settings).
+- This is one of the app's two anonymous writes (the other is the volunteer staff rota's `rota_signups`): an INSERT-only RLS policy on `entry_submissions`, gated by `comp_accepts_entries()` (comp publicly visible + form open), no anon read. The submit action is the one server action without `adminGuard()`; abuse is bounded by a honeypot plus a database insert trigger capping a comp at 500 pending submissions. Kit/event preference and the total questions are informational for the admin (kit and event remain per-comp settings).
 
 ### Team competitions
 - Optional per-comp format (`is_team_competition`), full power only. A team is three lifters, one each on squat, bench and deadlift; each member contests only their assigned lift and weighs in individually.
@@ -193,6 +195,12 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 - Team score = sum of the three members' IPF GL points, each from that member's best lift. A member with no good lift contributes 0. Teams rank by total; there is no individual placing in this format.
 - GL uses the full-power coefficients for all three roles, since the IPF has no single-squat or single-deadlift coefficient set (a deliberate house rule, not an official IPF score).
 - The sessions & flights screen assigns whole teams to flights (all members move together), not individual lifters. Team standings render on the public results page.
+
+### Volunteer staff rota
+- A per-comp **staff rota** lets an organiser publish an online volunteer sign-up (replacing the staffing Google Sheet). Built in phases (all in): the backend, the admin builder (`/[comp-slug]/rota`), the public sign-up board (`/[comp-slug]/volunteer`, sign-in-free), and the admin contact-management view — the signed-up volunteers with their contact details, confirm-then-remove, an "+ Add volunteer" form on open slots, a contacts CSV export, live updates (`useRotaSignupsSubscription` + the shared debounced refresh), and a type-the-comp-name **Reset the rota** danger zone (`resetRotaAction`) that wipes all sections/roles/sign-ups (prompting a contacts export first). The data model is independent of the comp's own sessions/flights: `rota_sections` (grid columns, e.g. "Sat — AM", "Set-up", with an optional `day_label` banner + free-text `subtitle`), `rota_roles` (a job within a section — title, `arrive_by`, and a slot `capacity`), and `rota_signups` (a volunteer claiming a slot). The admin builder edits sections/roles through `adminGuard()` actions in `actions/rota.ts` and reorders by neighbour `sort_order` swap. A one-click **Generate from sessions** creates a column per session, pre-filled with default crew roles (`DEFAULT_ROTA_ROLE_TEMPLATE` — MC, Platform Manager, Spotters/Loaders, Refs, Weigh-in, Table, Registration table), made idempotent by a nullable `rota_sections.session_id` link (only sessions without a column are added; `on delete set null`). Each generated role's arrive-by is auto-filled `ROTA_ARRIVE_BEFORE_MINUTES` (30) before the session's lift-off — or before weigh-in for the weigh-in/registration roles — driven by each role's `arriveBasis`. A per-column **Duplicate to a session** (`duplicateRotaSectionToSessionAction`) copies a column's roles verbatim (not its sign-ups) onto a session that has no column yet — for reusing a customised column on a session added later.
+- **Admin builds and owns it; volunteers can only add themselves.** All structure edits and any removal/move are admin-only server actions (`adminGuard()`), like every other setup write. There is no self-service cancel — the public board shows an admin-set `rota_withdrawal_contact` line ("email/message … to withdraw or change your slot"). Rota settings live on the comp row (`rota_open` toggle + `rota_withdrawal_contact`).
+- **The volunteer sign-up is the app's second fenced anonymous write** (`rota_signups`, INSERT-only), gated by `comp_rota_open()` rather than `is_comp_public()` — so the rota can open while the comp is still a draft (early crew recruiting). Abuse is bounded by a honeypot (`website`) plus a database `BEFORE INSERT` trigger that enforces each slot's `capacity` (serialised per slot with an advisory lock, so the last spot can't be double-booked).
+- **Names are public; contact details are admin-only.** The public board reads the volunteer's name through the PII-free `public_rota_signups` view; email/phone live only on the base table (never anon-readable, never logged to Sentry). A still-draft comp's header reads through the narrow `public_rota_comps` view (slug/name/dates/withdrawal-contact only). The admin rota view updates live (it subscribes to `rota_signups`); the public board is server-rendered (a sign-up sheet is not live competition state, so "never poll" does not force a subscription there — and anon can't subscribe to the PII base table anyway).
 
 ## Operational guardrails
 
