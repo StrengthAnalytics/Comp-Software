@@ -32,6 +32,21 @@ export function formatRotaTime(time: string | null): string | null {
   return match ? match[1] : null;
 }
 
+// A generated role's arrive-by: `minutesBefore` minutes earlier than its basis time (the session's
+// lift-off or weigh-in-open time), as "HH:MM" — or null when the basis time is unset. Wraps across
+// midnight defensively, though a real meet's times never need it.
+export function arriveBefore(baseTime: string | null, minutesBefore: number): string | null {
+  const hhmm = formatRotaTime(baseTime);
+  if (!hhmm) {
+    return null;
+  }
+  const [hours, minutes] = hhmm.split(':').map(Number);
+  const total = (hours * 60 + minutes - minutesBefore + 24 * 60) % (24 * 60);
+  const hh = String(Math.floor(total / 60)).padStart(2, '0');
+  const mm = String(total % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 // The free-text subtitle line under a generated section's heading: the session's weigh-in and
 // lift-off times (each labelled), plus the platform name when the comp runs more than one platform
 // (otherwise it's redundant). Any absent part is dropped.

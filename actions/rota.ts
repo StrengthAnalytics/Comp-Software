@@ -6,8 +6,8 @@ import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { toFieldErrors } from '@/lib/validation';
-import { MAX_ROTA_SLOT_CAPACITY } from '@/lib/constants';
-import { planRotaSectionsFromSessions } from '@/lib/rota/generate';
+import { MAX_ROTA_SLOT_CAPACITY, ROTA_ARRIVE_BEFORE_MINUTES } from '@/lib/constants';
+import { arriveBefore, planRotaSectionsFromSessions } from '@/lib/rota/generate';
 import {
   ROTA_ROLE_TITLE_MAX,
   rotaRoleCreateSchema,
@@ -382,6 +382,8 @@ const generateRotaSchema = z.object({
           .int('Use a whole number.')
           .min(1, 'A role needs at least one slot.')
           .max(MAX_ROTA_SLOT_CAPACITY, `A role can have at most ${MAX_ROTA_SLOT_CAPACITY} slots.`),
+        // Which session time this role's arrive-by is set from (30 min before it).
+        arriveBasis: z.enum(['lift_off', 'weigh_in']),
       }),
     )
     .min(1, 'Tick at least one role to generate.')
@@ -458,16 +460,21 @@ export async function generateRotaFromSessionsAction(
     }
 
     const sectionIdBySession = new Map(createdSections.map((section) => [section.session_id, section.id]));
+    const sessionById = new Map(sessions.map((session) => [session.id, session]));
     const roleRows = planned.flatMap((section) => {
       const sectionId = sectionIdBySession.get(section.sessionId);
       if (!sectionId) {
         return [];
       }
+      const session = sessionById.get(section.sessionId);
+      const liftOff = session?.lift_off_time ?? null;
+      const weighIn = session?.weigh_in_time ?? null;
       return parsed.data.roles.map((role, index) => ({
         competition_id: parsed.data.competitionId,
         section_id: sectionId,
         title: role.title,
-        arrive_by: null,
+        // 30 min before lift-off, or before weigh-in for the weigh-in / registration roles.
+        arrive_by: arriveBefore(role.arriveBasis === 'lift_off' ? liftOff : weighIn, ROTA_ARRIVE_BEFORE_MINUTES),
         capacity: role.capacity,
         sort_order: index,
       }));

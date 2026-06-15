@@ -826,7 +826,12 @@ function GenerateFromSessionsCard({
 }) {
   const router = useRouter();
   const [roles, setRoles] = useState(() =>
-    DEFAULT_ROTA_ROLE_TEMPLATE.map((role) => ({ title: role.title, capacity: role.capacity, included: true })),
+    DEFAULT_ROTA_ROLE_TEMPLATE.map((role) => ({
+      title: role.title,
+      capacity: role.capacity,
+      arriveBasis: role.arriveBasis,
+      included: true,
+    })),
   );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -840,7 +845,9 @@ function GenerateFromSessionsCard({
   }
 
   function generate() {
-    const selected = roles.filter((role) => role.included).map((role) => ({ title: role.title, capacity: role.capacity }));
+    const selected = roles
+      .filter((role) => role.included)
+      .map((role) => ({ title: role.title, capacity: role.capacity, arriveBasis: role.arriveBasis }));
     if (selected.length === 0) {
       setError('Tick at least one role to generate.');
       return;
@@ -891,6 +898,11 @@ function GenerateFromSessionsCard({
         {pendingSessionCount === 0
           ? 'All your sessions already have a column — add a session and come back to generate it.'
           : `${pendingSessionCount} of ${sessionCount} session${sessionCount === 1 ? '' : 's'} need a column.`}
+      </p>
+      <p className="mb-4 text-xs text-neutral-500">
+        Arrive-by times are filled in automatically — 30 minutes before the session&rsquo;s lift-off,
+        or before weigh-in opens for the weigh-in and registration roles. You can edit any of them
+        afterwards.
       </p>
 
       <ul className="divide-y divide-neutral-100">

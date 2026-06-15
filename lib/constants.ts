@@ -398,17 +398,22 @@ export const SUGGESTED_ROTA_ROLES: readonly string[] = [
 ];
 
 // The default staffing roles the rota's "Generate from sessions" builder offers, each with the number
-// of positions it gets per session. The admin ticks/unticks and can tweak the counts before
-// generating; after generation every role is editable per column like any other. Matches our
-// standard meet crew.
-export type RotaRoleTemplate = { title: string; capacity: number };
+// of positions it gets per session and which session time its arrive-by is computed from. The admin
+// ticks/unticks and can tweak the counts before generating; after generation every role (and its
+// arrive-by) is editable per column like any other. Matches our standard meet crew.
+export type RotaArriveBasis = 'lift_off' | 'weigh_in';
+
+export type RotaRoleTemplate = { title: string; capacity: number; arriveBasis: RotaArriveBasis };
+
+// A generated role's arrive-by is set this many minutes before its basis time.
+export const ROTA_ARRIVE_BEFORE_MINUTES = 30;
 
 export const DEFAULT_ROTA_ROLE_TEMPLATE: readonly RotaRoleTemplate[] = [
-  { title: 'MC', capacity: 1 },
-  { title: 'Platform Manager', capacity: 1 },
-  { title: 'Spotters / Loaders', capacity: 5 },
-  { title: 'Refs', capacity: 4 },
-  { title: 'Weigh-in', capacity: 2 },
-  { title: 'Table', capacity: 2 },
-  { title: 'Registration table', capacity: 2 },
+  { title: 'MC', capacity: 1, arriveBasis: 'lift_off' },
+  { title: 'Platform Manager', capacity: 1, arriveBasis: 'lift_off' },
+  { title: 'Spotters / Loaders', capacity: 5, arriveBasis: 'lift_off' },
+  { title: 'Refs', capacity: 4, arriveBasis: 'lift_off' },
+  { title: 'Weigh-in', capacity: 2, arriveBasis: 'weigh_in' },
+  { title: 'Table', capacity: 2, arriveBasis: 'lift_off' },
+  { title: 'Registration table', capacity: 2, arriveBasis: 'weigh_in' },
 ];

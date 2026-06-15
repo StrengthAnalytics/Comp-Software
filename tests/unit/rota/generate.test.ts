@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  arriveBefore,
   buildRotaSubtitle,
   formatRotaDayLabel,
   formatRotaTime,
@@ -29,6 +30,22 @@ describe('formatRotaTime', () => {
   it('returns null when absent or unrecognised', () => {
     expect(formatRotaTime(null)).toBeNull();
     expect(formatRotaTime('morning')).toBeNull();
+  });
+});
+
+describe('arriveBefore', () => {
+  it('subtracts the offset and returns HH:MM', () => {
+    expect(arriveBefore('10:00:00', 30)).toBe('09:30');
+    expect(arriveBefore('10:15', 30)).toBe('09:45');
+    expect(arriveBefore('08:00:00', 30)).toBe('07:30');
+  });
+
+  it('returns null when the basis time is unset', () => {
+    expect(arriveBefore(null, 30)).toBeNull();
+  });
+
+  it('wraps across midnight defensively', () => {
+    expect(arriveBefore('00:15', 30)).toBe('23:45');
   });
 });
 

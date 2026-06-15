@@ -213,6 +213,9 @@ describe('RotaBuilder', () => {
     expect(titles).toContain('MC');
     expect(titles).not.toContain('Refs');
     expect(arg.roles).toHaveLength(DEFAULT_ROTA_ROLE_TEMPLATE.length - 1);
+    // Each role carries the arrive-by basis the action computes the time from.
+    expect(arg.roles.find((role) => role.title === 'MC')?.arriveBasis).toBe('lift_off');
+    expect(arg.roles.find((role) => role.title === 'Weigh-in')?.arriveBasis).toBe('weigh_in');
   });
 
   it('points to Sessions & flights when the comp has no sessions', () => {
