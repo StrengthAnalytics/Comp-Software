@@ -1,0 +1,359 @@
+'use server';
+
+import * as Sentry from '@sentry/nextjs';
+import { z } from 'zod';
+import { createClient } from '@/lib/supabase/server';
+import { adminGuard } from '@/lib/auth/guard';
+import { toFieldErrors } from '@/lib/validation';
+import {
+  rotaRoleCreateSchema,
+  rotaRoleUpdateSchema,
+  rotaSectionCreateSchema,
+  rotaSectionUpdateSchema,
+  rotaWithdrawalContactSchema,
+  setRotaOpenSchema,
+  type RotaRoleCreateInput,
+  type RotaRoleUpdateInput,
+  type RotaSectionCreateInput,
+  type RotaSectionUpdateInput,
+  type RotaWithdrawalContactInput,
+  type SetRotaOpenInput,
+} from '@/types/rota';
+import { fail, ok, type ActionResult } from '@/types/action-result';
+
+// Admin actions for the volunteer staff rota builder. All are setup writes — deliberately NOT gated
+// on competition status (ARCHITECTURE.md §7): an organiser edits the rota at any point in the comp's
+// life. adminGuard() is the gate; what the *public* may do (claim a slot) is gated separately by
+// comp_rota_open() in RLS. Clients call router.refresh() after a successful action to re-read.
+
+const GENERIC_ERROR = 'Could not save the rota. Please try again.';
+
+const idSchema = z.object({ id: z.uuid() });
+const moveSchema = z.object({ id: z.uuid(), direction: z.enum(['up', 'down']) });
+
+export type RotaIdInput = z.infer<typeof idSchema>;
+export type RotaMoveInput = z.infer<typeof moveSchema>;
+
+// --- Settings: the open toggle + the withdrawal-contact line --------------------------------------
+
+export async function setRotaOpenAction(input: SetRotaOpenInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('setRotaOpen', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = setRotaOpenSchema.safeParse(input);
+    if (!parsed.success) return fail('Could not update the rota. Please try again.');
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from('competitions')
+      .update({ rota_open: parsed.data.open })
+      .eq('id', parsed.data.competitionId);
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not update the rota. Please try again.');
+    }
+    return ok();
+  });
+}
+
+export async function setRotaWithdrawalContactAction(
+  input: RotaWithdrawalContactInput,
+): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('setRotaWithdrawalContact', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = rotaWithdrawalContactSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not save that contact line. Please try again.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from('competitions')
+      .update({ rota_withdrawal_contact: parsed.data.withdrawalContact })
+      .eq('id', parsed.data.competitionId);
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not save that contact line. Please try again.');
+    }
+    return ok();
+  });
+}
+
+// --- Sections -------------------------------------------------------------------------------------
+
+// New rows append: sort_order is computed server-side from the current count (not trusted from the
+// client), so two builders adding at once can't both claim 0.
+
+export async function createRotaSectionAction(
+  input: RotaSectionCreateInput,
+): Promise<ActionResult<{ id: string }>> {
+  return Sentry.withServerActionInstrumentation('createRotaSection', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = rotaSectionCreateSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+    const { count, error: countError } = await supabase
+      .from('rota_sections')
+      .select('id', { count: 'exact', head: true })
+      .eq('competition_id', parsed.data.competitionId);
+    if (countError) {
+      Sentry.captureException(countError);
+      return fail(GENERIC_ERROR);
+    }
+
+    const { data, error } = await supabase
+      .from('rota_sections')
+      .insert({
+        competition_id: parsed.data.competitionId,
+        day_label: parsed.data.dayLabel,
+        title: parsed.data.title,
+        subtitle: parsed.data.subtitle,
+        sort_order: count ?? 0,
+      })
+      .select('id')
+      .single();
+    if (error || !data) {
+      Sentry.captureException(error);
+      return fail(GENERIC_ERROR);
+    }
+    return ok({ id: data.id });
+  });
+}
+
+export async function updateRotaSectionAction(input: RotaSectionUpdateInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('updateRotaSection', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = rotaSectionUpdateSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from('rota_sections')
+      .update({
+        day_label: parsed.data.dayLabel,
+        title: parsed.data.title,
+        subtitle: parsed.data.subtitle,
+      })
+      .eq('id', parsed.data.id);
+    if (error) {
+      Sentry.captureException(error);
+      return fail(GENERIC_ERROR);
+    }
+    return ok();
+  });
+}
+
+// Deleting a section cascades to its roles and their sign-ups (FK ON DELETE CASCADE).
+export async function deleteRotaSectionAction(input: RotaIdInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('deleteRotaSection', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = idSchema.safeParse(input);
+    if (!parsed.success) return fail(GENERIC_ERROR);
+
+    const supabase = await createClient();
+    const { error } = await supabase.from('rota_sections').delete().eq('id', parsed.data.id);
+    if (error) {
+      Sentry.captureException(error);
+      return fail(GENERIC_ERROR);
+    }
+    return ok();
+  });
+}
+
+// --- Roles ----------------------------------------------------------------------------------------
+
+export async function createRotaRoleAction(
+  input: RotaRoleCreateInput,
+): Promise<ActionResult<{ id: string }>> {
+  return Sentry.withServerActionInstrumentation('createRotaRole', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = rotaRoleCreateSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+
+    // The section must belong to the comp the client named — RLS can't check this cross-table, so
+    // verify before denormalising competition_id onto the role (as setAttemptWeight verifies the
+    // entry's comp before writing).
+    const { data: section, error: sectionError } = await supabase
+      .from('rota_sections')
+      .select('competition_id')
+      .eq('id', parsed.data.sectionId)
+      .maybeSingle();
+    if (sectionError) {
+      Sentry.captureException(sectionError);
+      return fail(GENERIC_ERROR);
+    }
+    if (!section || section.competition_id !== parsed.data.competitionId) {
+      return fail('Could not find that section.');
+    }
+
+    const { count, error: countError } = await supabase
+      .from('rota_roles')
+      .select('id', { count: 'exact', head: true })
+      .eq('section_id', parsed.data.sectionId);
+    if (countError) {
+      Sentry.captureException(countError);
+      return fail(GENERIC_ERROR);
+    }
+
+    const { data, error } = await supabase
+      .from('rota_roles')
+      .insert({
+        competition_id: parsed.data.competitionId,
+        section_id: parsed.data.sectionId,
+        title: parsed.data.title,
+        arrive_by: parsed.data.arriveBy,
+        capacity: parsed.data.capacity,
+        sort_order: count ?? 0,
+      })
+      .select('id')
+      .single();
+    if (error || !data) {
+      Sentry.captureException(error);
+      return fail(GENERIC_ERROR);
+    }
+    return ok({ id: data.id });
+  });
+}
+
+export async function updateRotaRoleAction(input: RotaRoleUpdateInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('updateRotaRole', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = rotaRoleUpdateSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from('rota_roles')
+      .update({
+        title: parsed.data.title,
+        arrive_by: parsed.data.arriveBy,
+        capacity: parsed.data.capacity,
+      })
+      .eq('id', parsed.data.id);
+    if (error) {
+      Sentry.captureException(error);
+      return fail(GENERIC_ERROR);
+    }
+    return ok();
+  });
+}
+
+// Deleting a role cascades to its sign-ups. The builder confirms first when the role has volunteers.
+export async function deleteRotaRoleAction(input: RotaIdInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('deleteRotaRole', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = idSchema.safeParse(input);
+    if (!parsed.success) return fail(GENERIC_ERROR);
+
+    const supabase = await createClient();
+    const { error } = await supabase.from('rota_roles').delete().eq('id', parsed.data.id);
+    if (error) {
+      Sentry.captureException(error);
+      return fail(GENERIC_ERROR);
+    }
+    return ok();
+  });
+}
+
+// --- Reordering (move a section or a role up/down within its list) ---------------------------------
+
+// Swaps a row's sort_order with its neighbour in the given ordered list. A no-op (returns ok) at the
+// list edge. There is no unique constraint on sort_order, so the two updates can't collide.
+async function moveWithin(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  table: 'rota_sections' | 'rota_roles',
+  rows: { id: string; sort_order: number }[],
+  id: string,
+  direction: 'up' | 'down',
+): Promise<ActionResult> {
+  const ordered = rows.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
+  const index = ordered.findIndex((row) => row.id === id);
+  if (index === -1) return fail(GENERIC_ERROR);
+
+  const neighbourIndex = direction === 'up' ? index - 1 : index + 1;
+  const current = ordered[index];
+  const neighbour = ordered[neighbourIndex];
+  if (!neighbour) return ok(); // already at the edge
+
+  const [a, b] = await Promise.all([
+    supabase.from(table).update({ sort_order: neighbour.sort_order }).eq('id', current.id),
+    supabase.from(table).update({ sort_order: current.sort_order }).eq('id', neighbour.id),
+  ]);
+  if (a.error || b.error) {
+    Sentry.captureException(a.error ?? b.error);
+    return fail(GENERIC_ERROR);
+  }
+  return ok();
+}
+
+export async function moveRotaSectionAction(
+  input: RotaMoveInput & { competitionId: string },
+): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('moveRotaSection', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = moveSchema.extend({ competitionId: z.uuid() }).safeParse(input);
+    if (!parsed.success) return fail(GENERIC_ERROR);
+
+    const supabase = await createClient();
+    const { data: sections, error } = await supabase
+      .from('rota_sections')
+      .select('id, sort_order')
+      .eq('competition_id', parsed.data.competitionId);
+    if (error) {
+      Sentry.captureException(error);
+      return fail(GENERIC_ERROR);
+    }
+    return moveWithin(supabase, 'rota_sections', sections ?? [], parsed.data.id, parsed.data.direction);
+  });
+}
+
+export async function moveRotaRoleAction(
+  input: RotaMoveInput & { sectionId: string },
+): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('moveRotaRole', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = moveSchema.extend({ sectionId: z.uuid() }).safeParse(input);
+    if (!parsed.success) return fail(GENERIC_ERROR);
+
+    const supabase = await createClient();
+    const { data: roles, error } = await supabase
+      .from('rota_roles')
+      .select('id, sort_order')
+      .eq('section_id', parsed.data.sectionId);
+    if (error) {
+      Sentry.captureException(error);
+      return fail(GENERIC_ERROR);
+    }
+    return moveWithin(supabase, 'rota_roles', roles ?? [], parsed.data.id, parsed.data.direction);
+  });
+}
