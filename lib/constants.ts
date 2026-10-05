@@ -389,10 +389,11 @@ export const SUGGESTED_ROTA_ROLES: readonly string[] = [
   'Spotters / Loaders',
   'Refs',
   'Weigh-in',
-  'Table',
-  'Registration table',
   'Livestream',
   'Refreshments',
+  'Commentary',
+  'Table',
+  'Registration table',
   'Set-up',
   'Take Down',
 ];
@@ -405,15 +406,18 @@ export type RotaArriveBasis = 'lift_off' | 'weigh_in';
 
 export type RotaRoleTemplate = { title: string; capacity: number; arriveBasis: RotaArriveBasis };
 
-// A generated role's arrive-by is set this many minutes before its basis time.
+// A generated role's arrive-by is set this many minutes before its basis time: half an hour before
+// lift-off for the platform crew, ten minutes before weigh-ins open for the weigh-in team (as on our
+// Google-Sheet rota).
 export const ROTA_ARRIVE_BEFORE_MINUTES = 30;
+export const ROTA_WEIGH_IN_ARRIVE_BEFORE_MINUTES = 10;
 
 export const DEFAULT_ROTA_ROLE_TEMPLATE: readonly RotaRoleTemplate[] = [
   { title: 'MC', capacity: 1, arriveBasis: 'lift_off' },
   { title: 'Platform Manager', capacity: 1, arriveBasis: 'lift_off' },
   { title: 'Spotters / Loaders', capacity: 5, arriveBasis: 'lift_off' },
   { title: 'Refs', capacity: 4, arriveBasis: 'lift_off' },
-  { title: 'Weigh-in', capacity: 2, arriveBasis: 'weigh_in' },
-  { title: 'Table', capacity: 2, arriveBasis: 'lift_off' },
-  { title: 'Registration table', capacity: 2, arriveBasis: 'weigh_in' },
+  { title: 'Weigh-in', capacity: 1, arriveBasis: 'weigh_in' },
+  { title: 'Livestream', capacity: 1, arriveBasis: 'lift_off' },
+  { title: 'Refreshments', capacity: 2, arriveBasis: 'lift_off' },
 ];

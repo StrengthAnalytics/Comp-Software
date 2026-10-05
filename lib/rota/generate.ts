@@ -1,3 +1,5 @@
+import { toTwelveHourClock } from '@/lib/rota/time';
+
 // Pure helpers for the rota builder's "Generate from sessions" action: turning the comp's sessions
 // into rota sections. Kept free of Supabase so the mapping rules are unit-tested in isolation.
 
@@ -48,15 +50,15 @@ export function arriveBefore(baseTime: string | null, minutesBefore: number): st
 }
 
 // The free-text subtitle line under a generated section's heading: the session's weigh-in and
-// lift-off times (each labelled), plus the platform name when the comp runs more than one platform
-// (otherwise it's redundant). Any absent part is dropped.
+// lift-off times (each labelled, in the rota's "9:00am" style), plus the platform name when the comp
+// runs more than one platform (otherwise it's redundant). Any absent part is dropped.
 export function buildRotaSubtitle(
   weighInTime: string | null,
   liftOffTime: string | null,
   platformName: string | null,
 ): string | null {
-  const weighIn = formatRotaTime(weighInTime);
-  const liftOff = formatRotaTime(liftOffTime);
+  const weighIn = toTwelveHourClock(formatRotaTime(weighInTime));
+  const liftOff = toTwelveHourClock(formatRotaTime(liftOffTime));
   const parts = [
     weighIn ? `Weigh-in ${weighIn}` : null,
     liftOff ? `Lift-off ${liftOff}` : null,

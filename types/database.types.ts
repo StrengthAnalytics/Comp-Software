@@ -656,8 +656,10 @@ export type Database = {
           competition_id: string;
           role_id: string;
           name: string;
-          email: string;
-          phone: string;
+          // Nullable since migration 20261005000001: an admin can add a helper by name only. The
+          // public sign-up still requires both (Zod).
+          email: string | null;
+          phone: string | null;
           created_at: string;
         };
         Insert: {
@@ -665,8 +667,8 @@ export type Database = {
           competition_id: string;
           role_id: string;
           name: string;
-          email: string;
-          phone: string;
+          email?: string | null;
+          phone?: string | null;
           created_at?: string;
         };
         Update: {
@@ -674,9 +676,50 @@ export type Database = {
           competition_id?: string;
           role_id?: string;
           name?: string;
-          email?: string;
-          phone?: string;
+          email?: string | null;
+          phone?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      // A volunteer's request to drop out of / swap / change a rota slot (the public board's
+      // "Request a change" form). Anon INSERT-only; admin reads and resolves. Migration 20261005000001.
+      rota_change_requests: {
+        Row: {
+          id: string;
+          competition_id: string;
+          role_id: string | null;
+          name: string;
+          contact: string;
+          kind: 'drop_out' | 'swap' | 'other';
+          message: string | null;
+          status: 'open' | 'done';
+          created_at: string;
+          resolved_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          competition_id: string;
+          role_id?: string | null;
+          name: string;
+          contact: string;
+          kind: 'drop_out' | 'swap' | 'other';
+          message?: string | null;
+          status?: 'open' | 'done';
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          competition_id?: string;
+          role_id?: string | null;
+          name?: string;
+          contact?: string;
+          kind?: 'drop_out' | 'swap' | 'other';
+          message?: string | null;
+          status?: 'open' | 'done';
+          created_at?: string;
+          resolved_at?: string | null;
         };
         Relationships: [];
       };

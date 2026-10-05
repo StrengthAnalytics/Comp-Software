@@ -7,8 +7,9 @@ export type RotaContactRow = {
   role: string;
   arriveBy: string | null;
   name: string;
-  email: string;
-  phone: string;
+  // Null for a helper the admin added by name only.
+  email: string | null;
+  phone: string | null;
   signedUpAt: string | null;
 };
 
@@ -42,8 +43,8 @@ export function buildRotaContactsCsv(rows: RotaContactRow[]): string {
         row.role,
         row.arriveBy ?? '',
         row.name,
-        row.email,
-        row.phone,
+        row.email ?? '',
+        row.phone ?? '',
         row.signedUpAt ?? '',
       ]
         .map((field) => escapeCsvField(field))

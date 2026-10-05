@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  addRotaSignupAction,
+  addRotaRoleToAllSectionsAction,
   createRotaRoleAction,
   createRotaSectionAction,
   deleteRotaRoleAction,
@@ -12,7 +12,6 @@ import {
   generateRotaFromSessionsAction,
   moveRotaRoleAction,
   moveRotaSectionAction,
-  removeRotaSignupAction,
   setRotaOpenAction,
   setRotaWithdrawalContactAction,
   updateRotaRoleAction,
@@ -20,13 +19,17 @@ import {
 } from '@/actions/rota';
 import { DEFAULT_ROTA_ROLE_TEMPLATE, MAX_ROTA_SLOT_CAPACITY, SUGGESTED_ROTA_ROLES } from '@/lib/constants';
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
+import { useRotaChangeRequestsSubscription } from '@/lib/realtime/use-rota-change-requests-subscription';
 import { useRotaSignupsSubscription } from '@/lib/realtime/use-rota-signups-subscription';
 import { buildRotaContactsCsv } from '@/lib/rota/export-csv';
 import { ROTA_WITHDRAWAL_CONTACT_MAX } from '@/types/rota';
 import { ResetRota } from '@/components/rota/reset-rota';
+import { RotaAdminGrid } from '@/components/rota/rota-admin-grid';
+import { RotaChangeRequests, type RotaChangeRequestSummary } from '@/components/rota/rota-change-requests';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Tabs } from '@/components/ui/tabs';
 import type { Database } from '@/types/database.types';
 
 type CompStatus = Database['public']['Enums']['comp_status'];
@@ -34,8 +37,9 @@ type CompStatus = Database['public']['Enums']['comp_status'];
 export type RotaSignupSummary = {
   id: string;
   name: string;
-  email: string;
-  phone: string;
+  // Null for a helper the admin added by name only.
+  email: string | null;
+  phone: string | null;
   created_at: string;
 };
 
@@ -204,8 +208,8 @@ function RotaShareCard({
   return (
     <Card title="Volunteer sign-up">
       <p className="-mt-3 mb-4 text-sm text-neutral-600">
-        Share this link and volunteers add themselves to the slots below. They give their name, email
-        and mobile — only their name shows on the public board; you alone see their contact details.
+        Share this link and volunteers tap an open slot to sign up. They give their name, email and
+        mobile — only their name shows on the public rota; you alone see their contact details.
       </p>
 
       <div className="space-y-3 rounded-md border border-neutral-200 px-4 py-3">
@@ -281,7 +285,7 @@ function RotaShareCard({
 
       <div className="mt-4">
         <label htmlFor="rota-withdrawal-contact" className="text-sm font-medium text-neutral-700">
-          Withdraw / change contact
+          Extra contact line <span className="font-normal text-neutral-500">(optional)</span>
         </label>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <input
@@ -305,8 +309,9 @@ function RotaShareCard({
           ) : null}
         </div>
         <p className="mt-1 text-xs text-neutral-500">
-          Shown on the public board so a volunteer knows who to contact — they can&rsquo;t remove
-          themselves, only you can. Leave blank to hide it.
+          Volunteers can&rsquo;t change the rota themselves — they use the &ldquo;Request a change&rdquo;
+          button, which lands in the Rota tab. This line is shown under that button if you&rsquo;d
+          also like to give a direct contact. Leave blank to hide it.
         </p>
         {contactError ? (
           <p role="alert" className="mt-1 text-sm text-red-600">
@@ -315,163 +320,6 @@ function RotaShareCard({
         ) : null}
       </div>
     </Card>
-  );
-}
-
-// --- A signed-up volunteer, with their admin-only contact details and a remove control -----------
-
-function SignupRow({ signup }: { signup: RotaSignupSummary }) {
-  const router = useRouter();
-  const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function remove() {
-    if (!confirming) {
-      setConfirming(true);
-      return;
-    }
-    setError(null);
-    startTransition(async () => {
-      const result = await removeRotaSignupAction({ id: signup.id });
-      if (result.status === 'error') {
-        setError(result.message);
-        setConfirming(false);
-        return;
-      }
-      router.refresh();
-    });
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded bg-neutral-50 px-2 py-1 text-xs">
-      <span className="font-medium text-neutral-900">{signup.name}</span>
-      <a href={`mailto:${signup.email}`} className="text-neutral-600 hover:underline">
-        {signup.email}
-      </a>
-      <a href={`tel:${signup.phone}`} className="text-neutral-600 hover:underline">
-        {signup.phone}
-      </a>
-      <button
-        type="button"
-        onClick={remove}
-        disabled={pending}
-        className="ml-auto font-medium text-red-600 hover:underline disabled:opacity-50"
-      >
-        {confirming ? 'Confirm remove' : 'Remove'}
-      </button>
-      {error ? (
-        <p role="alert" className="w-full text-red-600">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function AdminAddVolunteerForm({
-  competitionId,
-  roleId,
-  onDone,
-}: {
-  competitionId: string;
-  roleId: string;
-  onDone: () => void;
-}) {
-  const router = useRouter();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function add() {
-    setError(null);
-    startTransition(async () => {
-      const result = await addRotaSignupAction({ competitionId, roleId, name, email, phone });
-      if (result.status === 'error') {
-        setError(result.message);
-        return;
-      }
-      router.refresh();
-      onDone();
-    });
-  }
-
-  const incomplete = name.trim() === '' || email.trim() === '' || phone.trim() === '';
-
-  return (
-    <div className="flex flex-wrap items-center gap-2 rounded border border-neutral-200 bg-white p-2">
-      <input
-        aria-label="Volunteer name"
-        placeholder="Name"
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        className={`${INPUT_CLASS} w-32`}
-      />
-      <input
-        aria-label="Volunteer email"
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
-        className={`${INPUT_CLASS} w-44`}
-      />
-      <input
-        aria-label="Volunteer mobile"
-        type="tel"
-        placeholder="Mobile"
-        value={phone}
-        onChange={(event) => setPhone(event.target.value)}
-        className={`${INPUT_CLASS} w-32`}
-      />
-      <Button variant="secondary" onClick={add} disabled={pending || incomplete}>
-        Add
-      </Button>
-      <Button variant="ghost" onClick={onDone} disabled={pending}>
-        Cancel
-      </Button>
-      {error ? (
-        <p role="alert" className="w-full text-sm text-red-600">
-          {error}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-// The volunteers signed up to one role, plus the admin's add-a-volunteer control on an open slot.
-function RoleVolunteers({ competitionId, role }: { competitionId: string; role: RotaBuilderRole }) {
-  const [adding, setAdding] = useState(false);
-  const openSlots = Math.max(role.capacity - role.signups.length, 0);
-
-  if (role.signups.length === 0 && openSlots === 0) {
-    return null;
-  }
-
-  return (
-    <div className="ml-12 mt-1 space-y-1">
-      {role.signups.map((signup) => (
-        <SignupRow key={signup.id} signup={signup} />
-      ))}
-      {openSlots > 0 ? (
-        adding ? (
-          <AdminAddVolunteerForm
-            competitionId={competitionId}
-            roleId={role.id}
-            onDone={() => setAdding(false)}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="text-xs font-medium text-brand-700 hover:underline"
-          >
-            + Add volunteer
-          </button>
-        )
-      ) : null}
-    </div>
   );
 }
 
@@ -557,7 +405,7 @@ function RoleRow({
         className={`${INPUT_CLASS} w-28`}
       />
       <input
-        aria-label="Slots"
+        aria-label="Spaces"
         type="number"
         min={1}
         max={MAX_ROTA_SLOT_CAPACITY}
@@ -567,7 +415,7 @@ function RoleRow({
       />
       <span
         className={`w-20 text-center text-xs font-medium ${full ? 'text-emerald-700' : 'text-neutral-500'}`}
-        title="Volunteers signed up / slots"
+        title="Volunteers signed up / spaces"
       >
         {role.signups.length} / {role.capacity} filled
       </span>
@@ -627,7 +475,7 @@ function AddRoleForm({ competitionId, sectionId }: { competitionId: string; sect
         className={`${INPUT_CLASS} w-28`}
       />
       <input
-        aria-label="New role slots"
+        aria-label="New role spaces"
         type="number"
         min={1}
         max={MAX_ROTA_SLOT_CAPACITY}
@@ -825,7 +673,18 @@ function SectionBlock({
         </p>
       ) : null}
 
-      <div className="mt-3 divide-y divide-neutral-100">
+      {roles.length > 0 ? (
+        // Column headings for the role rows below (they line up with the inputs' widths).
+        <div aria-hidden="true" className="mt-3 hidden items-center gap-2 pl-14 text-xs font-medium text-neutral-500 sm:flex">
+          <span className="flex-1">Role</span>
+          <span className="w-28">Arrive by</span>
+          <span className="w-20">Spaces</span>
+          <span className="w-20 text-center">Filled</span>
+          <span className="w-36" />
+        </div>
+      ) : null}
+
+      <div className="mt-1 divide-y divide-neutral-100">
         {roles.length === 0 ? (
           <p className="py-2 text-sm text-neutral-500">No roles in this column yet.</p>
         ) : (
@@ -837,7 +696,6 @@ function SectionBlock({
                 isFirst={index === 0}
                 isLast={index === roles.length - 1}
               />
-              <RoleVolunteers competitionId={competitionId} role={role} />
             </div>
           ))
         )}
@@ -1002,8 +860,8 @@ function GenerateFromSessionsCard({
       </p>
       <p className="mb-4 text-xs text-neutral-500">
         Arrive-by times are filled in automatically — 30 minutes before the session&rsquo;s lift-off,
-        or before weigh-in opens for the weigh-in and registration roles. You can edit any of them
-        afterwards.
+        or 10 minutes before weigh-in opens for the weigh-in team. You can edit any of them
+        afterwards, and add or delete roles and change the spaces at any time.
       </p>
 
       <ul className="divide-y divide-neutral-100">
@@ -1019,14 +877,14 @@ function GenerateFromSessionsCard({
               {role.title}
             </label>
             <label className="flex items-center gap-2 text-xs text-neutral-500">
-              Positions
+              Spaces
               <input
                 type="number"
                 min={1}
                 max={MAX_ROTA_SLOT_CAPACITY}
                 value={role.capacity}
                 disabled={!role.included}
-                aria-label={`${role.title} positions`}
+                aria-label={`${role.title} spaces`}
                 onChange={(event) => setCapacity(index, Number(event.target.value))}
                 className={`${INPUT_CLASS} w-16 disabled:opacity-50`}
               />
@@ -1061,6 +919,81 @@ function GenerateFromSessionsCard({
   );
 }
 
+// Adds one job to every column at once (e.g. "Commentary" for every session) — quicker than adding it
+// column by column. Each new role takes its column's usual arrive-by time.
+function AddRoleToAllForm({ competitionId }: { competitionId: string }) {
+  const router = useRouter();
+  const [title, setTitle] = useState('');
+  const [capacity, setCapacity] = useState(1);
+  const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState<number | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function add() {
+    setError(null);
+    setAdded(null);
+    startTransition(async () => {
+      try {
+        const result = await addRotaRoleToAllSectionsAction({ competitionId, title, capacity });
+        if (result.status === 'error') {
+          setError(result.message);
+          return;
+        }
+        setAdded(result.data.added);
+        setTitle('');
+        setCapacity(1);
+        router.refresh();
+      } catch {
+        setError('Could not reach the server — please try again.');
+      }
+    });
+  }
+
+  return (
+    <Card title="Add a role to every column">
+      <p className="-mt-3 mb-3 text-sm text-neutral-600">
+        For a job every session needs (e.g. Commentary). To add or remove a role in just one column,
+        use that column below.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label="Role for every column"
+          list="rota-role-suggestions"
+          placeholder="Role (e.g. Commentary)"
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          className={`${INPUT_CLASS} min-w-0 flex-1`}
+        />
+        <label className="flex items-center gap-2 text-sm text-neutral-700">
+          Spaces
+          <input
+            aria-label="Spaces for every column"
+            type="number"
+            min={1}
+            max={MAX_ROTA_SLOT_CAPACITY}
+            value={capacity}
+            onChange={(event) => setCapacity(Number(event.target.value))}
+            className={`${INPUT_CLASS} w-20`}
+          />
+        </label>
+        <Button onClick={add} disabled={pending || title.trim() === '' || !isValidCapacity(capacity)}>
+          Add to every column
+        </Button>
+      </div>
+      {added === null ? null : (
+        <p role="status" className="mt-2 text-sm text-green-700">
+          Added to {added} column{added === 1 ? '' : 's'}.
+        </p>
+      )}
+      {error ? (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          {error}
+        </p>
+      ) : null}
+    </Card>
+  );
+}
+
 type RotaBuilderProps = {
   competitionId: string;
   competitionName: string;
@@ -1072,11 +1005,14 @@ type RotaBuilderProps = {
   pendingSessionCount: number;
   availableSessions: RotaAvailableSession[];
   sections: RotaBuilderSection[];
+  // Volunteers' open "Request a change" messages.
+  changeRequests: RotaChangeRequestSummary[];
 };
 
-// The admin staff-rota builder: design the rota's columns (sections) and the roles within each
-// (with a slot count and arrive-by time), open or close volunteer sign-ups, set the withdraw/change
-// contact line, and copy the shareable link. Volunteers fill the slots from the public board.
+// The admin staff-rota screen. Two tabs: "Rota" is the everyday view — the spreadsheet-style grid
+// (tap a name for contact details / move / remove, "+ Add" to fill a slot) with volunteers' change
+// requests above it; "Edit layout" is where the columns, jobs, arrive-by times and number of spaces
+// are built and changed. Above both: the sign-up link, the open/closed switch and the contacts export.
 export function RotaBuilder({
   competitionId,
   competitionName,
@@ -1088,13 +1024,16 @@ export function RotaBuilder({
   pendingSessionCount,
   availableSessions,
   sections,
+  changeRequests,
 }: RotaBuilderProps) {
   const ordered = sections.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
 
-  // Live updates as volunteers claim slots (or another device removes one). Admin-only in practice —
-  // anon has no read on rota_signups, so it never receives these events.
+  // Live updates as volunteers claim slots or send change requests (or another device removes,
+  // moves or resolves one). Admin-only in practice — anon has no read on either table, so it never
+  // receives these events.
   const scheduleRefresh = useDebouncedRefresh();
   useRotaSignupsSubscription(competitionId, scheduleRefresh);
+  useRotaChangeRequestsSubscription(competitionId, scheduleRefresh);
 
   const contactRows = ordered.flatMap((section) =>
     section.roles.flatMap((role) =>
@@ -1124,27 +1063,22 @@ export function RotaBuilder({
     globalThis.URL.revokeObjectURL(url);
   }
 
-  return (
+  const rotaPanel = (
     <div className="space-y-6">
-      {contactRows.length > 0 ? (
-        <div className="flex items-center justify-between gap-3 rounded-md bg-neutral-100 px-4 py-2">
-          <p className="text-sm text-neutral-700">
-            {contactRows.length} volunteer{contactRows.length === 1 ? '' : 's'} signed up.
-          </p>
-          <Button variant="secondary" onClick={exportContacts}>
-            Export contacts (CSV)
-          </Button>
-        </div>
-      ) : null}
+      <RotaChangeRequests requests={changeRequests} sections={ordered} />
+      {ordered.length === 0 ? (
+        <EmptyState
+          title="No rota yet"
+          description="Open the Edit layout tab to build it: generate a column for each session in one click, or add columns and roles yourself."
+        />
+      ) : (
+        <RotaAdminGrid competitionId={competitionId} sections={ordered} />
+      )}
+    </div>
+  );
 
-      <RotaShareCard
-        competitionId={competitionId}
-        slug={slug}
-        competitionStatus={competitionStatus}
-        initialOpen={initialOpen}
-        initialWithdrawalContact={initialWithdrawalContact}
-      />
-
+  const layoutPanel = (
+    <div className="space-y-6">
       <GenerateFromSessionsCard
         competitionId={competitionId}
         slug={slug}
@@ -1152,17 +1086,19 @@ export function RotaBuilder({
         pendingSessionCount={pendingSessionCount}
       />
 
-      {/* Datalist of common role names, shared by every section's add-role input. */}
+      {/* Datalist of common role names, shared by every role-title input. */}
       <datalist id="rota-role-suggestions">
         {SUGGESTED_ROTA_ROLES.map((roleName) => (
           <option key={roleName} value={roleName} />
         ))}
       </datalist>
 
+      {ordered.length > 0 ? <AddRoleToAllForm competitionId={competitionId} /> : null}
+
       {ordered.length === 0 ? (
         <EmptyState
           title="No rota columns yet"
-          description="Build your rota like the spreadsheet: add a column for each session (e.g. “Sat — AM”, “Set-up”), then add the roles each one needs with a slot count."
+          description="Build your rota like the spreadsheet: add a column for each session (e.g. “Sat — AM”, “Set-up”), then add the roles each one needs and how many spaces each role has."
         />
       ) : (
         <div className="space-y-4">
@@ -1188,6 +1124,38 @@ export function RotaBuilder({
         roleCount={roleCount}
         signupCount={contactRows.length}
         onExport={exportContacts}
+      />
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {contactRows.length > 0 ? (
+        <div className="flex items-center justify-between gap-3 rounded-md bg-neutral-100 px-4 py-2">
+          <p className="text-sm text-neutral-700">
+            {contactRows.length} volunteer{contactRows.length === 1 ? '' : 's'} signed up.
+          </p>
+          <Button variant="secondary" onClick={exportContacts}>
+            Export contacts (CSV)
+          </Button>
+        </div>
+      ) : null}
+
+      <RotaShareCard
+        competitionId={competitionId}
+        slug={slug}
+        competitionStatus={competitionStatus}
+        initialOpen={initialOpen}
+        initialWithdrawalContact={initialWithdrawalContact}
+      />
+
+      <Tabs
+        tabs={[
+          { id: 'rota', label: 'Rota', badge: changeRequests.length },
+          { id: 'layout', label: 'Edit layout' },
+        ]}
+        initialTabId={ordered.length === 0 ? 'layout' : 'rota'}
+        panels={{ rota: rotaPanel, layout: layoutPanel }}
       />
     </div>
   );

@@ -6,10 +6,20 @@ import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { toFieldErrors } from '@/lib/validation';
-import { MAX_ROTA_SLOT_CAPACITY, ROTA_ARRIVE_BEFORE_MINUTES } from '@/lib/constants';
+import {
+  MAX_ROTA_SLOT_CAPACITY,
+  ROTA_ARRIVE_BEFORE_MINUTES,
+  ROTA_WEIGH_IN_ARRIVE_BEFORE_MINUTES,
+} from '@/lib/constants';
 import { arriveBefore, planRotaSectionsFromSessions } from '@/lib/rota/generate';
+import { mostCommonArriveBy } from '@/lib/rota/grid';
+import { toTwelveHourClock } from '@/lib/rota/time';
 import {
   ROTA_ROLE_TITLE_MAX,
+  moveRotaSignupSchema,
+  rotaAdminSignupSchema,
+  rotaChangeRequestSchema,
+  rotaRoleForAllSchema,
   rotaRoleCreateSchema,
   rotaRoleUpdateSchema,
   rotaSectionCreateSchema,
@@ -17,7 +27,11 @@ import {
   rotaSignupSchema,
   rotaWithdrawalContactSchema,
   setRotaOpenSchema,
+  type MoveRotaSignupInput,
+  type RotaAdminSignupInput,
+  type RotaChangeRequestInput,
   type RotaRoleCreateInput,
+  type RotaRoleForAllInput,
   type RotaRoleUpdateInput,
   type RotaSectionCreateInput,
   type RotaSectionUpdateInput,
@@ -252,6 +266,24 @@ export async function updateRotaRoleAction(input: RotaRoleUpdateInput): Promise<
     }
 
     const supabase = await createClient();
+
+    // Don't let the slot count drop below the people already in the role — they'd vanish from the
+    // grid's slots without anyone being told. The admin removes or moves someone first.
+    const { count: taken, error: countError } = await supabase
+      .from('rota_signups')
+      .select('id', { count: 'exact', head: true })
+      .eq('role_id', parsed.data.id);
+    if (countError) {
+      Sentry.captureException(countError);
+      return fail(GENERIC_ERROR);
+    }
+    if ((taken ?? 0) > parsed.data.capacity) {
+      return fail(
+        `${taken} people are signed up for this role. Remove or move someone before lowering the spaces to ${parsed.data.capacity}.`,
+        { capacity: ['Fewer spaces than people already signed up.'] },
+      );
+    }
+
     const { error } = await supabase
       .from('rota_roles')
       .update({
@@ -473,8 +505,13 @@ export async function generateRotaFromSessionsAction(
         competition_id: parsed.data.competitionId,
         section_id: sectionId,
         title: role.title,
-        // 30 min before lift-off, or before weigh-in for the weigh-in / registration roles.
-        arrive_by: arriveBefore(role.arriveBasis === 'lift_off' ? liftOff : weighIn, ROTA_ARRIVE_BEFORE_MINUTES),
+        // 30 min before lift-off for the platform crew, 10 min before weigh-ins open for the weigh-in
+        // team — stored in the rota's "8:30am" style.
+        arrive_by: toTwelveHourClock(
+          role.arriveBasis === 'lift_off'
+            ? arriveBefore(liftOff, ROTA_ARRIVE_BEFORE_MINUTES)
+            : arriveBefore(weighIn, ROTA_WEIGH_IN_ARRIVE_BEFORE_MINUTES),
+        ),
         capacity: role.capacity,
         sort_order: index,
       }));
@@ -743,15 +780,16 @@ export async function removeRotaSignupAction(input: RotaIdInput): Promise<Action
   });
 }
 
-// Adds a volunteer to a slot on the admin's behalf (e.g. someone who signed up by phone). Same name +
-// email + mobile the public form collects, the same capacity ceiling (the BEFORE INSERT trigger fires
-// for this insert too — raise the role's slot count to add beyond it).
-export async function addRotaSignupAction(input: RotaSignupInput): Promise<ActionResult> {
+// Adds a volunteer to a slot on the admin's behalf (e.g. a regular helper, or someone who asked by
+// phone). A name is enough — email and mobile are optional here, unlike the public form. The same
+// capacity ceiling applies (the BEFORE INSERT trigger fires for this insert too — raise the role's
+// slot count to add beyond it).
+export async function addRotaSignupAction(input: RotaAdminSignupInput): Promise<ActionResult> {
   return Sentry.withServerActionInstrumentation('addRotaSignup', async () => {
     const guard = await adminGuard();
     if (guard) return guard;
 
-    const parsed = rotaSignupSchema.safeParse(input);
+    const parsed = rotaAdminSignupSchema.safeParse(input);
     if (!parsed.success) {
       return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
     }
@@ -812,6 +850,191 @@ export async function resetRotaAction(input: { competitionId: string }): Promise
     if (error) {
       Sentry.captureException(error);
       return fail('Could not reset the rota. Please try again.');
+    }
+    return ok();
+  });
+}
+
+// Moves a volunteer to another slot in the same comp (admin-only — e.g. actioning a swap request).
+// The capacity trigger also fires on a role_id update (migration 20261005000001), so a move can't
+// overfill the target.
+export async function moveRotaSignupAction(input: MoveRotaSignupInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('moveRotaSignup', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = moveRotaSignupSchema.safeParse(input);
+    if (!parsed.success) return fail('Could not move that volunteer. Please try again.');
+
+    const supabase = await createClient();
+    const [signupResult, roleResult] = await Promise.all([
+      supabase.from('rota_signups').select('competition_id, role_id').eq('id', parsed.data.id).maybeSingle(),
+      supabase.from('rota_roles').select('competition_id').eq('id', parsed.data.roleId).maybeSingle(),
+    ]);
+    if (signupResult.error || roleResult.error) {
+      Sentry.captureException(signupResult.error ?? roleResult.error);
+      return fail('Could not move that volunteer. Please try again.');
+    }
+    const signup = signupResult.data;
+    const role = roleResult.data;
+    if (!signup || !role || signup.competition_id !== role.competition_id) {
+      return fail('Could not find that slot.');
+    }
+    if (signup.role_id === parsed.data.roleId) {
+      return ok(); // already there
+    }
+
+    const { error } = await supabase
+      .from('rota_signups')
+      .update({ role_id: parsed.data.roleId })
+      .eq('id', parsed.data.id);
+    if (error) {
+      if (error.code === 'P0001' && error.message.includes('rota_slot_full')) {
+        return fail('That slot is full — raise its spaces in Edit layout, or pick another.');
+      }
+      if (isUniqueViolation(error)) {
+        return fail('That person is already in that slot.');
+      }
+      Sentry.captureException(error);
+      return fail('Could not move that volunteer. Please try again.');
+    }
+    return ok();
+  });
+}
+
+// Adds one job to every column at once (e.g. "Commentary" for every session), appended to the end of
+// each column. Each new role's arrive-by is that column's usual crew time. Returns how many columns
+// it was added to.
+export async function addRotaRoleToAllSectionsAction(
+  input: RotaRoleForAllInput,
+): Promise<ActionResult<{ added: number }>> {
+  return Sentry.withServerActionInstrumentation('addRotaRoleToAllSections', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = rotaRoleForAllSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+    const [sectionsResult, rolesResult] = await Promise.all([
+      supabase.from('rota_sections').select('id').eq('competition_id', parsed.data.competitionId),
+      supabase
+        .from('rota_roles')
+        .select('id, section_id, title, arrive_by, sort_order')
+        .eq('competition_id', parsed.data.competitionId),
+    ]);
+    if (sectionsResult.error || rolesResult.error) {
+      Sentry.captureException(sectionsResult.error ?? rolesResult.error);
+      return fail(GENERIC_ERROR);
+    }
+
+    const sections = sectionsResult.data ?? [];
+    if (sections.length === 0) {
+      return fail('Add a column first.');
+    }
+
+    const rolesBySection = new Map<string, { id: string; title: string; arrive_by: string | null; sort_order: number }[]>();
+    for (const role of rolesResult.data ?? []) {
+      const list = rolesBySection.get(role.section_id) ?? [];
+      list.push(role);
+      rolesBySection.set(role.section_id, list);
+    }
+
+    const rows = sections.map((section) => {
+      const roles = rolesBySection.get(section.id) ?? [];
+      let nextSort = 0;
+      for (const role of roles) {
+        nextSort = Math.max(nextSort, role.sort_order + 1);
+      }
+      return {
+        competition_id: parsed.data.competitionId,
+        section_id: section.id,
+        title: parsed.data.title,
+        arrive_by: mostCommonArriveBy(roles),
+        capacity: parsed.data.capacity,
+        sort_order: nextSort,
+      };
+    });
+
+    const { error } = await supabase.from('rota_roles').insert(rows);
+    if (error) {
+      Sentry.captureException(error);
+      return fail(GENERIC_ERROR);
+    }
+    return ok({ added: rows.length });
+  });
+}
+
+// --- Change requests (the app's THIRD server action without adminGuard) ---------------------------
+
+const CHANGE_REQUEST_ERROR = 'Could not send your request. Please try again.';
+const CHANGE_REQUEST_FULL_MESSAGE =
+  'The organisers have a lot of requests waiting. Please contact them directly using the details on this page.';
+
+// A volunteer asking the organiser to drop out of, swap or change a slot. Like submitRotaSignupAction
+// it runs on the visitor's anon session with NO adminGuard: RLS allows the INSERT only while
+// comp_rota_open() holds, and the database trigger caps open requests and rejects a slot from another
+// comp. Never .select()s the insert back (anon has no read on rota_change_requests).
+export async function submitRotaChangeRequestAction(input: RotaChangeRequestInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('submitRotaChangeRequest', async () => {
+    // Bot tripped the honeypot: claim success, store nothing.
+    if (typeof input.website === 'string' && input.website.trim() !== '') {
+      return ok();
+    }
+
+    const parsed = rotaChangeRequestSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+    const { error } = await supabase.from('rota_change_requests').insert({
+      competition_id: parsed.data.competitionId,
+      role_id: parsed.data.roleId,
+      name: parsed.data.name,
+      contact: parsed.data.contact,
+      kind: parsed.data.kind,
+      message: parsed.data.message,
+    });
+
+    if (error) {
+      // P0001 = our rules trigger (see migration 20261005000001).
+      if (error.code === 'P0001' && error.message.includes('rota_change_requests_cap')) {
+        return fail(CHANGE_REQUEST_FULL_MESSAGE);
+      }
+      if (error.code === 'P0001' && error.message.includes('rota_change_request_role_mismatch')) {
+        return fail(SLOT_GONE_MESSAGE);
+      }
+      // 42501 = RLS denied: the rota closed between page load and submit.
+      if (error.code === '42501') {
+        return fail(ROTA_CLOSED_MESSAGE);
+      }
+      Sentry.captureException(error);
+      return fail(CHANGE_REQUEST_ERROR);
+    }
+    return ok();
+  });
+}
+
+// Marks a change request done (admin-only). Done requests drop off the rota screen's list.
+export async function resolveRotaChangeRequestAction(input: RotaIdInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('resolveRotaChangeRequest', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = idSchema.safeParse(input);
+    if (!parsed.success) return fail('Could not update that request. Please try again.');
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from('rota_change_requests')
+      .update({ status: 'done', resolved_at: new Date().toISOString() })
+      .eq('id', parsed.data.id);
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not update that request. Please try again.');
     }
     return ok();
   });
