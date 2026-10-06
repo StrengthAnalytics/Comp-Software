@@ -50,12 +50,12 @@ function detailLines(details: Array<[label: string, value: string | null]>): str
     });
 }
 
+// The receipt goes to an address nobody has checked yet, so it carries only the organiser's own
+// wording and values picked from the comp's fixed lists — never the name, club or other text the
+// submitter typed. That way the form can't be used to send someone else a message in the comp's name.
 export type EntryReceivedEmailInput = {
   comp: EntryEmailComp;
-  firstName: string;
-  fullName: string;
   weightClass: string | null;
-  club: string | null;
   division: string | null;
   kit: string | null;
   event: string | null;
@@ -63,23 +63,24 @@ export type EntryReceivedEmailInput = {
 };
 
 export function buildEntryReceivedEmail(input: EntryReceivedEmailInput): EntryEmail {
+  const details = detailLines([
+    ['Weight class', input.weightClass],
+    ['Division', input.division],
+    ['Kit', input.kit],
+    ['Event', input.event],
+  ]);
   const lines = [
-    `Hi ${input.firstName},`,
+    'Hello,',
     '',
     `Thanks for entering ${compWithDates(input.comp)}. We’ve received your entry and the organisers will review it shortly.`,
-    '',
-    'What you sent us:',
-    ...detailLines([
-      ['Name', input.fullName],
-      ['Weight class', input.weightClass],
-      ['Club', input.club],
-      ['Division', input.division],
-      ['Kit', input.kit],
-      ['Event', input.event],
-    ]),
+  ];
+  if (details.length > 0) {
+    lines.push('', 'Your entry:', ...details);
+  }
+  lines.push(
     '',
     'Your place isn’t confirmed yet. You’ll get another email once the organisers have accepted your entry.',
-  ];
+  );
   if (input.comp.url) {
     lines.push('', `Competition page: ${input.comp.url}`);
   }

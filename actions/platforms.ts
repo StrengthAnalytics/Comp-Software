@@ -54,6 +54,8 @@ export async function createPlatformAction(input: {
       return mapPlatformWriteError(error);
     }
 
+    // A second platform puts the platform name into every session column's header.
+    await followPlatformsInRota(supabase, parsed.data.competitionId);
     return ok();
   });
 }

@@ -25,11 +25,12 @@ export function RotaDialog({ title, description, onClose, children }: RotaDialog
 
   useEffect(() => {
     const opener = globalThis.document.activeElement;
-    // The first form field, else the panel's first button (a dialog of actions only).
+    // A control marked data-autofocus (the main action of a one-tap dialog), else the first visible
+    // form field, else the panel's first button (a dialog of actions only).
     const panel = panelRef.current;
     const firstField =
-      panel?.querySelector<HTMLElement>('input:not([tabindex="-1"]), select, textarea') ??
       panel?.querySelector<HTMLElement>('[data-autofocus]') ??
+      panel?.querySelector<HTMLElement>('input:not([tabindex="-1"]):not([type="hidden"]), select, textarea') ??
       panel?.querySelector<HTMLElement>('button');
     firstField?.focus();
 

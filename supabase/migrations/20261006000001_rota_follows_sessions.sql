@@ -8,9 +8,11 @@
 -- is always current and the public board — which can't read a draft comp's sessions — needs no join.
 --
 -- Backfill, so existing rotas catch up straight away (the times may already be stale — that is the
--- bug this fixes): every job in a session-linked column follows its session — the weigh-in team
--- (a title containing "weigh") 10 minutes before weigh-ins open, everyone else 30 minutes before
--- lift-off — and its arrive-by is recalculated now. Each linked column's header is rebuilt from its
+-- bug this fixes): every job in a session-linked column follows its session — the weigh-in and
+-- registration teams (a title containing "weigh" or "registration", the jobs the old Generate timed
+-- from weigh-in) 10 minutes before weigh-ins open, everyone else 30 minutes before
+-- lift-off — and its arrive-by is recalculated now. A job whose session has no time of that kind
+-- yet keeps its typed time (it stays a "set a time" job), so the backfill never blanks a time. Each linked column's header is rebuilt from its
 -- session the same way the app builds it ("Sat", the session name, "Weigh-in 7:00am · Lift-off
 -- 9:00am", plus the platform name when the comp runs more than one). Hand-made columns (Set-up) are
 -- untouched. An organiser who wants a fixed time for a job picks "Set a time" on the Edit layout tab.
@@ -23,10 +25,11 @@ alter table public.rota_roles
   add column arrive_basis text check (arrive_basis in ('lift_off', 'weigh_in'));
 
 update public.rota_roles r
-set arrive_basis = case when r.title ilike '%weigh%' then 'weigh_in' else 'lift_off' end
+set arrive_basis = case when r.title ilike '%weigh%' or r.title ilike '%registration%' then 'weigh_in' else 'lift_off' end
 from public.rota_sections s
+join public.sessions ss on ss.id = s.session_id
 where r.section_id = s.id
-  and s.session_id is not null;
+  and (case when r.title ilike '%weigh%' or r.title ilike '%registration%' then ss.weigh_in_time else ss.lift_off_time end) is not null;
 
 update public.rota_roles r
 set arrive_by = case

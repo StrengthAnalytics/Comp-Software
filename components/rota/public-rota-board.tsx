@@ -228,7 +228,7 @@ function SignupDialog({
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" disabled={submitting} data-autofocus={editing ? undefined : true}>
             {submitting ? 'Signing up…' : (editing ? 'Sign up' : 'Yes, sign me up')}
           </Button>
           <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>

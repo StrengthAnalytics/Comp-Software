@@ -1139,11 +1139,12 @@ export async function submitRotaChangeRequestAction(input: RotaChangeRequestInpu
 }
 
 // Emails the organisers about a change request that has just been saved. Who gets it: the comp's
-// organiser email (set on its edit screen), else ROTA_NOTIFY_EMAILS, else every admin in
-// ADMIN_EMAILS. The details are read on the volunteer's own anon session (the rota is open, so the
-// comp header, slot and organiser email are readable), and the email itself is sent after the
-// response, so the volunteer isn't kept waiting and a mail hiccup never fails a request that is
-// already saved. Nothing happens until Resend is set up.
+// organiser email (set on its edit screen, read server-side — lib/email/organiser.ts), else
+// ROTA_NOTIFY_EMAILS, else every admin in ADMIN_EMAILS. Only the site address is read before the
+// response; the lookups and the send run in after(), so the volunteer isn't kept waiting and a mail
+// hiccup never fails a request that is already saved. The comp header and slot are read on the
+// volunteer's own anon session (the rota is open, so they're readable). Nothing happens until
+// Resend is set up.
 async function emailOrganisersAboutChangeRequest(
   supabase: Awaited<ReturnType<typeof createClient>>,
   request: RotaChangeRequestInput,
@@ -1151,49 +1152,54 @@ async function emailOrganisersAboutChangeRequest(
   if (!process.env.RESEND_API_KEY) {
     return;
   }
-  const organiserEmail = await readOrganiserEmail(supabase, request.competitionId, 'public');
-  const to = organiserEmail
-    ? [organiserEmail]
-    : parseEmailList(process.env.ROTA_NOTIFY_EMAILS || process.env.ADMIN_EMAILS);
-  if (to.length === 0) {
-    return;
-  }
-
-  const [compResult, roleResult, origin] = await Promise.all([
-    supabase.from('public_rota_comps').select('slug, name').eq('id', request.competitionId).maybeSingle(),
-    request.roleId
-      ? supabase.from('rota_roles').select('title, section_id').eq('id', request.roleId).maybeSingle()
-      : Promise.resolve(null),
-    requestOrigin(),
-  ]);
-  const role = roleResult?.data ?? null;
-  const { data: section } = role
-    ? await supabase.from('rota_sections').select('day_label, title').eq('id', role.section_id).maybeSingle()
-    : { data: null };
-
-  const slug = compResult.data?.slug;
-  const sectionLabel = section ? [section.day_label, section.title].filter(Boolean).join(' ') : null;
-
-  const email = buildChangeRequestEmail({
-    competitionName: compResult.data?.name ?? 'Your competition',
-    name: request.name,
-    contact: request.contact,
-    kind: request.kind,
-    slotLabel: role ? [sectionLabel, role.title].filter(Boolean).join(' · ') : null,
-    message: request.message,
-    rotaUrl: slug && origin ? `${origin}/${slug}/rota` : null,
-  });
+  const origin = await requestOrigin();
 
   after(async () => {
-    const result = await sendEmail({
-      to,
-      subject: email.subject,
-      text: email.text,
-      replyTo: isEmailAddress(request.contact) ? request.contact.trim() : undefined,
-    });
-    if (result.status === 'failed') {
-      // A generic error only — never the volunteer's details.
-      Sentry.captureException(result.error);
+    try {
+      const organiserEmail = await readOrganiserEmail(supabase, request.competitionId, 'public');
+      const to = organiserEmail
+        ? [organiserEmail]
+        : parseEmailList(process.env.ROTA_NOTIFY_EMAILS || process.env.ADMIN_EMAILS);
+      if (to.length === 0) {
+        return;
+      }
+
+      const [compResult, roleResult] = await Promise.all([
+        supabase.from('public_rota_comps').select('slug, name').eq('id', request.competitionId).maybeSingle(),
+        request.roleId
+          ? supabase.from('rota_roles').select('title, section_id').eq('id', request.roleId).maybeSingle()
+          : Promise.resolve(null),
+      ]);
+      const role = roleResult?.data ?? null;
+      const { data: section } = role
+        ? await supabase.from('rota_sections').select('day_label, title').eq('id', role.section_id).maybeSingle()
+        : { data: null };
+
+      const slug = compResult.data?.slug;
+      const sectionLabel = section ? [section.day_label, section.title].filter(Boolean).join(' ') : null;
+
+      const email = buildChangeRequestEmail({
+        competitionName: compResult.data?.name ?? 'Your competition',
+        name: request.name,
+        contact: request.contact,
+        kind: request.kind,
+        slotLabel: role ? [sectionLabel, role.title].filter(Boolean).join(' · ') : null,
+        message: request.message,
+        rotaUrl: slug && origin ? `${origin}/${slug}/rota` : null,
+      });
+
+      const result = await sendEmail({
+        to,
+        subject: email.subject,
+        text: email.text,
+        replyTo: isEmailAddress(request.contact) ? request.contact.trim() : undefined,
+      });
+      if (result.status === 'failed') {
+        // A generic error only — never the volunteer's details.
+        Sentry.captureException(result.error);
+      }
+    } catch (error) {
+      Sentry.captureException(error);
     }
   });
 }

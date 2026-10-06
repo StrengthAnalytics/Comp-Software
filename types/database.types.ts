@@ -793,15 +793,6 @@ export type Database = {
         };
         Relationships: [];
       };
-      // A comp's organiser email, only while its entry form or rota is open. See migration
-      // 20261006000003.
-      public_comp_organisers: {
-        Row: {
-          competition_id: string | null;
-          email: string | null;
-        };
-        Relationships: [];
-      };
     };
     Functions: Record<string, never>;
     Enums: {

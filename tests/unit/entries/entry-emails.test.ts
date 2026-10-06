@@ -27,22 +27,19 @@ describe('formatCompDates', () => {
 describe('buildEntryReceivedEmail', () => {
   const input = {
     comp,
-    firstName: 'Jane',
-    fullName: 'Jane Smith',
     weightClass: '-63 kg',
-    club: 'Iron Works',
     division: null,
     kit: 'Raw',
     event: null,
     canReply: true,
   };
 
-  it('thanks the lifter, lists what they sent and says their place is not confirmed yet', () => {
+  it('thanks the lifter, lists their picks and says their place is not confirmed yet', () => {
     const email = buildEntryReceivedEmail(input);
     expect(email.subject).toBe('We’ve got your entry for Summer Showdown');
-    expect(email.text).toContain('Hi Jane,');
+    expect(email.text).toContain('Hello,');
     expect(email.text).toContain('Thanks for entering Summer Showdown (11 to 12 July 2026).');
-    expect(email.text).toContain('Name: Jane Smith\nWeight class: -63 kg\nClub: Iron Works\nKit: Raw\n');
+    expect(email.text).toContain('Your entry:\nWeight class: -63 kg\nKit: Raw\n');
     expect(email.text).not.toContain('Division:');
     expect(email.text).not.toContain('Event:');
     expect(email.text).toContain('Your place isn’t confirmed yet.');
@@ -50,10 +47,17 @@ describe('buildEntryReceivedEmail', () => {
     expect(email.text).toContain('just reply to this email');
   });
 
-  it('says not to reply when there is no reply-to address, and copes without a link', () => {
-    const email = buildEntryReceivedEmail({ ...input, canReply: false, comp: { ...comp, url: null } });
+  it('says not to reply when there is no reply-to address, and copes without a link or picks', () => {
+    const email = buildEntryReceivedEmail({
+      ...input,
+      weightClass: null,
+      kit: null,
+      canReply: false,
+      comp: { ...comp, url: null },
+    });
     expect(email.text).toContain('Please don’t reply to this email');
     expect(email.text).not.toContain('Competition page:');
+    expect(email.text).not.toContain('Your entry:');
   });
 });
 

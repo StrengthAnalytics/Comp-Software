@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EMAIL_ADDRESS_MAX } from '@/lib/constants';
 import { roundToTwoDecimals } from '@/lib/number-input';
 
 // Lowercase letters, numbers and single hyphens; no leading, trailing or doubled hyphens.
@@ -132,7 +133,7 @@ export const setOrganiserEmailSchema = z.object({
   email: z
     .string()
     .trim()
-    .max(254, 'That email address is too long.')
+    .max(EMAIL_ADDRESS_MAX, 'That email address is too long.')
     .refine((value) => value === '' || z.email().safeParse(value).success, 'Enter a valid email address.')
     .transform((value) => (value === '' ? null : value)),
 });

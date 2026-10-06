@@ -222,17 +222,16 @@ export async function submitEntryFormAction(input: SubmitEntryFormInput): Promis
       return fail('Could not submit your entry. Please try again.');
     }
 
-    // "We've got your entry", when the form collected an email. The address is the submitter's own
-    // input, so this is bounded like the submission itself (honeypot + the pending-submissions cap).
+    // "We've got your entry", when the form collected an email. Nobody has checked the address yet,
+    // so the receipt repeats only values from fixed lists (weight class, division, kit, event) —
+    // never the name or club the submitter typed — and can't carry someone's own text to a stranger.
+    // It is bounded like the submission itself (honeypot + the pending-submissions cap).
     if (parsed.data.email) {
       const { data: submitted } = parsed;
       await emailLifter(supabase, 'public', competitionId.data, parsed.data.email, (canReply, url) =>
         buildEntryReceivedEmail({
           comp: entryEmailComp(comp, url),
-          firstName: submitted.firstName,
-          fullName: `${submitted.firstName} ${submitted.surname}`.trim(),
           weightClass: submitted.weightClass,
-          club: submitted.club,
           division: submitted.division,
           kit: submitted.kitChoice === null ? null : ENTRY_FORM_KIT_LABELS[submitted.kitChoice],
           event: submitted.eventChoice === null ? null : ENTRY_FORM_EVENT_LABELS[submitted.eventChoice],
@@ -259,8 +258,8 @@ function entryEmailComp(comp: EmailCompRow, origin: string | null): EntryEmailCo
 }
 
 // Sends one email to a lifter after the response, so the submit/approve/reject never waits on (or
-// fails because of) the mail. Replies go to the comp's organiser email (read on the caller's own
-// session — the anon submitter through the gated view), else RESEND_REPLY_TO_EMAIL. Nothing happens
+// fails because of) the mail: everything past reading the request's address runs in after(), inside
+// a try/catch. Replies go to the comp's organiser email, else RESEND_REPLY_TO_EMAIL. Nothing happens
 // until Resend is set up. A failure is logged with a generic error only — never the lifter's details.
 async function emailLifter(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -272,14 +271,24 @@ async function emailLifter(
   if (!process.env.RESEND_API_KEY) {
     return;
   }
-  const replyTo = organiserReplyTo(await readOrganiserEmail(supabase, competitionId, session));
-  const email = build(replyTo !== undefined, await requestOrigin());
-  after(async () => {
-    const result = await sendEmail({ to: [to], subject: email.subject, text: email.text, replyTo });
-    if (result.status === 'failed') {
-      Sentry.captureException(result.error);
-    }
-  });
+  try {
+    // Read while the request is still in scope; after() runs once the response has gone.
+    const origin = await requestOrigin();
+    after(async () => {
+      try {
+        const replyTo = organiserReplyTo(await readOrganiserEmail(supabase, competitionId, session));
+        const email = build(replyTo !== undefined, origin);
+        const result = await sendEmail({ to: [to], subject: email.subject, text: email.text, replyTo });
+        if (result.status === 'failed') {
+          Sentry.captureException(result.error);
+        }
+      } catch (error) {
+        Sentry.captureException(error);
+      }
+    });
+  } catch (error) {
+    Sentry.captureException(error);
+  }
 }
 
 // --- Reviewing submissions ------------------------------------------------------------------------

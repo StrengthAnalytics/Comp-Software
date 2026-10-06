@@ -24,6 +24,11 @@ describe('buildChangeRequestEmail', () => {
     expect(email.text).not.toContain('Message:');
   });
 
+  it('keeps the subject on one line whatever the name contains', () => {
+    const email = buildChangeRequestEmail({ ...base, name: 'Beth\r\nBcc: x@y.z' });
+    expect(email.subject).toBe('Summer Showdown rota: Beth Bcc: x@y.z wants to drop out');
+  });
+
   it('includes the message, a missing slot, and no reply hint for a phone number', () => {
     const email = buildChangeRequestEmail({
       ...base,

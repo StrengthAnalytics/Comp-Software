@@ -166,7 +166,7 @@ export function RotaChangeRequests({ requests, sections }: RotaChangeRequestsPro
       <p className="mt-0.5 text-sm text-amber-800">
         Volunteers asking to drop out or swap. Update the rota, then mark each one done.
       </p>
-      <ul className="mt-3 space-y-2">
+      <ul aria-live="polite" className="mt-3 space-y-2">
         {ordered.map((request) => {
           const slot = request.role_id ? slotByRole.get(request.role_id) : undefined;
           let slotLabel: string | null = null;

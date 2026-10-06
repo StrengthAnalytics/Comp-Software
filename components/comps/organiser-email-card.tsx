@@ -89,7 +89,11 @@ export function OrganiserEmailCard({ competitionId, initialEmail, myEmail }: Org
         {email.trim() === '' && !dirty ? (
           <span className="text-neutral-500">Not set — emails go to the addresses in the app&rsquo;s settings.</span>
         ) : null}
-        {saved ? <span className="text-emerald-700">Saved ✓</span> : null}
+        {saved ? (
+          <span role="status" className="text-emerald-700">
+            Saved ✓
+          </span>
+        ) : null}
       </div>
 
       {error === null ? null : (

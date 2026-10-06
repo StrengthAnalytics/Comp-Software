@@ -98,10 +98,10 @@ export async function syncRotaWithSessions(
   return { error: null };
 }
 
-export type RotaColumnForSession = { sectionId: string; hasSignups: boolean };
+export type RotaColumnForSession = { sectionId: string };
 
-// The rota column linked to a session, and whether anyone has signed up in it — read before the
-// session is deleted (the delete unlinks the column, ON DELETE SET NULL).
+// The rota column linked to a session — read before the session is deleted (the delete unlinks the
+// column, ON DELETE SET NULL).
 export async function findRotaColumnForSession(
   supabase: Client,
   sessionId: string,
@@ -114,38 +114,37 @@ export async function findRotaColumnForSession(
   if (error || !section) {
     return { column: null, error };
   }
-  const { data: roles, error: rolesError } = await supabase
-    .from('rota_roles')
-    .select('id')
-    .eq('section_id', section.id);
+  return { column: { sectionId: section.id }, error: null };
+}
+
+// Whether anyone has signed up in a column.
+async function columnHasSignups(supabase: Client, sectionId: string): Promise<{ hasSignups: boolean; error: unknown }> {
+  const { data: roles, error: rolesError } = await supabase.from('rota_roles').select('id').eq('section_id', sectionId);
   if (rolesError) {
-    return { column: null, error: rolesError };
+    return { hasSignups: false, error: rolesError };
   }
   const roleIds = (roles ?? []).map((role) => role.id);
   if (roleIds.length === 0) {
-    return {
-      column: { sectionId: section.id, hasSignups: false },
-      error: null,
-    };
+    return { hasSignups: false, error: null };
   }
-  const { count, error: countError } = await supabase
+  const { count, error } = await supabase
     .from('rota_signups')
     .select('id', { count: 'exact', head: true })
     .in('role_id', roleIds);
-  if (countError) {
-    return { column: null, error: countError };
-  }
-  return {
-    column: { sectionId: section.id, hasSignups: (count ?? 0) > 0 },
-    error: null,
-  };
+  return { hasSignups: (count ?? 0) > 0, error };
 }
 
 // After its session is deleted: an empty column goes with it. One with volunteers in it stays (an
 // organiser deletes it deliberately, after contacting them), as an ordinary column whose times no
 // longer follow anything.
 export async function retireRotaColumn(supabase: Client, column: RotaColumnForSession): Promise<{ error: unknown }> {
-  if (!column.hasSignups) {
+  // Counted at the last moment, so a volunteer who signed up while the session was being deleted
+  // keeps their place.
+  const { hasSignups, error: countError } = await columnHasSignups(supabase, column.sectionId);
+  if (countError) {
+    return { error: countError };
+  }
+  if (!hasSignups) {
     const { error } = await supabase.from('rota_sections').delete().eq('id', column.sectionId);
     return { error };
   }

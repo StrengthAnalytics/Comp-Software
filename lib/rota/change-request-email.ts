@@ -27,8 +27,13 @@ export function isEmailAddress(value: string): boolean {
   return LOOKS_LIKE_EMAIL.test(value.trim());
 }
 
+// A subject is one line: any line breaks or tabs typed into a name are folded to spaces.
+function oneLine(value: string): string {
+  return value.replaceAll(/\s+/g, ' ').trim();
+}
+
 export function buildChangeRequestEmail(input: ChangeRequestEmailInput): { subject: string; text: string } {
-  const subject = `${input.competitionName} rota: ${input.name} ${SUBJECT_ACTION[input.kind]}`;
+  const subject = oneLine(`${input.competitionName} rota: ${input.name} ${SUBJECT_ACTION[input.kind]}`);
   const lines = [
     `${input.name} has sent a change request on the ${input.competitionName} volunteer rota.`,
     '',

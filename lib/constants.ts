@@ -421,3 +421,6 @@ export const DEFAULT_ROTA_ROLE_TEMPLATE: readonly RotaRoleTemplate[] = [
   { title: 'Livestream', capacity: 1, arriveBasis: 'lift_off' },
   { title: 'Refreshments', capacity: 2, arriveBasis: 'lift_off' },
 ];
+
+// The longest email address the app accepts (the SMTP limit), for the organiser email field.
+export const EMAIL_ADDRESS_MAX = 254;
