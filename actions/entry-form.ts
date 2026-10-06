@@ -2,13 +2,25 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
+import { after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { requireAdmin } from '@/lib/auth/admin';
 import { deriveAgeCategoryId, findLifterIdByName, matchWeightClassByName } from '@/lib/entries/registration';
 import { isCompPubliclyVisible } from '@/lib/comps/meet-status';
+import { organiserReplyTo, sendEmail } from '@/lib/email/resend';
+import { readOrganiserEmail } from '@/lib/email/organiser';
+import { requestOrigin } from '@/lib/email/request-origin';
+import {
+  buildEntryAcceptedEmail,
+  buildEntryReceivedEmail,
+  buildEntryRejectedEmail,
+  type EntryEmail,
+  type EntryEmailComp,
+} from '@/lib/entries/entry-emails';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { toFieldErrors } from '@/lib/validation';
+import { ENTRY_FORM_EVENT_LABELS, ENTRY_FORM_KIT_LABELS } from '@/lib/constants';
 import { buildSubmissionSchema, entryFormConfigSchema, parseEntryFormConfig } from '@/types/entry-form';
 import { GENDER_VALUES } from '@/types/entry';
 import { fail, ok, type ActionResult } from '@/types/action-result';
@@ -133,7 +145,7 @@ export async function submitEntryFormAction(input: SubmitEntryFormInput): Promis
     // Anon can only read publicly visible comps, so a draft comp 404s here regardless of the toggle.
     const { data: comp, error: compError } = await supabase
       .from('competitions')
-      .select('id, status, entry_form, entry_form_open')
+      .select('id, name, slug, starts_on, ends_on, status, entry_form, entry_form_open')
       .eq('id', competitionId.data)
       .maybeSingle();
     if (compError) {
@@ -210,8 +222,73 @@ export async function submitEntryFormAction(input: SubmitEntryFormInput): Promis
       return fail('Could not submit your entry. Please try again.');
     }
 
+    // "We've got your entry", when the form collected an email. Nobody has checked the address yet,
+    // so the receipt repeats only values from fixed lists (weight class, division, kit, event) —
+    // never the name or club the submitter typed — and can't carry someone's own text to a stranger.
+    // It is bounded like the submission itself (honeypot + the pending-submissions cap).
+    if (parsed.data.email) {
+      const { data: submitted } = parsed;
+      await emailLifter(supabase, 'public', competitionId.data, parsed.data.email, (canReply, url) =>
+        buildEntryReceivedEmail({
+          comp: entryEmailComp(comp, url),
+          weightClass: submitted.weightClass,
+          division: submitted.division,
+          kit: submitted.kitChoice === null ? null : ENTRY_FORM_KIT_LABELS[submitted.kitChoice],
+          event: submitted.eventChoice === null ? null : ENTRY_FORM_EVENT_LABELS[submitted.eventChoice],
+          canReply,
+        }),
+      );
+    }
+
     return ok();
   });
+}
+
+// --- Emails to the lifter -------------------------------------------------------------------------
+
+type EmailCompRow = { name: string; slug: string; starts_on: string | null; ends_on: string | null };
+
+function entryEmailComp(comp: EmailCompRow, origin: string | null): EntryEmailComp {
+  return {
+    name: comp.name,
+    startsOn: comp.starts_on,
+    endsOn: comp.ends_on,
+    url: origin ? `${origin}/${comp.slug}` : null,
+  };
+}
+
+// Sends one email to a lifter after the response, so the submit/approve/reject never waits on (or
+// fails because of) the mail: everything past reading the request's address runs in after(), inside
+// a try/catch. Replies go to the comp's organiser email, else RESEND_REPLY_TO_EMAIL. Nothing happens
+// until Resend is set up. A failure is logged with a generic error only — never the lifter's details.
+async function emailLifter(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  session: 'admin' | 'public',
+  competitionId: string,
+  to: string,
+  build: (canReply: boolean, origin: string | null) => EntryEmail,
+): Promise<void> {
+  if (!process.env.RESEND_API_KEY) {
+    return;
+  }
+  try {
+    // Read while the request is still in scope; after() runs once the response has gone.
+    const origin = await requestOrigin();
+    after(async () => {
+      try {
+        const replyTo = organiserReplyTo(await readOrganiserEmail(supabase, competitionId, session));
+        const email = build(replyTo !== undefined, origin);
+        const result = await sendEmail({ to: [to], subject: email.subject, text: email.text, replyTo });
+        if (result.status === 'failed') {
+          Sentry.captureException(result.error);
+        }
+      } catch (error) {
+        Sentry.captureException(error);
+      }
+    });
+  } catch (error) {
+    Sentry.captureException(error);
+  }
 }
 
 // --- Reviewing submissions ------------------------------------------------------------------------
@@ -249,7 +326,7 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
     const { data: submission, error: submissionError } = await supabase
       .from('entry_submissions')
       .select(
-        'id, competition_id, status, first_name, surname, gender, date_of_birth, club, ipf_member_id, division, weight_class',
+        'id, competition_id, status, first_name, surname, gender, date_of_birth, club, ipf_member_id, division, weight_class, email',
       )
       .eq('id', parsed.data.submissionId)
       .maybeSingle();
@@ -273,7 +350,7 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
 
     const { data: comp, error: compError } = await supabase
       .from('competitions')
-      .select('starts_on')
+      .select('name, slug, starts_on, ends_on')
       .eq('id', parsed.data.competitionId)
       .maybeSingle();
     if (compError) {
@@ -396,14 +473,14 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
       submission.date_of_birth,
     );
 
-    let weightClassId: string | null = null;
+    let weightClass: { id: string; name: string } | null = null;
     if (submission.weight_class !== null) {
       const match = matchWeightClassByName(
         weightClassesResult.data ?? [],
         submission.weight_class,
         gender.data,
       );
-      weightClassId = match.status === 'matched' ? match.weightClass.id : null;
+      weightClass = match.status === 'matched' ? match.weightClass : null;
     }
 
     const { data: entry, error: entryError } = await supabase
@@ -411,7 +488,7 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
       .insert({
         competition_id: parsed.data.competitionId,
         lifter_id: lifterId,
-        weight_class_id: weightClassId,
+        weight_class_id: weightClass?.id ?? null,
         age_category_id: ageCategoryId,
         division: submission.division,
       })
@@ -444,13 +521,35 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
       );
     }
 
+    // "You're in", when the lifter gave an email on the form.
+    if (submission.email) {
+      const ageCategory = (ageCategoriesResult.data ?? []).find((category) => category.id === ageCategoryId);
+      await emailLifter(supabase, 'admin', parsed.data.competitionId, submission.email, (canReply, origin) =>
+        buildEntryAcceptedEmail({
+          comp: entryEmailComp(comp, origin),
+          firstName: submission.first_name,
+          weightClass: weightClass?.name ?? null,
+          ageCategory: ageCategory?.name ?? null,
+          canReply,
+        }),
+      );
+    }
+
     return ok();
   });
 }
 
+const rejectSubmissionSchema = reviewSubmissionSchema.extend({
+  // Email the lifter to say their entry wasn't accepted (when they gave an email). Off for a
+  // duplicate or junk card, which the admin unticks.
+  notifyLifter: z.boolean().default(false),
+});
+
+export type RejectSubmissionInput = z.input<typeof rejectSubmissionSchema>;
+
 // Rejects a pending submission. The row is kept (status 'rejected', stamped with the reviewer) as
 // an audit record rather than deleted.
-export async function rejectSubmissionAction(input: ReviewSubmissionInput): Promise<ActionResult> {
+export async function rejectSubmissionAction(input: RejectSubmissionInput): Promise<ActionResult> {
   return Sentry.withServerActionInstrumentation('rejectSubmission', async () => {
     let reviewer: string;
     try {
@@ -459,7 +558,7 @@ export async function rejectSubmissionAction(input: ReviewSubmissionInput): Prom
       return fail('You need to be signed in as an admin to do that.');
     }
 
-    const parsed = reviewSubmissionSchema.safeParse(input);
+    const parsed = rejectSubmissionSchema.safeParse(input);
     if (!parsed.success) {
       return fail('Could not reject the entry. Please try again.');
     }
@@ -475,7 +574,7 @@ export async function rejectSubmissionAction(input: ReviewSubmissionInput): Prom
       .eq('id', parsed.data.submissionId)
       .eq('competition_id', parsed.data.competitionId)
       .eq('status', 'pending')
-      .select('id');
+      .select('id, email');
 
     if (error) {
       Sentry.captureException(error);
@@ -483,6 +582,23 @@ export async function rejectSubmissionAction(input: ReviewSubmissionInput): Prom
     }
     if (!rejected || rejected.length === 0) {
       return fail('This submission has already been reviewed.');
+    }
+
+    const lifter = rejected[0];
+    if (parsed.data.notifyLifter && lifter.email) {
+      const { data: comp, error: compError } = await supabase
+        .from('competitions')
+        .select('name, slug, starts_on, ends_on')
+        .eq('id', parsed.data.competitionId)
+        .maybeSingle();
+      if (compError || !comp) {
+        // The rejection itself is saved; only the courtesy email is lost.
+        Sentry.captureException(compError ?? new Error('Competition missing when emailing a rejected entry'));
+        return ok();
+      }
+      await emailLifter(supabase, 'admin', parsed.data.competitionId, lifter.email, (canReply, origin) =>
+        buildEntryRejectedEmail({ comp: entryEmailComp(comp, origin), canReply }),
+      );
     }
 
     return ok();

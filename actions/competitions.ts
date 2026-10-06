@@ -8,9 +8,15 @@ import { revalidatePath } from 'next/cache';
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
+import { requireAdmin } from '@/lib/auth/admin';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { seedCompetitionDefaults } from '@/lib/comps/seed-defaults';
-import { competitionCreateSchema, competitionInputSchema } from '@/types/competition';
+import {
+  competitionCreateSchema,
+  competitionInputSchema,
+  setOrganiserEmailSchema,
+  type SetOrganiserEmailInput,
+} from '@/types/competition';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
@@ -49,8 +55,13 @@ export async function createCompetitionAction(
   formData: FormData,
 ): Promise<CompetitionFormState> {
   return Sentry.withServerActionInstrumentation('createCompetition', async () => {
-    const guard = await adminGuard();
-    if (guard) return guard;
+    // requireAdmin directly (not adminGuard) because the creator's email becomes the organiser email.
+    let creatorEmail: string;
+    try {
+      creatorEmail = await requireAdmin();
+    } catch {
+      return fail('You need to be signed in as an admin to do that.');
+    }
 
     const parsed = competitionCreateSchema.safeParse(readCompetitionForm(formData));
     if (!parsed.success) {
@@ -74,6 +85,16 @@ export async function createCompetitionAction(
     // already exists, so a seed failure is logged and surfaced on the edit screen (via
     // ?setup=seed-failed) with the locked card's idempotent "Seed IPF defaults" button as the
     // recovery, rather than losing the creation or leaving the operator unaware the seed didn't run.
+    // The admin creating the comp becomes its organiser email (rota alerts, lifters' replies) until
+    // changed on the edit screen. Best-effort: a failure leaves it unset, which falls back to the
+    // env-var addresses, so it never loses the creation.
+    const { error: organiserError } = await supabase
+      .from('competition_organisers')
+      .insert({ competition_id: data.id, email: creatorEmail });
+    if (organiserError) {
+      Sentry.captureException(organiserError);
+    }
+
     let seedFailed = false;
     if (parsed.data.federation === 'ipf') {
       const seedError = await seedCompetitionDefaults(supabase, data.id);
@@ -517,5 +538,35 @@ export async function deleteCompetitionAction(input: { competitionId: string }):
 
     revalidatePath('/comps');
     redirect('/comps');
+  });
+}
+
+// Sets (or, when blank, clears) a comp's organiser email — where its rota change requests are sent
+// and where lifters' replies to their entry emails go.
+export async function setOrganiserEmailAction(input: SetOrganiserEmailInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('setOrganiserEmail', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = setOrganiserEmailSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Please fix the highlighted fields.', toFieldErrors(parsed.error));
+    }
+
+    const supabase = await createClient();
+    const { competitionId, email } = parsed.data;
+    const { error } =
+      email === null
+        ? await supabase.from('competition_organisers').delete().eq('competition_id', competitionId)
+        : await supabase
+            .from('competition_organisers')
+            .upsert({ competition_id: competitionId, email, updated_at: new Date().toISOString() });
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not save the organiser email. Please try again.');
+    }
+
+    revalidatePath(`/comps/${competitionId}/edit`);
+    return ok();
   });
 }

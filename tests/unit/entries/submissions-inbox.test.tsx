@@ -147,10 +147,33 @@ describe('SubmissionsInbox', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     expect(rejectAction).not.toHaveBeenCalled();
 
+    expect(screen.getByRole('checkbox', { name: 'Email them to say it wasn’t accepted' })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm reject' }));
     await waitFor(() =>
-      expect(rejectAction).toHaveBeenCalledWith({ competitionId: COMP_ID, submissionId: 'sub-1' }),
+      expect(rejectAction).toHaveBeenCalledWith({ competitionId: COMP_ID, submissionId: 'sub-1', notifyLifter: true }),
     );
+  });
+
+  it('lets the admin reject without emailing, and never emails a likely duplicate by default', async () => {
+    rejectAction.mockResolvedValue({ status: 'ok', data: undefined });
+    render(
+      <SubmissionsInbox competitionId={COMP_ID} submissions={[submission({ possibleDuplicate: true })]} />,
+    );
+    expandCard(/Jane Smith/);
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    expect(screen.getByRole('checkbox', { name: 'Email them to say it wasn’t accepted' })).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reject' }));
+    await waitFor(() =>
+      expect(rejectAction).toHaveBeenCalledWith({ competitionId: COMP_ID, submissionId: 'sub-1', notifyLifter: false }),
+    );
+  });
+
+  it('offers no email when the lifter gave no address', () => {
+    render(<SubmissionsInbox competitionId={COMP_ID} submissions={[submission({ email: null })]} />);
+    expandCard(/Jane Smith/);
+    expect(screen.queryByText(/Approving emails them/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
   it('backs out of a reject with Cancel', () => {

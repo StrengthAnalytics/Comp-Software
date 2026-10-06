@@ -97,13 +97,19 @@ function SubmissionCard({
 }) {
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null);
   const [confirmingReject, setConfirmingReject] = useState(false);
+  // Tell the lifter they weren't accepted — ticked by default, except on a likely duplicate (where
+  // the lifter is already in and a "not accepted" email would only confuse them).
+  const [notifyOnReject, setNotifyOnReject] = useState(!submission.possibleDuplicate);
   const [error, setError] = useState<string | null>(null);
 
   async function review(kind: 'approve' | 'reject') {
     setBusy(kind);
     setError(null);
-    const action = kind === 'approve' ? approveSubmissionAction : rejectSubmissionAction;
-    const result = await action({ competitionId, submissionId: submission.id });
+    const input = { competitionId, submissionId: submission.id };
+    const result =
+      kind === 'approve'
+        ? await approveSubmissionAction(input)
+        : await rejectSubmissionAction({ ...input, notifyLifter: notifyOnReject && submission.email !== null });
     setBusy(null);
     if (result.status === 'error') {
       setError(result.message);
@@ -180,7 +186,7 @@ function SubmissionCard({
             />
           </dl>
 
-          <div className="mt-3 flex items-center gap-2 border-t border-red-100 pt-3">
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-red-100 pt-3">
             {confirmingReject ? (
               <>
                 <Button variant="danger" size="sm" disabled={busy !== null} onClick={() => review('reject')}>
@@ -194,6 +200,17 @@ function SubmissionCard({
                 >
                   Cancel
                 </Button>
+                {submission.email === null ? null : (
+                  <label className="flex items-center gap-1.5 text-xs text-neutral-700">
+                    <input
+                      type="checkbox"
+                      checked={notifyOnReject}
+                      disabled={busy !== null}
+                      onChange={(event) => setNotifyOnReject(event.target.checked)}
+                    />
+                    Email them to say it wasn’t accepted
+                  </label>
+                )}
               </>
             ) : (
               <>
@@ -208,6 +225,9 @@ function SubmissionCard({
                 >
                   Reject
                 </Button>
+                {submission.email === null ? null : (
+                  <span className="text-xs text-neutral-500">Approving emails them to say they’re in.</span>
+                )}
               </>
             )}
           </div>

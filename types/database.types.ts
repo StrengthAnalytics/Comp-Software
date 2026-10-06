@@ -51,6 +51,9 @@ export type Database = {
           entry_form_open: boolean;
           rota_open: boolean;
           rota_withdrawal_contact: string | null;
+          // The organiser's rota formatting (types/rota-style.ts); null = the default look.
+          // Migration 20261006000002.
+          rota_style: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -69,6 +72,7 @@ export type Database = {
           entry_form_open?: boolean;
           rota_open?: boolean;
           rota_withdrawal_contact?: string | null;
+          rota_style?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -87,6 +91,7 @@ export type Database = {
           entry_form_open?: boolean;
           rota_open?: boolean;
           rota_withdrawal_contact?: string | null;
+          rota_style?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -624,6 +629,9 @@ export type Database = {
           section_id: string;
           title: string;
           arrive_by: string | null;
+          // Which session time arrive_by follows ('lift_off' / 'weigh_in'), or null for a hand-set
+          // time. Migration 20261006000001.
+          arrive_basis: 'lift_off' | 'weigh_in' | null;
           capacity: number;
           sort_order: number;
           created_at: string;
@@ -634,6 +642,7 @@ export type Database = {
           section_id: string;
           title: string;
           arrive_by?: string | null;
+          arrive_basis?: 'lift_off' | 'weigh_in' | null;
           capacity?: number;
           sort_order?: number;
           created_at?: string;
@@ -644,6 +653,7 @@ export type Database = {
           section_id?: string;
           title?: string;
           arrive_by?: string | null;
+          arrive_basis?: 'lift_off' | 'weigh_in' | null;
           capacity?: number;
           sort_order?: number;
           created_at?: string;
@@ -656,8 +666,10 @@ export type Database = {
           competition_id: string;
           role_id: string;
           name: string;
-          email: string;
-          phone: string;
+          // Nullable since migration 20261005000001: an admin can add a helper by name only. The
+          // public sign-up still requires both (Zod).
+          email: string | null;
+          phone: string | null;
           created_at: string;
         };
         Insert: {
@@ -665,8 +677,8 @@ export type Database = {
           competition_id: string;
           role_id: string;
           name: string;
-          email: string;
-          phone: string;
+          email?: string | null;
+          phone?: string | null;
           created_at?: string;
         };
         Update: {
@@ -674,9 +686,68 @@ export type Database = {
           competition_id?: string;
           role_id?: string;
           name?: string;
-          email?: string;
-          phone?: string;
+          email?: string | null;
+          phone?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      // A volunteer's request to drop out of / swap / change a rota slot (the public board's
+      // "Request a change" form). Anon INSERT-only; admin reads and resolves. Migration 20261005000001.
+      rota_change_requests: {
+        Row: {
+          id: string;
+          competition_id: string;
+          role_id: string | null;
+          name: string;
+          contact: string;
+          kind: 'drop_out' | 'swap' | 'other';
+          message: string | null;
+          status: 'open' | 'done';
+          created_at: string;
+          resolved_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          competition_id: string;
+          role_id?: string | null;
+          name: string;
+          contact: string;
+          kind: 'drop_out' | 'swap' | 'other';
+          message?: string | null;
+          status?: 'open' | 'done';
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          competition_id?: string;
+          role_id?: string | null;
+          name?: string;
+          contact?: string;
+          kind?: 'drop_out' | 'swap' | 'other';
+          message?: string | null;
+          status?: 'open' | 'done';
+          created_at?: string;
+          resolved_at?: string | null;
+        };
+        Relationships: [];
+      };
+      competition_organisers: {
+        Row: {
+          competition_id: string;
+          email: string;
+          updated_at: string;
+        };
+        Insert: {
+          competition_id: string;
+          email: string;
+          updated_at?: string;
+        };
+        Update: {
+          competition_id?: string;
+          email?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -718,6 +789,7 @@ export type Database = {
           ends_on: string | null;
           rota_open: boolean | null;
           rota_withdrawal_contact: string | null;
+          rota_style: Json | null;
         };
         Relationships: [];
       };

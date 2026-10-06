@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  moveRotaSignupSchema,
+  rotaAdminSignupSchema,
+  rotaChangeRequestSchema,
   rotaRoleCreateSchema,
+  rotaRoleForAllSchema,
   rotaSectionCreateSchema,
   rotaSignupSchema,
   rotaWithdrawalContactSchema,
@@ -141,5 +145,96 @@ describe('rotaSignupSchema', () => {
     if (tripped.success) {
       expect(tripped.data.website).toBe('http://spam');
     }
+  });
+});
+
+describe('rotaAdminSignupSchema', () => {
+  const base = { competitionId: UUID, roleId: UUID, name: 'Beth' };
+
+  it('accepts a name alone, with blank contact details stored as null', () => {
+    const result = rotaAdminSignupSchema.safeParse({ ...base, email: '', phone: '  ' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.email).toBeNull();
+      expect(result.data.phone).toBeNull();
+    }
+  });
+
+  it('still validates contact details when they are given', () => {
+    expect(rotaAdminSignupSchema.safeParse({ ...base, email: 'beth@example.com', phone: '07700 900000' }).success).toBe(
+      true,
+    );
+    expect(rotaAdminSignupSchema.safeParse({ ...base, email: 'nope', phone: '' }).success).toBe(false);
+    expect(rotaAdminSignupSchema.safeParse({ ...base, email: '', phone: 'CALL ME' }).success).toBe(false);
+  });
+
+  it('requires a name', () => {
+    expect(rotaAdminSignupSchema.safeParse({ ...base, name: ' ', email: '', phone: '' }).success).toBe(false);
+  });
+});
+
+describe('moveRotaSignupSchema', () => {
+  it('needs a sign-up id and a target role id', () => {
+    expect(moveRotaSignupSchema.safeParse({ id: UUID, roleId: UUID }).success).toBe(true);
+    expect(moveRotaSignupSchema.safeParse({ id: UUID, roleId: 'x' }).success).toBe(false);
+  });
+});
+
+describe('rotaRoleForAllSchema', () => {
+  it('accepts a title and a number of spaces', () => {
+    expect(rotaRoleForAllSchema.safeParse({ competitionId: UUID, title: 'Commentary', capacity: 2 }).success).toBe(
+      true,
+    );
+  });
+
+  it('rejects a blank title or too few spaces', () => {
+    expect(rotaRoleForAllSchema.safeParse({ competitionId: UUID, title: ' ', capacity: 2 }).success).toBe(false);
+    expect(rotaRoleForAllSchema.safeParse({ competitionId: UUID, title: 'Tea', capacity: 0 }).success).toBe(false);
+    expect(
+      rotaRoleForAllSchema.safeParse({ competitionId: UUID, title: 'Tea', capacity: MAX_ROTA_SLOT_CAPACITY + 1 }).success,
+    ).toBe(false);
+  });
+});
+
+describe('rotaChangeRequestSchema', () => {
+  const base = {
+    competitionId: UUID,
+    roleId: UUID,
+    name: 'Mike R',
+    contact: 'mike@example.com',
+    kind: 'drop_out',
+    message: '',
+  };
+
+  it('accepts a drop-out with no message and stores the blank message as null', () => {
+    const result = rotaChangeRequestSchema.safeParse(base);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.message).toBeNull();
+    }
+  });
+
+  it('accepts "several slots / not sure" as a null slot', () => {
+    const result = rotaChangeRequestSchema.safeParse({ ...base, roleId: '' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.roleId).toBeNull();
+    }
+  });
+
+  it('needs a message for a swap or something else', () => {
+    const swap = rotaChangeRequestSchema.safeParse({ ...base, kind: 'swap' });
+    expect(swap.success).toBe(false);
+    if (!swap.success) {
+      expect(swap.error.issues[0].path).toEqual(['message']);
+    }
+    expect(rotaChangeRequestSchema.safeParse({ ...base, kind: 'other' }).success).toBe(false);
+    expect(rotaChangeRequestSchema.safeParse({ ...base, kind: 'swap', message: 'Sunday PM please' }).success).toBe(true);
+  });
+
+  it('needs a name, a way to reply and a known kind', () => {
+    expect(rotaChangeRequestSchema.safeParse({ ...base, name: '' }).success).toBe(false);
+    expect(rotaChangeRequestSchema.safeParse({ ...base, contact: 'abc' }).success).toBe(false);
+    expect(rotaChangeRequestSchema.safeParse({ ...base, kind: 'cancel' }).success).toBe(false);
   });
 });

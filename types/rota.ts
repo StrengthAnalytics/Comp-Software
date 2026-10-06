@@ -103,11 +103,17 @@ const capacity = z
   .min(1, 'A role needs at least one slot.')
   .max(MAX_ROTA_SLOT_CAPACITY, `A role can have at most ${MAX_ROTA_SLOT_CAPACITY} slots.`);
 
+// Which session time a job's arrive-by follows in a session column — 'lift_off' (30 minutes before)
+// or 'weigh_in' (10 minutes before) — or null for a time the admin types. The server works the time
+// out from the session; for a column that isn't a session's, it is always null.
+const arriveBasis = z.enum(['lift_off', 'weigh_in']).nullable().optional();
+
 export const rotaRoleCreateSchema = z.object({
   competitionId,
   sectionId: z.uuid(),
   title: roleTitle,
   arriveBy,
+  arriveBasis,
   capacity,
 });
 export type RotaRoleCreateInput = z.infer<typeof rotaRoleCreateSchema>;
@@ -116,6 +122,7 @@ export const rotaRoleUpdateSchema = z.object({
   id: z.uuid(),
   title: roleTitle,
   arriveBy,
+  arriveBasis,
   capacity,
 });
 export type RotaRoleUpdateInput = z.infer<typeof rotaRoleUpdateSchema>;
@@ -146,3 +153,103 @@ export const rotaSignupSchema = z.object({
   website: z.string().trim().optional(),
 });
 export type RotaSignupInput = z.infer<typeof rotaSignupSchema>;
+
+// --- Admin add (the rota grid's "+ Add" on an open slot) ------------------------------------------
+
+// Blank optional email/mobile read as null, otherwise they must be valid — the same rules as the
+// public sign-up, just not required.
+const optionalEmail = z.preprocess(
+  blankToNull,
+  z.email({ message: 'Enter a valid email address.' }).max(ROTA_SIGNUP_EMAIL_MAX, 'That email address is too long.').nullable(),
+);
+
+const optionalPhone = z.preprocess(
+  blankToNull,
+  z
+    .string()
+    .trim()
+    .min(ROTA_SIGNUP_PHONE_MIN, 'Enter a valid mobile number.')
+    .max(ROTA_SIGNUP_PHONE_MAX, 'That mobile number is too long.')
+    .regex(/^[+()\d\s-]+$/, 'Enter a valid mobile number.')
+    .nullable(),
+);
+
+// The admin putting someone in a slot themselves: a name is enough (a regular helper who won't fill
+// in a form); email and mobile are optional.
+export const rotaAdminSignupSchema = z.object({
+  competitionId,
+  roleId: z.uuid(),
+  name: z
+    .string({ message: 'Enter a name.' })
+    .trim()
+    .min(1, 'Enter a name.')
+    .max(ROTA_SIGNUP_NAME_MAX, 'That name is too long.'),
+  email: optionalEmail,
+  phone: optionalPhone,
+});
+export type RotaAdminSignupInput = z.infer<typeof rotaAdminSignupSchema>;
+
+// Moving a volunteer to another slot (admin-only).
+export const moveRotaSignupSchema = z.object({
+  id: z.uuid(),
+  roleId: z.uuid(),
+});
+export type MoveRotaSignupInput = z.infer<typeof moveRotaSignupSchema>;
+
+// Adding the same job to every column at once (the edit-layout "Add a role to every column" form).
+export const rotaRoleForAllSchema = z.object({
+  competitionId,
+  title: roleTitle,
+  capacity,
+});
+export type RotaRoleForAllInput = z.infer<typeof rotaRoleForAllSchema>;
+
+// --- Change requests (the public board's "Request a change" form) ---------------------------------
+
+export const ROTA_CHANGE_CONTACT_MAX = 254;
+export const ROTA_CHANGE_MESSAGE_MAX = 1000;
+
+export const ROTA_CHANGE_KINDS = ['drop_out', 'swap', 'other'] as const;
+export type RotaChangeKind = (typeof ROTA_CHANGE_KINDS)[number];
+
+export const ROTA_CHANGE_KIND_LABELS: Record<RotaChangeKind, string> = {
+  drop_out: 'Drop out of a slot',
+  swap: 'Swap to a different slot',
+  other: 'Something else',
+};
+
+// A volunteer asking the organiser to change their slot — volunteers can't edit the rota
+// themselves. The slot is optional ("several slots / not sure"); a swap or "something else" needs a
+// message saying what they'd like.
+export const rotaChangeRequestSchema = z
+  .object({
+    competitionId,
+    roleId: z.preprocess(blankToNull, z.uuid().nullable()),
+    name: z
+      .string({ message: 'Enter your name.' })
+      .trim()
+      .min(1, 'Enter your name.')
+      .max(ROTA_SIGNUP_NAME_MAX, 'That name is too long.'),
+    contact: z
+      .string({ message: 'Enter your email or mobile so the organisers can reply.' })
+      .trim()
+      .min(ROTA_SIGNUP_PHONE_MIN, 'Enter your email or mobile so the organisers can reply.')
+      .max(ROTA_CHANGE_CONTACT_MAX, 'That is too long.'),
+    kind: z.enum(ROTA_CHANGE_KINDS, { message: 'Choose what you need.' }),
+    message: z.preprocess(
+      blankToNull,
+      z.string().trim().max(ROTA_CHANGE_MESSAGE_MAX, 'That message is too long.').nullable(),
+    ),
+    // Honeypot, as on the sign-up form.
+    website: z.string().trim().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.kind !== 'drop_out' && value.message === null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['message'],
+        message: value.kind === 'swap' ? 'Tell us which slot you would like instead.' : 'Tell us what you need.',
+      });
+    }
+  });
+export type RotaChangeRequestInput = z.infer<typeof rotaChangeRequestSchema>;

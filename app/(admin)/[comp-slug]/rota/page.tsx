@@ -7,6 +7,8 @@ import {
   type RotaBuilderSection,
   type RotaSignupSummary,
 } from '@/components/rota/rota-builder';
+import type { RotaChangeRequestSummary } from '@/components/rota/rota-change-requests';
+import { parseRotaStyle } from '@/types/rota-style';
 
 export default async function RotaPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
@@ -18,8 +20,14 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
 
   const supabase = await createClient();
 
-  const [{ data: sectionRows }, { data: roleRows }, { data: signupRows }, { data: sessionRows }] =
-    await Promise.all([
+  const [
+    { data: sectionRows },
+    { data: roleRows },
+    { data: signupRows },
+    { data: sessionRows },
+    { data: changeRequestRows },
+    { data: styleRow },
+  ] = await Promise.all([
       supabase
         .from('rota_sections')
         .select('id, session_id, day_label, title, subtitle, sort_order')
@@ -27,7 +35,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
         .order('sort_order', { ascending: true }),
       supabase
         .from('rota_roles')
-        .select('id, section_id, title, arrive_by, capacity, sort_order')
+        .select('id, section_id, title, arrive_by, arrive_basis, capacity, sort_order')
         .eq('competition_id', comp.id)
         .order('sort_order', { ascending: true }),
       // Admin reads the base table for the full contact list (RLS admin-only); the public board uses
@@ -40,7 +48,26 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
       // For the "Generate from sessions" card and the per-column "Duplicate to…" control: the comp's
       // sessions — those without a column are the available targets.
       supabase.from('sessions').select('id, name').eq('competition_id', comp.id).order('sort_order', { ascending: true }),
+      // Volunteers' open "Request a change" messages (admin-only table), oldest first.
+      supabase
+        .from('rota_change_requests')
+        .select('id, role_id, name, contact, kind, message, created_at')
+        .eq('competition_id', comp.id)
+        .eq('status', 'open')
+        .order('created_at', { ascending: true }),
+      // The rota's formatting, read on its own so the rest of the page still loads if it can't be.
+      supabase.from('competitions').select('rota_style').eq('id', comp.id).maybeSingle(),
     ]);
+
+  const changeRequests: RotaChangeRequestSummary[] = (changeRequestRows ?? []).map((row) => ({
+    id: row.id,
+    role_id: row.role_id,
+    name: row.name,
+    contact: row.contact,
+    kind: row.kind,
+    message: row.message,
+    created_at: row.created_at,
+  }));
 
   const linkedSessionIds = new Set(
     (sectionRows ?? []).map((section) => section.session_id).filter((id): id is string => id !== null),
@@ -65,6 +92,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
       id: role.id,
       title: role.title,
       arrive_by: role.arrive_by,
+      arrive_basis: role.arrive_basis,
       capacity: role.capacity,
       sort_order: role.sort_order,
       signups: signupsByRole.get(role.id) ?? [],
@@ -74,6 +102,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
 
   const sections: RotaBuilderSection[] = (sectionRows ?? []).map((section) => ({
     id: section.id,
+    session_id: section.session_id,
     day_label: section.day_label,
     title: section.title,
     subtitle: section.subtitle,
@@ -86,8 +115,8 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Staff rota</h1>
         <p className="mt-1 text-sm text-neutral-600">
-          Build the volunteer rota and share the sign-up link. Volunteers add themselves to open
-          slots; only you can move or remove anyone.
+          Share the sign-up link and volunteers fill the grid themselves. Only you can move or remove
+          anyone — volunteers send you a change request instead.
         </p>
       </div>
 
@@ -102,6 +131,8 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
         pendingSessionCount={pendingSessionCount}
         availableSessions={availableSessions}
         sections={sections}
+        changeRequests={changeRequests}
+        rotaStyle={parseRotaStyle(styleRow?.rota_style ?? null)}
       />
     </div>
   );

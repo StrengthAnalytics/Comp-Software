@@ -52,13 +52,13 @@ describe('arriveBefore', () => {
 describe('buildRotaSubtitle', () => {
   it('labels the weigh-in and lift-off times and adds the platform', () => {
     expect(buildRotaSubtitle('08:00:00', '10:00:00', 'Platform 1')).toBe(
-      'Weigh-in 08:00 · Lift-off 10:00 · Platform 1',
+      'Weigh-in 8:00am · Lift-off 10:00am · Platform 1',
     );
   });
 
   it('drops any absent part, and is null when there is nothing', () => {
-    expect(buildRotaSubtitle('08:00:00', null, null)).toBe('Weigh-in 08:00');
-    expect(buildRotaSubtitle(null, '10:00:00', null)).toBe('Lift-off 10:00');
+    expect(buildRotaSubtitle('08:00:00', null, null)).toBe('Weigh-in 8:00am');
+    expect(buildRotaSubtitle(null, '10:00:00', null)).toBe('Lift-off 10:00am');
     expect(buildRotaSubtitle(null, null, null)).toBeNull();
   });
 });
@@ -94,7 +94,7 @@ describe('planRotaSectionsFromSessions', () => {
       sessionId: 's1',
       dayLabel: 'Sat',
       title: 'AM',
-      subtitle: 'Weigh-in 08:00 · Lift-off 10:00',
+      subtitle: 'Weigh-in 8:00am · Lift-off 10:00am',
     });
   });
 
@@ -109,6 +109,6 @@ describe('planRotaSectionsFromSessions', () => {
       ['p2', 'Platform 2'],
     ]);
     const planned = planRotaSectionsFromSessions(sessions, new Set(), twoPlatforms);
-    expect(planned[0].subtitle).toBe('Weigh-in 08:00 · Lift-off 10:00 · Platform 1');
+    expect(planned[0].subtitle).toBe('Weigh-in 8:00am · Lift-off 10:00am · Platform 1');
   });
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EMAIL_ADDRESS_MAX } from '@/lib/constants';
 import { roundToTwoDecimals } from '@/lib/number-input';
 
 // Lowercase letters, numbers and single hyphens; no leading, trailing or doubled hyphens.
@@ -123,3 +124,18 @@ export const weightClassUpdateSchema = z
     path: ['upperKg'],
     message: 'Upper bound must be greater than the lower bound.',
   });
+
+// A comp's organiser email (competition_organisers): where its rota change requests go and where
+// lifters' replies to their entry emails land. Blank clears it, falling back to the env-var
+// addresses.
+export const setOrganiserEmailSchema = z.object({
+  competitionId: z.uuid(),
+  email: z
+    .string()
+    .trim()
+    .max(EMAIL_ADDRESS_MAX, 'That email address is too long.')
+    .refine((value) => value === '' || z.email().safeParse(value).success, 'Enter a valid email address.')
+    .transform((value) => (value === '' ? null : value)),
+});
+
+export type SetOrganiserEmailInput = z.input<typeof setOrganiserEmailSchema>;

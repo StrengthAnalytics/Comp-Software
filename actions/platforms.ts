@@ -6,6 +6,7 @@ import type { PostgrestError } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
+import { syncRotaWithSessions } from '@/lib/rota/sync';
 import { platformInputSchema, platformUpdateSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
@@ -15,6 +16,19 @@ function mapPlatformWriteError(error: PostgrestError): ActionResult<never> {
     return fail('A platform with that name already exists.', { name: ['That name is already used.'] });
   }
   return fail('Could not save the platform. Please try again.');
+}
+
+// The rota's session column headers name the platform when a comp runs more than one, so a rename or
+// delete is passed on (lib/rota/sync.ts). The platform write has already succeeded; a rota hiccup is
+// logged rather than reported as a failed save.
+async function followPlatformsInRota(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  competitionId: string,
+): Promise<void> {
+  const { error } = await syncRotaWithSessions(supabase, competitionId);
+  if (error) {
+    Sentry.captureException(error);
+  }
 }
 
 export async function createPlatformAction(input: {
@@ -40,6 +54,8 @@ export async function createPlatformAction(input: {
       return mapPlatformWriteError(error);
     }
 
+    // A second platform puts the platform name into every session column's header.
+    await followPlatformsInRota(supabase, parsed.data.competitionId);
     return ok();
   });
 }
@@ -55,11 +71,20 @@ export async function updatePlatformAction(input: { id: string; name: string }):
     }
 
     const supabase = await createClient();
-    const { error } = await supabase.from('platforms').update({ name: parsed.data.name }).eq('id', parsed.data.id);
+    const { data: updated, error } = await supabase
+      .from('platforms')
+      .update({ name: parsed.data.name })
+      .eq('id', parsed.data.id)
+      .select('competition_id')
+      .maybeSingle();
 
     if (error) {
       Sentry.captureException(error);
       return mapPlatformWriteError(error);
+    }
+
+    if (updated) {
+      await followPlatformsInRota(supabase, updated.competition_id);
     }
 
     return ok();
@@ -79,11 +104,20 @@ export async function deletePlatformAction(input: { id: string }): Promise<Actio
     }
 
     const supabase = await createClient();
-    const { error } = await supabase.from('platforms').delete().eq('id', parsed.data.id);
+    const { data: deleted, error } = await supabase
+      .from('platforms')
+      .delete()
+      .eq('id', parsed.data.id)
+      .select('competition_id')
+      .maybeSingle();
 
     if (error) {
       Sentry.captureException(error);
       return fail('Could not delete the platform. Please try again.');
+    }
+
+    if (deleted) {
+      await followPlatformsInRota(supabase, deleted.competition_id);
     }
 
     return ok();
