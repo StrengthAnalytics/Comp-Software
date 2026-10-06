@@ -247,6 +247,8 @@ describe('RotaBuilder — layout', () => {
       'href',
       '/summer-open/flights',
     );
+    // It sits in session order, so it has no arrows of its own.
+    expect(screen.queryByRole('button', { name: /^Move column/ })).not.toBeInTheDocument();
   });
 
   it('lets a job in a session column follow weigh-in instead of lift-off', async () => {
@@ -521,12 +523,21 @@ describe('RotaBuilder — change requests', () => {
     expect(screen.getByRole('link', { name: 'mike@example.com' })).toBeInTheDocument();
   });
 
-  it('removes the matching volunteer and marks a drop-out done in one click', async () => {
+  it('removes the matching volunteer and marks a drop-out done, once the admin has checked the contact', async () => {
     removeSignup.mockResolvedValue({ status: 'ok', data: undefined });
     resolveRequest.mockResolvedValue({ status: 'ok', data: undefined });
     renderBuilder([sectionWithRole], false, 0, 0, [], [dropOut]);
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Mike R and mark done' }));
+    // Anyone can type a name, so nothing is removed until the contact details are compared.
+    expect(removeSignup).not.toHaveBeenCalled();
+    expect(screen.getByText(/check it’s really them/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText(/check it’s really them/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Mike R and mark done' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, remove and mark done' }));
 
     await waitFor(() => expect(resolveRequest).toHaveBeenCalledWith({ id: 'req-1' }));
     expect(removeSignup).toHaveBeenCalledWith({ id: 'su-1' });

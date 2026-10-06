@@ -122,15 +122,16 @@ export function buildEntryAcceptedEmail(input: EntryAcceptedEmailInput): EntryEm
   return { subject: `You’re in: ${input.comp.name}`, text: lines.join('\n') };
 }
 
+// No name: a rejected submission is often junk, sent to an address nobody has verified, so this
+// email (like the receipt) repeats nothing the submitter typed.
 export type EntryRejectedEmailInput = {
   comp: EntryEmailComp;
-  firstName: string;
   canReply: boolean;
 };
 
 export function buildEntryRejectedEmail(input: EntryRejectedEmailInput): EntryEmail {
   const lines = [
-    `Hi ${input.firstName},`,
+    'Hello,',
     '',
     `Thank you for entering ${compWithDates(input.comp)}. Unfortunately the organisers weren’t able to accept your entry this time.`,
     '',

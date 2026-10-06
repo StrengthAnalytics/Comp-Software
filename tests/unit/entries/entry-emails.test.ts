@@ -92,9 +92,10 @@ describe('buildEntryAcceptedEmail', () => {
 });
 
 describe('buildEntryRejectedEmail', () => {
-  it('lets the lifter down politely', () => {
-    const email = buildEntryRejectedEmail({ comp, firstName: 'Jane', canReply: true });
+  it('lets the lifter down politely, without repeating the name they typed', () => {
+    const email = buildEntryRejectedEmail({ comp, canReply: true });
     expect(email.subject).toBe('Your entry for Summer Showdown');
+    expect(email.text).toMatch(/^Hello,\n/);
     expect(email.text).toContain('weren’t able to accept your entry this time');
     expect(email.text).toContain('just reply to this email');
   });

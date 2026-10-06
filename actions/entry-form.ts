@@ -574,7 +574,7 @@ export async function rejectSubmissionAction(input: RejectSubmissionInput): Prom
       .eq('id', parsed.data.submissionId)
       .eq('competition_id', parsed.data.competitionId)
       .eq('status', 'pending')
-      .select('id, first_name, email');
+      .select('id, email');
 
     if (error) {
       Sentry.captureException(error);
@@ -597,7 +597,7 @@ export async function rejectSubmissionAction(input: RejectSubmissionInput): Prom
         return ok();
       }
       await emailLifter(supabase, 'admin', parsed.data.competitionId, lifter.email, (canReply, origin) =>
-        buildEntryRejectedEmail({ comp: entryEmailComp(comp, origin), firstName: lifter.first_name, canReply }),
+        buildEntryRejectedEmail({ comp: entryEmailComp(comp, origin), canReply }),
       );
     }
 

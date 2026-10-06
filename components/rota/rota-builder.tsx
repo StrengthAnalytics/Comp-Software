@@ -434,13 +434,15 @@ function RoleRow({
   const router = useRouter();
   const [title, setTitle] = useState(role.title);
   const [arriveBy, setArriveBy] = useState(role.arrive_by ?? '');
-  const [arriveChoice, setArriveChoice] = useState<ArriveChoice>(role.arrive_basis ?? 'manual');
+  // Only a session's column can follow its clock; anywhere else the job has a typed time, whatever
+  // basis it was left with.
+  const savedChoice: ArriveChoice = linked ? (role.arrive_basis ?? 'manual') : 'manual';
+  const [arriveChoice, setArriveChoice] = useState<ArriveChoice>(savedChoice);
   const [capacity, setCapacity] = useState(role.capacity);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const savedChoice: ArriveChoice = role.arrive_basis ?? 'manual';
   const dirty =
     title !== role.title ||
     arriveChoice !== savedChoice ||
@@ -769,7 +771,11 @@ function SectionBlock({
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4">
       <div className="flex flex-wrap items-start gap-2">
-        <MoveControls onMove={move} isFirst={isFirst} isLast={isLast} disabled={pending} label={`column ${section.title}`} />
+        {/* A session's column always sits in session order (the rota sync puts it back), so only other
+            columns can be moved; move one of those to sit between sessions. */}
+        {linked ? null : (
+          <MoveControls onMove={move} isFirst={isFirst} isLast={isLast} disabled={pending} label={`column ${section.title}`} />
+        )}
         {linked ? (
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-neutral-900">
@@ -778,7 +784,7 @@ function SectionBlock({
             </p>
             {section.subtitle ? <p className="text-sm text-neutral-600">{section.subtitle}</p> : null}
             <p className="mt-1 text-xs text-neutral-500">
-              Follows the session. Change its name, day or times on{' '}
+              Follows the session and sits in session order. Change its name, day or times on{' '}
               <Link href={`/${slug}/flights`} className="font-medium text-neutral-700 underline">
                 Sessions &amp; flights
               </Link>{' '}

@@ -34,6 +34,12 @@ function normaliseName(name: string): string {
   return name.trim().toLowerCase().replaceAll(/\s+/g, ' ');
 }
 
+// The contact details on a sign-up, to compare with a change request's.
+function signupContact(signup: RotaSignupSummary): string {
+  const details = [signup.email, signup.phone].filter(Boolean);
+  return details.length > 0 ? details.join(' / ') : 'no contact details';
+}
+
 function ContactLink({ contact }: { contact: string }) {
   if (contact.includes('@')) {
     return (
@@ -55,13 +61,15 @@ function RequestCard({
   matchingSignup,
 }: {
   request: RotaChangeRequestSummary;
-  // Null when the request names no slot; "a slot that has since been deleted" when it did but the
-  // role is gone.
+  // Null when the request names no slot, or the slot it named has since been deleted (the request's
+  // role_id is cleared when its role goes).
   slotLabel: string | null;
-  // The requester's own sign-up in the named slot (matched by name), for one-click removal.
+  // The sign-up in the named slot whose name matches the request's, offered for removal. The name
+  // was typed by an anonymous visitor, so removal is confirmed against the contact details first.
   matchingSignup: RotaSignupSummary | null;
 }) {
   const router = useRouter();
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -91,6 +99,7 @@ function RequestCard({
         const removed = await removeRotaSignupAction({ id: matchingSignup.id });
         if (removed.status === 'error') {
           setError(removed.message);
+          setConfirmingRemove(false);
           return;
         }
         const resolved = await resolveRotaChangeRequestAction({ id: request.id });
@@ -113,22 +122,40 @@ function RequestCard({
         <p className="text-xs text-neutral-500">{formatReceived(request.created_at)}</p>
       </div>
       <p className="mt-1 text-sm text-neutral-700">
-        Slot: <span className="font-medium">{slotLabel ?? 'Several slots / not sure'}</span>
+        Slot: <span className="font-medium">{slotLabel ?? 'Several slots / not sure, or a slot since removed'}</span>
       </p>
       {request.message ? <p className="mt-1 whitespace-pre-line text-sm text-neutral-700">{request.message}</p> : null}
       <p className="mt-1 text-sm">
         <ContactLink contact={request.contact} />
       </p>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        {matchingSignup && request.kind === 'drop_out' ? (
-          <Button size="sm" variant="danger" onClick={removeAndMarkDone} disabled={pending}>
-            Remove {matchingSignup.name} and mark done
+      {matchingSignup && request.kind === 'drop_out' && confirmingRemove ? (
+        <div className="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-neutral-800">
+          <p>
+            Remove {matchingSignup.name} from {slotLabel}? Anyone can send a request, so check it&rsquo;s really
+            them: the request came from <span className="font-medium">{request.contact}</span>, and their sign-up
+            has <span className="font-medium">{signupContact(matchingSignup)}</span>.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" variant="danger" onClick={removeAndMarkDone} disabled={pending}>
+              Yes, remove and mark done
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setConfirmingRemove(false)} disabled={pending}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {matchingSignup && request.kind === 'drop_out' ? (
+            <Button size="sm" variant="danger" onClick={() => setConfirmingRemove(true)} disabled={pending}>
+              Remove {matchingSignup.name} and mark done
+            </Button>
+          ) : null}
+          <Button size="sm" variant="secondary" onClick={markDone} disabled={pending}>
+            Mark as done
           </Button>
-        ) : null}
-        <Button size="sm" variant="secondary" onClick={markDone} disabled={pending}>
-          Mark as done
-        </Button>
-      </div>
+        </div>
+      )}
       {error ? (
         <p role="alert" className="mt-2 text-sm text-red-600">
           {error}
@@ -145,7 +172,7 @@ type RotaChangeRequestsProps = {
 
 // The organiser's inbox of volunteers' "Request a change" messages (they can't edit the rota
 // themselves). Each request can be marked done; a drop-out whose name matches someone in the slot
-// they picked gets a one-click "remove and mark done". Swaps are done from the grid (tap the name,
+// they picked gets a "remove and mark done", confirmed against that person's contact details. Swaps are done from the grid (tap the name,
 // Move), then marked done here.
 export function RotaChangeRequests({ requests, sections }: RotaChangeRequestsProps) {
   if (requests.length === 0) {
@@ -169,12 +196,7 @@ export function RotaChangeRequests({ requests, sections }: RotaChangeRequestsPro
       <ul aria-live="polite" className="mt-3 space-y-2">
         {ordered.map((request) => {
           const slot = request.role_id ? slotByRole.get(request.role_id) : undefined;
-          let slotLabel: string | null = null;
-          if (slot) {
-            slotLabel = rotaSlotLabel(slot.section, slot.role);
-          } else if (request.role_id) {
-            slotLabel = 'A slot that has since been deleted';
-          }
+          const slotLabel = slot ? rotaSlotLabel(slot.section, slot.role) : null;
           const matchingSignup =
             slot?.role.signups.find((signup) => normaliseName(signup.name) === normaliseName(request.name)) ?? null;
           return (
