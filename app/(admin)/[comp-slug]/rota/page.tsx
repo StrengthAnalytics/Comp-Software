@@ -33,7 +33,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
         .order('sort_order', { ascending: true }),
       supabase
         .from('rota_roles')
-        .select('id, section_id, title, arrive_by, capacity, sort_order')
+        .select('id, section_id, title, arrive_by, arrive_basis, capacity, sort_order')
         .eq('competition_id', comp.id)
         .order('sort_order', { ascending: true }),
       // Admin reads the base table for the full contact list (RLS admin-only); the public board uses
@@ -88,6 +88,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
       id: role.id,
       title: role.title,
       arrive_by: role.arrive_by,
+      arrive_basis: role.arrive_basis,
       capacity: role.capacity,
       sort_order: role.sort_order,
       signups: signupsByRole.get(role.id) ?? [],
@@ -97,6 +98,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
 
   const sections: RotaBuilderSection[] = (sectionRows ?? []).map((section) => ({
     id: section.id,
+    session_id: section.session_id,
     day_label: section.day_label,
     title: section.title,
     subtitle: section.subtitle,

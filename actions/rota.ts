@@ -6,14 +6,11 @@ import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { toFieldErrors } from '@/lib/validation';
-import {
-  MAX_ROTA_SLOT_CAPACITY,
-  ROTA_ARRIVE_BEFORE_MINUTES,
-  ROTA_WEIGH_IN_ARRIVE_BEFORE_MINUTES,
-} from '@/lib/constants';
-import { arriveBefore, planRotaSectionsFromSessions } from '@/lib/rota/generate';
+import { MAX_ROTA_SLOT_CAPACITY, type RotaArriveBasis } from '@/lib/constants';
+import { planRotaSectionsFromSessions } from '@/lib/rota/generate';
 import { mostCommonArriveBy } from '@/lib/rota/grid';
-import { toTwelveHourClock } from '@/lib/rota/time';
+import { syncRotaWithSessions } from '@/lib/rota/sync';
+import { arriveByForBasis } from '@/lib/rota/sync-plan';
 import {
   ROTA_ROLE_TITLE_MAX,
   moveRotaSignupSchema,
@@ -196,6 +193,32 @@ export async function deleteRotaSectionAction(input: RotaIdInput): Promise<Actio
 
 // --- Roles ----------------------------------------------------------------------------------------
 
+// A job's stored arrive-by and basis. In a session's column a job can follow the session's clock
+// (the time is worked out here, from the session, not trusted from the client); anywhere else — or
+// when the admin picks "set a time" — the typed time is kept and the basis is null.
+async function resolveArriveBy(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  sessionId: string | null,
+  basis: RotaArriveBasis | null | undefined,
+  typed: string | null,
+): Promise<{ arrive_by: string | null; arrive_basis: RotaArriveBasis | null } | { error: unknown }> {
+  if (!basis || !sessionId) {
+    return { arrive_by: typed, arrive_basis: null };
+  }
+  const { data: session, error } = await supabase
+    .from('sessions')
+    .select('weigh_in_time, lift_off_time')
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (error) {
+    return { error };
+  }
+  if (!session) {
+    return { arrive_by: typed, arrive_basis: null };
+  }
+  return { arrive_by: arriveByForBasis(basis, session), arrive_basis: basis };
+}
+
 export async function createRotaRoleAction(
   input: RotaRoleCreateInput,
 ): Promise<ActionResult<{ id: string }>> {
@@ -215,7 +238,7 @@ export async function createRotaRoleAction(
     // entry's comp before writing).
     const { data: section, error: sectionError } = await supabase
       .from('rota_sections')
-      .select('competition_id')
+      .select('competition_id, session_id')
       .eq('id', parsed.data.sectionId)
       .maybeSingle();
     if (sectionError) {
@@ -224,6 +247,12 @@ export async function createRotaRoleAction(
     }
     if (!section || section.competition_id !== parsed.data.competitionId) {
       return fail('Could not find that section.');
+    }
+
+    const timing = await resolveArriveBy(supabase, section.session_id, parsed.data.arriveBasis, parsed.data.arriveBy);
+    if ('error' in timing) {
+      Sentry.captureException(timing.error);
+      return fail(GENERIC_ERROR);
     }
 
     const { count, error: countError } = await supabase
@@ -241,7 +270,7 @@ export async function createRotaRoleAction(
         competition_id: parsed.data.competitionId,
         section_id: parsed.data.sectionId,
         title: parsed.data.title,
-        arrive_by: parsed.data.arriveBy,
+        ...timing,
         capacity: parsed.data.capacity,
         sort_order: count ?? 0,
       })
@@ -284,11 +313,43 @@ export async function updateRotaRoleAction(input: RotaRoleUpdateInput): Promise<
       );
     }
 
+    const { data: role, error: roleError } = await supabase
+      .from('rota_roles')
+      .select('section_id')
+      .eq('id', parsed.data.id)
+      .maybeSingle();
+    if (roleError) {
+      Sentry.captureException(roleError);
+      return fail(GENERIC_ERROR);
+    }
+    if (!role) {
+      return fail('Could not find that role.');
+    }
+    const { data: section, error: sectionError } = await supabase
+      .from('rota_sections')
+      .select('session_id')
+      .eq('id', role.section_id)
+      .maybeSingle();
+    if (sectionError) {
+      Sentry.captureException(sectionError);
+      return fail(GENERIC_ERROR);
+    }
+    const timing = await resolveArriveBy(
+      supabase,
+      section?.session_id ?? null,
+      parsed.data.arriveBasis,
+      parsed.data.arriveBy,
+    );
+    if ('error' in timing) {
+      Sentry.captureException(timing.error);
+      return fail(GENERIC_ERROR);
+    }
+
     const { error } = await supabase
       .from('rota_roles')
       .update({
         title: parsed.data.title,
-        arrive_by: parsed.data.arriveBy,
+        ...timing,
         capacity: parsed.data.capacity,
       })
       .eq('id', parsed.data.id);
@@ -398,6 +459,19 @@ export async function moveRotaRoleAction(
 
 // --- Generate the rota from the comp's sessions ---------------------------------------------------
 
+// Re-runs the session sync after Generate or Duplicate, so new columns sit in session order and every
+// session column is in step with its session (the columns are already saved, so a hiccup here is
+// logged, not reported).
+async function settleRotaOrder(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  competitionId: string,
+): Promise<void> {
+  const { error } = await syncRotaWithSessions(supabase, competitionId);
+  if (error) {
+    Sentry.captureException(error);
+  }
+}
+
 const generateRotaSchema = z.object({
   competitionId: z.uuid(),
   // The ticked default roles (title + position count), chosen in the builder before generating.
@@ -467,7 +541,9 @@ export async function generateRotaFromSessionsAction(
 
     const planned = planRotaSectionsFromSessions(sessions, linkedSessionIds, platformNamesById);
     if (planned.length === 0) {
-      // Every session already has a column — a no-op, reported so the UI can say "already up to date".
+      // Every session already has a column — reported so the UI can say "already up to date". Still
+      // bring the existing columns in step with the sessions, in case they've drifted.
+      await settleRotaOrder(supabase, parsed.data.competitionId);
       return ok({ created: 0 });
     }
 
@@ -499,19 +575,14 @@ export async function generateRotaFromSessionsAction(
         return [];
       }
       const session = sessionById.get(section.sessionId);
-      const liftOff = session?.lift_off_time ?? null;
-      const weighIn = session?.weigh_in_time ?? null;
       return parsed.data.roles.map((role, index) => ({
         competition_id: parsed.data.competitionId,
         section_id: sectionId,
         title: role.title,
         // 30 min before lift-off for the platform crew, 10 min before weigh-ins open for the weigh-in
-        // team — stored in the rota's "8:30am" style.
-        arrive_by: toTwelveHourClock(
-          role.arriveBasis === 'lift_off'
-            ? arriveBefore(liftOff, ROTA_ARRIVE_BEFORE_MINUTES)
-            : arriveBefore(weighIn, ROTA_WEIGH_IN_ARRIVE_BEFORE_MINUTES),
-        ),
+        // team — and kept in step with the session from then on (lib/rota/sync.ts).
+        arrive_by: session ? arriveByForBasis(role.arriveBasis, session) : null,
+        arrive_basis: role.arriveBasis,
         capacity: role.capacity,
         sort_order: index,
       }));
@@ -537,6 +608,9 @@ export async function generateRotaFromSessionsAction(
       }
     }
 
+    // Slot the new columns into session order among any already there.
+    await settleRotaOrder(supabase, parsed.data.competitionId);
+
     return ok({ created: planned.length });
   });
 }
@@ -549,8 +623,8 @@ const duplicateRotaSectionSchema = z.object({
   targetSessionId: z.uuid(),
 });
 
-// Copies an existing column's roles (verbatim — titles, capacities and arrive-by; sign-ups are NOT
-// copied) into a new column linked to a session that doesn't have one yet. The new column's header
+// Copies an existing column's roles (titles, capacities and arrive-by — a job that follows its
+// session's clock follows the target session's; sign-ups are NOT copied) into a new column linked to a session that doesn't have one yet. The new column's header
 // (day / title / subtitle) comes from the TARGET session, like Generate, so it represents the new
 // session — only the role layout is duplicated. For reusing a customised column on a session added
 // after the rota was built.
@@ -612,7 +686,7 @@ export async function duplicateRotaSectionToSessionAction(input: {
     const [rolesResult, platformsResult, countResult] = await Promise.all([
       supabase
         .from('rota_roles')
-        .select('title, arrive_by, capacity, sort_order')
+        .select('title, arrive_by, arrive_basis, capacity, sort_order')
         .eq('section_id', parsed.data.sourceSectionId)
         .order('sort_order', { ascending: true }),
       supabase.from('platforms').select('id, name').eq('competition_id', parsed.data.competitionId),
@@ -654,7 +728,9 @@ export async function duplicateRotaSectionToSessionAction(input: {
       competition_id: parsed.data.competitionId,
       section_id: newSection.id,
       title: role.title,
-      arrive_by: role.arrive_by,
+      // A job that follows its session's clock follows the new session's; a typed time is copied.
+      arrive_by: role.arrive_basis === null ? role.arrive_by : arriveByForBasis(role.arrive_basis, session),
+      arrive_basis: role.arrive_basis,
       capacity: role.capacity,
       sort_order: index,
     }));
@@ -671,6 +747,8 @@ export async function duplicateRotaSectionToSessionAction(input: {
         return fail('Could not duplicate the column. Please try again.');
       }
     }
+
+    await settleRotaOrder(supabase, parsed.data.competitionId);
 
     return ok({ id: newSection.id });
   });
@@ -918,17 +996,19 @@ export async function addRotaRoleToAllSectionsAction(
     }
 
     const supabase = await createClient();
-    const [sectionsResult, rolesResult] = await Promise.all([
-      supabase.from('rota_sections').select('id').eq('competition_id', parsed.data.competitionId),
+    const [sectionsResult, rolesResult, sessionsResult] = await Promise.all([
+      supabase.from('rota_sections').select('id, session_id').eq('competition_id', parsed.data.competitionId),
       supabase
         .from('rota_roles')
         .select('id, section_id, title, arrive_by, sort_order')
         .eq('competition_id', parsed.data.competitionId),
+      supabase.from('sessions').select('id, weigh_in_time, lift_off_time').eq('competition_id', parsed.data.competitionId),
     ]);
-    if (sectionsResult.error || rolesResult.error) {
-      Sentry.captureException(sectionsResult.error ?? rolesResult.error);
+    if (sectionsResult.error || rolesResult.error || sessionsResult.error) {
+      Sentry.captureException(sectionsResult.error ?? rolesResult.error ?? sessionsResult.error);
       return fail(GENERIC_ERROR);
     }
+    const sessionById = new Map((sessionsResult.data ?? []).map((session) => [session.id, session]));
 
     const sections = sectionsResult.data ?? [];
     if (sections.length === 0) {
@@ -948,11 +1028,16 @@ export async function addRotaRoleToAllSectionsAction(
       for (const role of roles) {
         nextSort = Math.max(nextSort, role.sort_order + 1);
       }
+      // In a session's column the new job arrives with the crew (30 minutes before lift-off) and
+      // follows the session from then on; elsewhere it takes the column's usual time.
+      const session = section.session_id ? sessionById.get(section.session_id) : undefined;
+      const arriveBasis: RotaArriveBasis | null = session ? 'lift_off' : null;
       return {
         competition_id: parsed.data.competitionId,
         section_id: section.id,
         title: parsed.data.title,
-        arrive_by: mostCommonArriveBy(roles),
+        arrive_by: session ? arriveByForBasis('lift_off', session) : mostCommonArriveBy(roles),
+        arrive_basis: arriveBasis,
         capacity: parsed.data.capacity,
         sort_order: nextSort,
       };

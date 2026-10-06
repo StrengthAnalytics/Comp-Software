@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   addRotaRoleToAllSectionsAction,
@@ -17,7 +18,14 @@ import {
   updateRotaRoleAction,
   updateRotaSectionAction,
 } from '@/actions/rota';
-import { DEFAULT_ROTA_ROLE_TEMPLATE, MAX_ROTA_SLOT_CAPACITY, SUGGESTED_ROTA_ROLES } from '@/lib/constants';
+import {
+  DEFAULT_ROTA_ROLE_TEMPLATE,
+  MAX_ROTA_SLOT_CAPACITY,
+  ROTA_ARRIVE_BEFORE_MINUTES,
+  ROTA_WEIGH_IN_ARRIVE_BEFORE_MINUTES,
+  SUGGESTED_ROTA_ROLES,
+  type RotaArriveBasis,
+} from '@/lib/constants';
 import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { useRotaChangeRequestsSubscription } from '@/lib/realtime/use-rota-change-requests-subscription';
 import { useRotaSignupsSubscription } from '@/lib/realtime/use-rota-signups-subscription';
@@ -47,6 +55,8 @@ export type RotaBuilderRole = {
   id: string;
   title: string;
   arrive_by: string | null;
+  // Which session time arrive_by follows, or null for a typed time (see lib/rota/sync-plan.ts).
+  arrive_basis: RotaArriveBasis | null;
   capacity: number;
   sort_order: number;
   // The volunteers who have claimed this role, with their admin-only contact details.
@@ -55,6 +65,9 @@ export type RotaBuilderRole = {
 
 export type RotaBuilderSection = {
   id: string;
+  // The session this column belongs to (its header and times follow it), or null for a hand-made
+  // column such as Set-up.
+  session_id: string | null;
   day_label: string | null;
   title: string;
   subtitle: string | null;
@@ -323,34 +336,126 @@ function RotaShareCard({
   );
 }
 
+// --- Arrive-by: follow the session's clock, or a typed time ---------------------------------------
+
+// "manual" is the select's value for a typed time (arrive_basis null).
+type ArriveChoice = RotaArriveBasis | 'manual';
+
+const ARRIVE_CHOICE_LABELS: Record<ArriveChoice, string> = {
+  lift_off: `${ROTA_ARRIVE_BEFORE_MINUTES} min before lift-off`,
+  weigh_in: `${ROTA_WEIGH_IN_ARRIVE_BEFORE_MINUTES} min before weigh-in`,
+  manual: 'Set a time',
+};
+
+const ARRIVE_CHOICES: readonly ArriveChoice[] = ['lift_off', 'weigh_in', 'manual'];
+
+function toArriveChoice(value: string): ArriveChoice {
+  return value === 'lift_off' || value === 'weigh_in' ? value : 'manual';
+}
+
+// In a session's column a job can follow the session (its time is worked out from the session and
+// moves when the session does), or have a time typed in. In any other column it's always typed.
+function ArriveByControl({
+  linked,
+  choice,
+  onChoice,
+  typed,
+  onTyped,
+  currentTime,
+  textLabel,
+  selectLabel,
+}: {
+  linked: boolean;
+  choice: ArriveChoice;
+  onChoice: (choice: ArriveChoice) => void;
+  typed: string;
+  onTyped: (value: string) => void;
+  // The time the server worked out for the saved choice, shown next to a following job. Undefined
+  // while an unsaved choice is picked (the time is worked out on save).
+  currentTime: string | null | undefined;
+  textLabel: string;
+  selectLabel: string;
+}) {
+  const textInput = (
+    <input
+      aria-label={textLabel}
+      value={typed}
+      placeholder="Arrive by"
+      onChange={(event) => onTyped(event.target.value)}
+      className={`${INPUT_CLASS} w-28`}
+    />
+  );
+  if (!linked) {
+    return textInput;
+  }
+  return (
+    <div className="flex w-72 items-center gap-2">
+      <select
+        aria-label={selectLabel}
+        value={choice}
+        onChange={(event) => onChoice(toArriveChoice(event.target.value))}
+        className={`${INPUT_CLASS} w-44`}
+      >
+        {ARRIVE_CHOICES.map((value) => (
+          <option key={value} value={value}>
+            {ARRIVE_CHOICE_LABELS[value]}
+          </option>
+        ))}
+      </select>
+      {choice === 'manual' ? (
+        textInput
+      ) : (
+        <span className="w-24 text-sm text-neutral-700">
+          {currentTime === undefined ? 'Set on save' : (currentTime ?? 'No session time')}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // --- A single role row within a section -----------------------------------------------------------
 
 function RoleRow({
   role,
   sectionId,
+  linked,
   isFirst,
   isLast,
 }: {
   role: RotaBuilderRole;
   sectionId: string;
+  // Whether the column is a session's (so the job can follow the session's clock).
+  linked: boolean;
   isFirst: boolean;
   isLast: boolean;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(role.title);
   const [arriveBy, setArriveBy] = useState(role.arrive_by ?? '');
+  const [arriveChoice, setArriveChoice] = useState<ArriveChoice>(role.arrive_basis ?? 'manual');
   const [capacity, setCapacity] = useState(role.capacity);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const dirty = title !== role.title || arriveBy !== (role.arrive_by ?? '') || capacity !== role.capacity;
+  const savedChoice: ArriveChoice = role.arrive_basis ?? 'manual';
+  const dirty =
+    title !== role.title ||
+    arriveChoice !== savedChoice ||
+    (arriveChoice === 'manual' && arriveBy !== (role.arrive_by ?? '')) ||
+    capacity !== role.capacity;
   const full = role.signups.length >= role.capacity;
 
   function save() {
     setError(null);
     startTransition(async () => {
-      const result = await updateRotaRoleAction({ id: role.id, title, arriveBy, capacity });
+      const result = await updateRotaRoleAction({
+        id: role.id,
+        title,
+        arriveBy,
+        arriveBasis: linked && arriveChoice !== 'manual' ? arriveChoice : null,
+        capacity,
+      });
       if (result.status === 'error') {
         setError(result.message);
         return;
@@ -397,12 +502,15 @@ function RoleRow({
         onChange={(event) => setTitle(event.target.value)}
         className={`${INPUT_CLASS} min-w-0 flex-1`}
       />
-      <input
-        aria-label="Arrive by"
-        value={arriveBy}
-        placeholder="Arrive by"
-        onChange={(event) => setArriveBy(event.target.value)}
-        className={`${INPUT_CLASS} w-28`}
+      <ArriveByControl
+        linked={linked}
+        choice={arriveChoice}
+        onChoice={setArriveChoice}
+        typed={arriveBy}
+        onTyped={setArriveBy}
+        currentTime={arriveChoice === savedChoice ? role.arrive_by : undefined}
+        textLabel="Arrive by"
+        selectLabel="Arrive-by time"
       />
       <input
         aria-label="Spaces"
@@ -434,10 +542,20 @@ function RoleRow({
   );
 }
 
-function AddRoleForm({ competitionId, sectionId }: { competitionId: string; sectionId: string }) {
+function AddRoleForm({
+  competitionId,
+  sectionId,
+  linked,
+}: {
+  competitionId: string;
+  sectionId: string;
+  linked: boolean;
+}) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [arriveBy, setArriveBy] = useState('');
+  // A new job in a session's column arrives with the crew, 30 minutes before lift-off, by default.
+  const [arriveChoice, setArriveChoice] = useState<ArriveChoice>('lift_off');
   const [capacity, setCapacity] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -445,7 +563,14 @@ function AddRoleForm({ competitionId, sectionId }: { competitionId: string; sect
   function add() {
     setError(null);
     startTransition(async () => {
-      const result = await createRotaRoleAction({ competitionId, sectionId, title, arriveBy, capacity });
+      const result = await createRotaRoleAction({
+        competitionId,
+        sectionId,
+        title,
+        arriveBy,
+        arriveBasis: linked && arriveChoice !== 'manual' ? arriveChoice : null,
+        capacity,
+      });
       if (result.status === 'error') {
         setError(result.message);
         return;
@@ -467,12 +592,15 @@ function AddRoleForm({ competitionId, sectionId }: { competitionId: string; sect
         onChange={(event) => setTitle(event.target.value)}
         className={`${INPUT_CLASS} min-w-0 flex-1`}
       />
-      <input
-        aria-label="New role arrive by"
-        placeholder="Arrive by"
-        value={arriveBy}
-        onChange={(event) => setArriveBy(event.target.value)}
-        className={`${INPUT_CLASS} w-28`}
+      <ArriveByControl
+        linked={linked}
+        choice={arriveChoice}
+        onChoice={setArriveChoice}
+        typed={arriveBy}
+        onTyped={setArriveBy}
+        currentTime={undefined}
+        textLabel="New role arrive by"
+        selectLabel="New role arrive-by time"
       />
       <input
         aria-label="New role spaces"
@@ -567,12 +695,14 @@ function DuplicateSectionControl({
 
 function SectionBlock({
   competitionId,
+  slug,
   section,
   isFirst,
   isLast,
   availableSessions,
 }: {
   competitionId: string;
+  slug: string;
   section: RotaBuilderSection;
   isFirst: boolean;
   isLast: boolean;
@@ -589,6 +719,8 @@ function SectionBlock({
   const dirty =
     dayLabel !== (section.day_label ?? '') || title !== section.title || subtitle !== (section.subtitle ?? '');
   const hasSignups = section.roles.some((role) => role.signups.length > 0);
+  // A session's column takes its heading and times from the session, so they're edited there.
+  const linked = section.session_id !== null;
   const roles = section.roles.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
 
   function save() {
@@ -636,32 +768,51 @@ function SectionBlock({
     <div className="rounded-lg border border-neutral-200 bg-white p-4">
       <div className="flex flex-wrap items-start gap-2">
         <MoveControls onMove={move} isFirst={isFirst} isLast={isLast} disabled={pending} label={`column ${section.title}`} />
-        <div className="flex min-w-0 flex-1 flex-wrap gap-2">
-          <input
-            aria-label="Day label"
-            value={dayLabel}
-            placeholder="Day (e.g. Sat)"
-            onChange={(event) => setDayLabel(event.target.value)}
-            className={`${INPUT_CLASS} w-28`}
-          />
-          <input
-            aria-label="Column heading"
-            value={title}
-            placeholder="Heading (e.g. AM)"
-            onChange={(event) => setTitle(event.target.value)}
-            className={`${INPUT_CLASS} w-40`}
-          />
-          <input
-            aria-label="Column subtitle"
-            value={subtitle}
-            placeholder="Subtitle (e.g. Weigh-in 8–9:30 · Lift-off 10:00)"
-            onChange={(event) => setSubtitle(event.target.value)}
-            className={`${INPUT_CLASS} min-w-0 flex-1`}
-          />
-        </div>
-        <Button variant="secondary" onClick={save} disabled={pending || !dirty}>
-          Save
-        </Button>
+        {linked ? (
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-neutral-900">
+              {section.day_label ? `${section.day_label} · ` : ''}
+              {section.title}
+            </p>
+            {section.subtitle ? <p className="text-sm text-neutral-600">{section.subtitle}</p> : null}
+            <p className="mt-1 text-xs text-neutral-500">
+              Follows the session. Change its name, day or times on{' '}
+              <Link href={`/${slug}/flights`} className="font-medium text-neutral-700 underline">
+                Sessions &amp; flights
+              </Link>{' '}
+              and this column updates to match.
+            </p>
+          </div>
+        ) : (
+          <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+            <input
+              aria-label="Day label"
+              value={dayLabel}
+              placeholder="Day (e.g. Sat)"
+              onChange={(event) => setDayLabel(event.target.value)}
+              className={`${INPUT_CLASS} w-28`}
+            />
+            <input
+              aria-label="Column heading"
+              value={title}
+              placeholder="Heading (e.g. AM)"
+              onChange={(event) => setTitle(event.target.value)}
+              className={`${INPUT_CLASS} w-40`}
+            />
+            <input
+              aria-label="Column subtitle"
+              value={subtitle}
+              placeholder="Subtitle (e.g. Weigh-in 8–9:30 · Lift-off 10:00)"
+              onChange={(event) => setSubtitle(event.target.value)}
+              className={`${INPUT_CLASS} min-w-0 flex-1`}
+            />
+          </div>
+        )}
+        {linked ? null : (
+          <Button variant="secondary" onClick={save} disabled={pending || !dirty}>
+            Save
+          </Button>
+        )}
         <Button variant="danger" onClick={remove} disabled={pending}>
           {confirming ? 'Confirm delete' : 'Delete'}
         </Button>
@@ -677,7 +828,7 @@ function SectionBlock({
         // Column headings for the role rows below (they line up with the inputs' widths).
         <div aria-hidden="true" className="mt-3 hidden items-center gap-2 pl-14 text-xs font-medium text-neutral-500 sm:flex">
           <span className="flex-1">Role</span>
-          <span className="w-28">Arrive by</span>
+          <span className={linked ? 'w-72' : 'w-28'}>Arrive by</span>
           <span className="w-20">Spaces</span>
           <span className="w-20 text-center">Filled</span>
           <span className="w-36" />
@@ -693,6 +844,7 @@ function SectionBlock({
               <RoleRow
                 role={role}
                 sectionId={section.id}
+                linked={linked}
                 isFirst={index === 0}
                 isLast={index === roles.length - 1}
               />
@@ -701,7 +853,7 @@ function SectionBlock({
         )}
       </div>
 
-      <AddRoleForm competitionId={competitionId} sectionId={section.id} />
+      <AddRoleForm competitionId={competitionId} sectionId={section.id} linked={linked} />
 
       <DuplicateSectionControl
         competitionId={competitionId}
@@ -859,9 +1011,11 @@ function GenerateFromSessionsCard({
           : `${pendingSessionCount} of ${sessionCount} session${sessionCount === 1 ? '' : 's'} need a column.`}
       </p>
       <p className="mb-4 text-xs text-neutral-500">
-        Arrive-by times are filled in automatically — 30 minutes before the session&rsquo;s lift-off,
-        or 10 minutes before weigh-in opens for the weigh-in team. You can edit any of them
-        afterwards, and add or delete roles and change the spaces at any time.
+        Arrive-by times are filled in automatically — {ROTA_ARRIVE_BEFORE_MINUTES} minutes before the
+        session&rsquo;s lift-off, or {ROTA_WEIGH_IN_ARRIVE_BEFORE_MINUTES} minutes before weigh-in opens
+        for the weigh-in team — and they move when you change a session&rsquo;s times. New sessions
+        get a column of their own automatically. You can add or delete roles, change the spaces, or
+        set any job to a fixed time at any time.
       </p>
 
       <ul className="divide-y divide-neutral-100">
@@ -920,7 +1074,8 @@ function GenerateFromSessionsCard({
 }
 
 // Adds one job to every column at once (e.g. "Commentary" for every session) — quicker than adding it
-// column by column. Each new role takes its column's usual arrive-by time.
+// column by column. In a session's column the new role arrives with the crew (and follows the session);
+// in any other column it takes that column's usual arrive-by time.
 function AddRoleToAllForm({ competitionId }: { competitionId: string }) {
   const router = useRouter();
   const [title, setTitle] = useState('');
@@ -1106,6 +1261,7 @@ export function RotaBuilder({
             <SectionBlock
               key={section.id}
               competitionId={competitionId}
+              slug={slug}
               section={section}
               isFirst={index === 0}
               isLast={index === ordered.length - 1}

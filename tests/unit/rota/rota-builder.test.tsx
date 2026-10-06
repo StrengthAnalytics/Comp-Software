@@ -70,6 +70,7 @@ const COMP_ID = '7b5036f4-43c5-4b1c-8c1a-9d59a2f3b111';
 
 const sectionWithRole: RotaBuilderSection = {
   id: 'sec-1',
+  session_id: null,
   day_label: 'Sat',
   title: 'AM',
   subtitle: null,
@@ -79,6 +80,7 @@ const sectionWithRole: RotaBuilderSection = {
       id: 'role-1',
       title: 'MC',
       arrive_by: '9:30am',
+      arrive_basis: null,
       capacity: 1,
       sort_order: 0,
       signups: [
@@ -90,15 +92,17 @@ const sectionWithRole: RotaBuilderSection = {
 
 const sectionOpenRole: RotaBuilderSection = {
   id: 'sec-1',
+  session_id: null,
   day_label: 'Sat',
   title: 'AM',
   subtitle: null,
   sort_order: 0,
-  roles: [{ id: 'role-1', title: 'Refs', arrive_by: null, capacity: 4, sort_order: 0, signups: [] }],
+  roles: [{ id: 'role-1', title: 'Refs', arrive_by: null, arrive_basis: null, capacity: 4, sort_order: 0, signups: [] }],
 };
 
 const emptySection: RotaBuilderSection = {
   id: 'sec-1',
+  session_id: null,
   day_label: 'Sat',
   title: 'AM',
   subtitle: null,
@@ -147,13 +151,25 @@ const twoSections: RotaBuilderSection[] = [
   sectionWithRole,
   {
     id: 'sec-2',
+    session_id: null,
     day_label: 'Sat',
     title: 'PM',
     subtitle: null,
     sort_order: 1,
-    roles: [{ id: 'role-2', title: 'MC', arrive_by: '12:30pm', capacity: 1, sort_order: 0, signups: [] }],
+    roles: [{ id: 'role-2', title: 'MC', arrive_by: '12:30pm', arrive_basis: null, capacity: 1, sort_order: 0, signups: [] }],
   },
 ];
+
+// A column built from a session follows it: the heading is read-only and jobs can follow its clock.
+const sessionSection: RotaBuilderSection = {
+  ...sectionWithRole,
+  session_id: 'session-1',
+  subtitle: 'Weigh-in 7:00am · Lift-off 9:00am',
+  roles: [
+    { ...sectionWithRole.roles[0], arrive_by: '8:30am', arrive_basis: 'lift_off' },
+    { id: 'role-w', title: 'Weigh-in', arrive_by: '6:50am', arrive_basis: 'weigh_in', capacity: 1, sort_order: 1, signups: [] },
+  ],
+};
 
 describe('RotaBuilder — layout', () => {
   it('renders the sign-up link and, under Edit layout, each role with its fill count', () => {
@@ -213,8 +229,72 @@ describe('RotaBuilder — layout', () => {
         sectionId: 'sec-1',
         title: 'Refs',
         arriveBy: '',
+        arriveBasis: null,
         capacity: 4,
       }),
+    );
+  });
+
+  it("shows a session column's heading read-only, pointing to Sessions & flights", () => {
+    renderBuilder([sessionSection]);
+    openLayoutTab();
+
+    expect(screen.queryByLabelText('Column heading')).not.toBeInTheDocument();
+    const header = screen.getByText('Weigh-in 7:00am · Lift-off 9:00am').parentElement as HTMLElement;
+    expect(within(header).getByText(/Follows the session/)).toBeInTheDocument();
+    expect(within(header).getByRole('link', { name: 'Sessions & flights' })).toHaveAttribute(
+      'href',
+      '/summer-open/flights',
+    );
+  });
+
+  it('lets a job in a session column follow weigh-in instead of lift-off', async () => {
+    updateRole.mockResolvedValue({ status: 'ok', data: undefined });
+    renderBuilder([sessionSection]);
+    openLayoutTab();
+
+    const [mcRow] = screen.getAllByLabelText('Role title').map((input) => input.closest('div') as HTMLElement);
+    const select = within(mcRow).getByLabelText('Arrive-by time');
+    expect(select).toHaveValue('lift_off');
+    expect(within(mcRow).getByText('8:30am')).toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: 'weigh_in' } });
+    expect(within(mcRow).getByText('Set on save')).toBeInTheDocument();
+    fireEvent.click(within(mcRow).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(updateRole).toHaveBeenCalledWith(expect.objectContaining({ id: 'role-1', arriveBasis: 'weigh_in' })),
+    );
+  });
+
+  it('lets a job in a session column switch to a typed time', async () => {
+    updateRole.mockResolvedValue({ status: 'ok', data: undefined });
+    renderBuilder([sessionSection]);
+    openLayoutTab();
+
+    const [mcRow] = screen.getAllByLabelText('Role title').map((input) => input.closest('div') as HTMLElement);
+    fireEvent.change(within(mcRow).getByLabelText('Arrive-by time'), { target: { value: 'manual' } });
+    fireEvent.change(within(mcRow).getByLabelText('Arrive by'), { target: { value: '8:00am' } });
+    fireEvent.click(within(mcRow).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(updateRole).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'role-1', arriveBy: '8:00am', arriveBasis: null }),
+      ),
+    );
+  });
+
+  it('adds a job to a session column following lift-off by default', async () => {
+    createRole.mockResolvedValue({ status: 'ok', data: { id: 'role-new' } });
+    renderBuilder([sessionSection]);
+    openLayoutTab();
+
+    expect(screen.getByLabelText('New role arrive-by time')).toHaveValue('lift_off');
+    fireEvent.change(screen.getByLabelText('New role title'), { target: { value: 'Commentary' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add role' }));
+
+    await waitFor(() =>
+      expect(createRole).toHaveBeenCalledWith(expect.objectContaining({ title: 'Commentary', arriveBasis: 'lift_off' })),
     );
   });
 
@@ -243,7 +323,13 @@ describe('RotaBuilder — layout', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>
-      expect(updateRole).toHaveBeenCalledWith({ id: 'role-1', title: 'MC', arriveBy: '9:30am', capacity: 3 }),
+      expect(updateRole).toHaveBeenCalledWith({
+        id: 'role-1',
+        title: 'MC',
+        arriveBy: '9:30am',
+        arriveBasis: null,
+        capacity: 3,
+      }),
     );
   });
 

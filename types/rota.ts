@@ -103,11 +103,17 @@ const capacity = z
   .min(1, 'A role needs at least one slot.')
   .max(MAX_ROTA_SLOT_CAPACITY, `A role can have at most ${MAX_ROTA_SLOT_CAPACITY} slots.`);
 
+// Which session time a job's arrive-by follows in a session column — 'lift_off' (30 minutes before)
+// or 'weigh_in' (10 minutes before) — or null for a time the admin types. The server works the time
+// out from the session; for a column that isn't a session's, it is always null.
+const arriveBasis = z.enum(['lift_off', 'weigh_in']).nullable().optional();
+
 export const rotaRoleCreateSchema = z.object({
   competitionId,
   sectionId: z.uuid(),
   title: roleTitle,
   arriveBy,
+  arriveBasis,
   capacity,
 });
 export type RotaRoleCreateInput = z.infer<typeof rotaRoleCreateSchema>;
@@ -116,6 +122,7 @@ export const rotaRoleUpdateSchema = z.object({
   id: z.uuid(),
   title: roleTitle,
   arriveBy,
+  arriveBasis,
   capacity,
 });
 export type RotaRoleUpdateInput = z.infer<typeof rotaRoleUpdateSchema>;

@@ -624,6 +624,9 @@ export type Database = {
           section_id: string;
           title: string;
           arrive_by: string | null;
+          // Which session time arrive_by follows ('lift_off' / 'weigh_in'), or null for a hand-set
+          // time. Migration 20261006000001.
+          arrive_basis: 'lift_off' | 'weigh_in' | null;
           capacity: number;
           sort_order: number;
           created_at: string;
@@ -634,6 +637,7 @@ export type Database = {
           section_id: string;
           title: string;
           arrive_by?: string | null;
+          arrive_basis?: 'lift_off' | 'weigh_in' | null;
           capacity?: number;
           sort_order?: number;
           created_at?: string;
@@ -644,6 +648,7 @@ export type Database = {
           section_id?: string;
           title?: string;
           arrive_by?: string | null;
+          arrive_basis?: 'lift_off' | 'weigh_in' | null;
           capacity?: number;
           sort_order?: number;
           created_at?: string;

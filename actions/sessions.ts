@@ -6,6 +6,7 @@ import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
+import { findRotaColumnForSession, retireRotaColumn, syncRotaWithSessions } from '@/lib/rota/sync';
 import { sessionInputSchema, sessionUpdateSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
@@ -50,6 +51,19 @@ async function validatePlatform(
   return null;
 }
 
+// Keeps the staff rota in step with the session schedule (lib/rota/sync.ts). The session save has
+// already succeeded, so a rota hiccup is logged rather than reported as a failed save.
+async function followSessionsInRota(
+  supabase: Client,
+  competitionId: string,
+  options?: { addColumnFor?: readonly string[] },
+): Promise<void> {
+  const { error } = await syncRotaWithSessions(supabase, competitionId, options);
+  if (error) {
+    Sentry.captureException(error);
+  }
+}
+
 export async function createSessionAction(input: {
   competitionId: string;
   name: string;
@@ -73,20 +87,27 @@ export async function createSessionAction(input: {
     const invalid = await validatePlatform(supabase, parsed.data.competitionId, parsed.data.platformId);
     if (invalid) return invalid;
 
-    const { error } = await supabase.from('sessions').insert({
-      competition_id: parsed.data.competitionId,
-      name: parsed.data.name,
-      session_date: parsed.data.sessionDate,
-      weigh_in_time: parsed.data.weighInTime,
-      lift_off_time: parsed.data.liftOffTime,
-      platform_id: parsed.data.platformId,
-      sort_order: parsed.data.sortOrder,
-    });
+    const { data: created, error } = await supabase
+      .from('sessions')
+      .insert({
+        competition_id: parsed.data.competitionId,
+        name: parsed.data.name,
+        session_date: parsed.data.sessionDate,
+        weigh_in_time: parsed.data.weighInTime,
+        lift_off_time: parsed.data.liftOffTime,
+        platform_id: parsed.data.platformId,
+        sort_order: parsed.data.sortOrder,
+      })
+      .select('id')
+      .single();
 
-    if (error) {
+    if (error || !created) {
       Sentry.captureException(error);
-      return mapSessionWriteError(error);
+      return error ? mapSessionWriteError(error) : fail('Could not save the session. Please try again.');
     }
+
+    // A rota built from the sessions gets a column for the new one too.
+    await followSessionsInRota(supabase, parsed.data.competitionId, { addColumnFor: [created.id] });
 
     return ok();
   });
@@ -137,6 +158,8 @@ export async function updateSessionAction(input: {
       return mapSessionWriteError(error);
     }
 
+    await followSessionsInRota(supabase, competitionId.data);
+
     return ok();
   });
 }
@@ -180,10 +203,31 @@ export async function deleteSessionAction(input: { id: string }): Promise<Action
       }
     }
 
-    const { error } = await supabase.from('sessions').delete().eq('id', parsed.data.id);
+    // Read the session's rota column first: the delete unlinks it.
+    const rota = await findRotaColumnForSession(supabase, parsed.data.id);
+    if (rota.error) {
+      Sentry.captureException(rota.error);
+    }
+
+    const { data: deleted, error } = await supabase
+      .from('sessions')
+      .delete()
+      .eq('id', parsed.data.id)
+      .select('competition_id')
+      .maybeSingle();
     if (error) {
       Sentry.captureException(error);
       return fail('Could not delete the session. Please try again.');
+    }
+
+    if (rota.column) {
+      const retired = await retireRotaColumn(supabase, rota.column);
+      if (retired.error) {
+        Sentry.captureException(retired.error);
+      }
+    }
+    if (deleted) {
+      await followSessionsInRota(supabase, deleted.competition_id);
     }
 
     return ok();
