@@ -2,9 +2,9 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
-import { headers } from 'next/headers';
 import { after } from 'next/server';
 import { parseEmailList, sendEmail } from '@/lib/email/resend';
+import { requestOrigin } from '@/lib/email/request-origin';
 import { buildChangeRequestEmail, isEmailAddress } from '@/lib/rota/change-request-email';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
@@ -1151,12 +1151,12 @@ async function emailOrganisersAboutChangeRequest(
     return;
   }
 
-  const [compResult, roleResult, requestHeaders] = await Promise.all([
+  const [compResult, roleResult, origin] = await Promise.all([
     supabase.from('public_rota_comps').select('slug, name').eq('id', request.competitionId).maybeSingle(),
     request.roleId
       ? supabase.from('rota_roles').select('title, section_id').eq('id', request.roleId).maybeSingle()
       : Promise.resolve(null),
-    headers(),
+    requestOrigin(),
   ]);
   const role = roleResult?.data ?? null;
   const { data: section } = role
@@ -1164,8 +1164,6 @@ async function emailOrganisersAboutChangeRequest(
     : { data: null };
 
   const slug = compResult.data?.slug;
-  const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
-  const protocol = requestHeaders.get('x-forwarded-proto') ?? 'https';
   const sectionLabel = section ? [section.day_label, section.title].filter(Boolean).join(' ') : null;
 
   const email = buildChangeRequestEmail({
@@ -1175,7 +1173,7 @@ async function emailOrganisersAboutChangeRequest(
     kind: request.kind,
     slotLabel: role ? [sectionLabel, role.title].filter(Boolean).join(' · ') : null,
     message: request.message,
-    rotaUrl: slug && host ? `${protocol}://${host}/${slug}/rota` : null,
+    rotaUrl: slug && origin ? `${origin}/${slug}/rota` : null,
   });
 
   after(async () => {
