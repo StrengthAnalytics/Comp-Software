@@ -2,6 +2,10 @@
 
 import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
+import { headers } from 'next/headers';
+import { after } from 'next/server';
+import { parseEmailList, sendEmail } from '@/lib/email/resend';
+import { buildChangeRequestEmail, isEmailAddress } from '@/lib/rota/change-request-email';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
@@ -1122,7 +1126,69 @@ export async function submitRotaChangeRequestAction(input: RotaChangeRequestInpu
       Sentry.captureException(error);
       return fail(CHANGE_REQUEST_ERROR);
     }
+
+    // The request is saved; an email problem is logged, never shown to the volunteer as a failure.
+    try {
+      await emailOrganisersAboutChangeRequest(supabase, parsed.data);
+    } catch (emailError) {
+      Sentry.captureException(emailError);
+    }
     return ok();
+  });
+}
+
+// Emails the organisers about a change request that has just been saved. Who gets it:
+// ROTA_NOTIFY_EMAILS, or every admin in ADMIN_EMAILS when that isn't set. The details are read on
+// the volunteer's own anon session (the rota is open, so the comp header and slot are readable),
+// and the email itself is sent after the response, so the volunteer isn't kept waiting and a mail
+// hiccup never fails a request that is already saved. Nothing happens until Resend is set up.
+async function emailOrganisersAboutChangeRequest(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  request: RotaChangeRequestInput,
+): Promise<void> {
+  const to = parseEmailList(process.env.ROTA_NOTIFY_EMAILS || process.env.ADMIN_EMAILS);
+  if (to.length === 0 || !process.env.RESEND_API_KEY) {
+    return;
+  }
+
+  const [compResult, roleResult, requestHeaders] = await Promise.all([
+    supabase.from('public_rota_comps').select('slug, name').eq('id', request.competitionId).maybeSingle(),
+    request.roleId
+      ? supabase.from('rota_roles').select('title, section_id').eq('id', request.roleId).maybeSingle()
+      : Promise.resolve(null),
+    headers(),
+  ]);
+  const role = roleResult?.data ?? null;
+  const { data: section } = role
+    ? await supabase.from('rota_sections').select('day_label, title').eq('id', role.section_id).maybeSingle()
+    : { data: null };
+
+  const slug = compResult.data?.slug;
+  const host = requestHeaders.get('x-forwarded-host') ?? requestHeaders.get('host');
+  const protocol = requestHeaders.get('x-forwarded-proto') ?? 'https';
+  const sectionLabel = section ? [section.day_label, section.title].filter(Boolean).join(' ') : null;
+
+  const email = buildChangeRequestEmail({
+    competitionName: compResult.data?.name ?? 'Your competition',
+    name: request.name,
+    contact: request.contact,
+    kind: request.kind,
+    slotLabel: role ? [sectionLabel, role.title].filter(Boolean).join(' · ') : null,
+    message: request.message,
+    rotaUrl: slug && host ? `${protocol}://${host}/${slug}/rota` : null,
+  });
+
+  after(async () => {
+    const result = await sendEmail({
+      to,
+      subject: email.subject,
+      text: email.text,
+      replyTo: isEmailAddress(request.contact) ? request.contact.trim() : undefined,
+    });
+    if (result.status === 'failed') {
+      // A generic error only — never the volunteer's details.
+      Sentry.captureException(result.error);
+    }
   });
 }
 
