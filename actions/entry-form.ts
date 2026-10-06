@@ -9,6 +9,7 @@ import { requireAdmin } from '@/lib/auth/admin';
 import { deriveAgeCategoryId, findLifterIdByName, matchWeightClassByName } from '@/lib/entries/registration';
 import { isCompPubliclyVisible } from '@/lib/comps/meet-status';
 import { organiserReplyTo, sendEmail } from '@/lib/email/resend';
+import { readOrganiserEmail } from '@/lib/email/organiser';
 import { requestOrigin } from '@/lib/email/request-origin';
 import {
   buildEntryAcceptedEmail,
@@ -225,7 +226,7 @@ export async function submitEntryFormAction(input: SubmitEntryFormInput): Promis
     // input, so this is bounded like the submission itself (honeypot + the pending-submissions cap).
     if (parsed.data.email) {
       const { data: submitted } = parsed;
-      await emailLifter(parsed.data.email, (canReply, url) =>
+      await emailLifter(supabase, 'public', competitionId.data, parsed.data.email, (canReply, url) =>
         buildEntryReceivedEmail({
           comp: entryEmailComp(comp, url),
           firstName: submitted.firstName,
@@ -258,16 +259,20 @@ function entryEmailComp(comp: EmailCompRow, origin: string | null): EntryEmailCo
 }
 
 // Sends one email to a lifter after the response, so the submit/approve/reject never waits on (or
-// fails because of) the mail. Replies go to RESEND_REPLY_TO_EMAIL when set. Nothing happens until
-// Resend is set up. A failure is logged with a generic error only — never the lifter's details.
+// fails because of) the mail. Replies go to the comp's organiser email (read on the caller's own
+// session — the anon submitter through the gated view), else RESEND_REPLY_TO_EMAIL. Nothing happens
+// until Resend is set up. A failure is logged with a generic error only — never the lifter's details.
 async function emailLifter(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  session: 'admin' | 'public',
+  competitionId: string,
   to: string,
   build: (canReply: boolean, origin: string | null) => EntryEmail,
 ): Promise<void> {
   if (!process.env.RESEND_API_KEY) {
     return;
   }
-  const replyTo = organiserReplyTo();
+  const replyTo = organiserReplyTo(await readOrganiserEmail(supabase, competitionId, session));
   const email = build(replyTo !== undefined, await requestOrigin());
   after(async () => {
     const result = await sendEmail({ to: [to], subject: email.subject, text: email.text, replyTo });
@@ -510,7 +515,7 @@ export async function approveSubmissionAction(input: ReviewSubmissionInput): Pro
     // "You're in", when the lifter gave an email on the form.
     if (submission.email) {
       const ageCategory = (ageCategoriesResult.data ?? []).find((category) => category.id === ageCategoryId);
-      await emailLifter(submission.email, (canReply, origin) =>
+      await emailLifter(supabase, 'admin', parsed.data.competitionId, submission.email, (canReply, origin) =>
         buildEntryAcceptedEmail({
           comp: entryEmailComp(comp, origin),
           firstName: submission.first_name,
@@ -582,7 +587,7 @@ export async function rejectSubmissionAction(input: RejectSubmissionInput): Prom
         Sentry.captureException(compError ?? new Error('Competition missing when emailing a rejected entry'));
         return ok();
       }
-      await emailLifter(lifter.email, (canReply, origin) =>
+      await emailLifter(supabase, 'admin', parsed.data.competitionId, lifter.email, (canReply, origin) =>
         buildEntryRejectedEmail({ comp: entryEmailComp(comp, origin), firstName: lifter.first_name, canReply }),
       );
     }

@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 import { after } from 'next/server';
 import { parseEmailList, sendEmail } from '@/lib/email/resend';
+import { readOrganiserEmail } from '@/lib/email/organiser';
 import { requestOrigin } from '@/lib/email/request-origin';
 import { buildChangeRequestEmail, isEmailAddress } from '@/lib/rota/change-request-email';
 import { createClient } from '@/lib/supabase/server';
@@ -1137,17 +1138,24 @@ export async function submitRotaChangeRequestAction(input: RotaChangeRequestInpu
   });
 }
 
-// Emails the organisers about a change request that has just been saved. Who gets it:
-// ROTA_NOTIFY_EMAILS, or every admin in ADMIN_EMAILS when that isn't set. The details are read on
-// the volunteer's own anon session (the rota is open, so the comp header and slot are readable),
-// and the email itself is sent after the response, so the volunteer isn't kept waiting and a mail
-// hiccup never fails a request that is already saved. Nothing happens until Resend is set up.
+// Emails the organisers about a change request that has just been saved. Who gets it: the comp's
+// organiser email (set on its edit screen), else ROTA_NOTIFY_EMAILS, else every admin in
+// ADMIN_EMAILS. The details are read on the volunteer's own anon session (the rota is open, so the
+// comp header, slot and organiser email are readable), and the email itself is sent after the
+// response, so the volunteer isn't kept waiting and a mail hiccup never fails a request that is
+// already saved. Nothing happens until Resend is set up.
 async function emailOrganisersAboutChangeRequest(
   supabase: Awaited<ReturnType<typeof createClient>>,
   request: RotaChangeRequestInput,
 ): Promise<void> {
-  const to = parseEmailList(process.env.ROTA_NOTIFY_EMAILS || process.env.ADMIN_EMAILS);
-  if (to.length === 0 || !process.env.RESEND_API_KEY) {
+  if (!process.env.RESEND_API_KEY) {
+    return;
+  }
+  const organiserEmail = await readOrganiserEmail(supabase, request.competitionId, 'public');
+  const to = organiserEmail
+    ? [organiserEmail]
+    : parseEmailList(process.env.ROTA_NOTIFY_EMAILS || process.env.ADMIN_EMAILS);
+  if (to.length === 0) {
     return;
   }
 

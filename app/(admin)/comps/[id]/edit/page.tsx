@@ -6,6 +6,8 @@ import { DeleteCompetition } from '@/components/comps/delete-competition';
 import { AgeCategoriesEditor } from '@/components/comps/age-categories-editor';
 import { IpfCategoriesCard } from '@/components/comps/ipf-categories-card';
 import { OverlayLinks } from '@/components/comps/overlay-links';
+import { OrganiserEmailCard } from '@/components/comps/organiser-email-card';
+import { requireAdmin } from '@/lib/auth/admin';
 import { isIpfFederation } from '@/lib/constants';
 import { WeightClassesEditor } from '@/components/comps/weight-classes-editor';
 import { Card } from '@/components/ui/card';
@@ -32,8 +34,15 @@ export default async function EditCompPage({
     notFound();
   }
 
-  const [{ data: ageCategories }, { data: weightClasses }, { count: entryCount }, { data: platformRows }, { data: sessionRows }] =
-    await Promise.all([
+  const [
+    { data: ageCategories },
+    { data: weightClasses },
+    { count: entryCount },
+    { data: platformRows },
+    { data: sessionRows },
+    { data: organiser },
+    myEmail,
+  ] = await Promise.all([
       supabase
         .from('age_categories')
         .select('id, name, sort_order')
@@ -47,6 +56,10 @@ export default async function EditCompPage({
       supabase.from('entries').select('id', { count: 'exact', head: true }).eq('competition_id', id),
       supabase.from('platforms').select('id, name').eq('competition_id', id).order('name', { ascending: true }),
       supabase.from('sessions').select('id, platform_id').eq('competition_id', id),
+      // Its own read, so the page still loads before the organiser-email migration has been run.
+      supabase.from('competition_organisers').select('email').eq('competition_id', id).maybeSingle(),
+      // The signed-in admin's address, for the card's "Use my email" (the layout has gated the page).
+      requireAdmin().catch(() => null),
     ]);
 
   // The overlay control offers a per-platform URL only when there is a real choice — the platforms that
@@ -103,6 +116,8 @@ export default async function EditCompPage({
           <WeightClassesEditor competitionId={comp.id} weightClasses={weightClasses ?? []} />
         </>
       )}
+
+      <OrganiserEmailCard competitionId={comp.id} initialEmail={organiser?.email ?? null} myEmail={myEmail} />
 
       <OverlayLinks slug={comp.slug} platforms={overlayPlatforms} />
 

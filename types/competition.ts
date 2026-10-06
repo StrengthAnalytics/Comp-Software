@@ -123,3 +123,18 @@ export const weightClassUpdateSchema = z
     path: ['upperKg'],
     message: 'Upper bound must be greater than the lower bound.',
   });
+
+// A comp's organiser email (competition_organisers): where its rota change requests go and where
+// lifters' replies to their entry emails land. Blank clears it, falling back to the env-var
+// addresses.
+export const setOrganiserEmailSchema = z.object({
+  competitionId: z.uuid(),
+  email: z
+    .string()
+    .trim()
+    .max(254, 'That email address is too long.')
+    .refine((value) => value === '' || z.email().safeParse(value).success, 'Enter a valid email address.')
+    .transform((value) => (value === '' ? null : value)),
+});
+
+export type SetOrganiserEmailInput = z.input<typeof setOrganiserEmailSchema>;

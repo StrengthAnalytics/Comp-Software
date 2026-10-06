@@ -50,10 +50,10 @@ export async function sendEmail(message: EmailMessage): Promise<EmailResult> {
   }
 }
 
-// Where replies to the app's emails to lifters should go (RESEND_REPLY_TO_EMAIL, e.g. the
-// organisers' inbox). Undefined when unset, and those emails then say not to reply.
-export function organiserReplyTo(): string | undefined {
-  return process.env.RESEND_REPLY_TO_EMAIL?.trim() || undefined;
+// Where replies to the app's emails to lifters should go: the comp's organiser email, else
+// RESEND_REPLY_TO_EMAIL. Undefined when neither is set, and those emails then say not to reply.
+export function organiserReplyTo(organiserEmail: string | null): string | undefined {
+  return organiserEmail ?? (process.env.RESEND_REPLY_TO_EMAIL?.trim() || undefined);
 }
 
 // Comma-separated addresses from an env var, trimmed, blanks dropped.

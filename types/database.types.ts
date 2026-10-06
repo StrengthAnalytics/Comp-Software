@@ -733,6 +733,24 @@ export type Database = {
         };
         Relationships: [];
       };
+      competition_organisers: {
+        Row: {
+          competition_id: string;
+          email: string;
+          updated_at: string;
+        };
+        Insert: {
+          competition_id: string;
+          email: string;
+          updated_at?: string;
+        };
+        Update: {
+          competition_id?: string;
+          email?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       // Public-safe lifter projection (no DOB, no IPF member ID). Columns are nullable to match
@@ -772,6 +790,15 @@ export type Database = {
           rota_open: boolean | null;
           rota_withdrawal_contact: string | null;
           rota_style: Json | null;
+        };
+        Relationships: [];
+      };
+      // A comp's organiser email, only while its entry form or rota is open. See migration
+      // 20261006000003.
+      public_comp_organisers: {
+        Row: {
+          competition_id: string | null;
+          email: string | null;
         };
         Relationships: [];
       };

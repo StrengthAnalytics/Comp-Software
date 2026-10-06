@@ -101,10 +101,11 @@ describe('organiserReplyTo', () => {
     vi.unstubAllEnvs();
   });
 
-  it('reads RESEND_REPLY_TO_EMAIL, treating blank as unset', () => {
+  it("prefers the comp's organiser email, then RESEND_REPLY_TO_EMAIL, treating blank as unset", () => {
     vi.stubEnv('RESEND_REPLY_TO_EMAIL', ' comps@platformpro.app ');
-    expect(organiserReplyTo()).toBe('comps@platformpro.app');
+    expect(organiserReplyTo('henry@example.com')).toBe('henry@example.com');
+    expect(organiserReplyTo(null)).toBe('comps@platformpro.app');
     vi.stubEnv('RESEND_REPLY_TO_EMAIL', '  ');
-    expect(organiserReplyTo()).toBeUndefined();
+    expect(organiserReplyTo(null)).toBeUndefined();
   });
 });
