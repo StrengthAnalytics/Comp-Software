@@ -22,6 +22,7 @@ vi.mock('@/actions/rota', () => ({
   resetRotaAction: vi.fn(),
   resolveRotaChangeRequestAction: vi.fn(),
   setRotaOpenAction: vi.fn(),
+  setRotaStyleAction: vi.fn(),
   setRotaWithdrawalContactAction: vi.fn(),
   updateRotaRoleAction: vi.fn(),
   updateRotaSectionAction: vi.fn(),

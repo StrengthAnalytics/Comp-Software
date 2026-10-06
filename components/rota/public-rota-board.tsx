@@ -18,7 +18,9 @@ import {
 import { displayRotaTime } from '@/lib/rota/time';
 import { Button } from '@/components/ui/button';
 import { RotaDialog } from '@/components/rota/rota-dialog';
-import { OPEN_SLOT_CLASS, RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
+import { RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
+import { FILLED_SWATCH, OPEN_SWATCH } from '@/lib/rota/style';
+import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 
 const INPUT_CLASS =
   'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
@@ -420,13 +422,15 @@ type PublicRotaBoardProps = {
   competitionId: string;
   sections: PublicRotaSection[];
   withdrawalContact: string | null;
+  // The organiser's rota formatting (the default look when not given).
+  look?: RotaStyle;
 };
 
 // The volunteer-facing rota, laid out like the organisers' spreadsheet: sessions across, jobs down,
-// green for a filled slot (name only) and a tappable "+ Sign up" for each open one. Volunteers can
+// a coloured slot for each filled place (name only) and a tappable "+ Sign up" for each open one. Volunteers can
 // only add themselves (an anon write); dropping out or swapping goes to the organiser through
 // "Request a change".
-export function PublicRotaBoard({ competitionId, sections, withdrawalContact }: PublicRotaBoardProps) {
+export function PublicRotaBoard({ competitionId, sections, withdrawalContact, look }: PublicRotaBoardProps) {
   const router = useRouter();
   const [remembered, setRemembered] = useState<RememberedVolunteer | null>(null);
   const [signupSlot, setSignupSlot] = useState<SlotChoice | null>(null);
@@ -439,6 +443,8 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact }: 
   }, []);
 
   const ordered = sections.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
+  // The key above the grid matches the organiser's slot colours.
+  const legendLook = look ?? DEFAULT_ROTA_STYLE;
 
   const slots: SlotChoice[] = ordered.flatMap((section) =>
     section.roles
@@ -500,10 +506,12 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact }: 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-600">
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-5 rounded-sm bg-emerald-400" /> Filled
+            <span className={`inline-block h-3 w-5 rounded-sm ${FILLED_SWATCH[legendLook.filledColour]}`} /> Filled
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-3 w-5 rounded-sm border border-dashed border-neutral-300 bg-neutral-100" />{' '}
+            <span
+              className={`inline-block h-3 w-5 rounded-sm border border-dashed border-neutral-300 ${OPEN_SWATCH[legendLook.openColour]}`}
+            />{' '}
             Needs someone (tap to sign up)
           </span>
           {remembered ? (
@@ -528,14 +536,15 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact }: 
 
       <RotaGrid
         sections={gridSections}
-        renderOpen={(role) => {
+        look={look}
+        renderOpen={(role, _slotIndex, classes) => {
           const slot = slotByRole.get(role.id);
           return (
             <button
               type="button"
               onClick={() => slot && setSignupSlot(slot)}
               aria-label={`Sign up for ${slot?.label ?? role.title}`}
-              className={`${OPEN_SLOT_CLASS} font-medium hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700`}
+              className={`${classes.openSlot} font-medium hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700`}
             >
               + Sign up
             </button>

@@ -34,6 +34,8 @@ import { ROTA_WITHDRAWAL_CONTACT_MAX } from '@/types/rota';
 import { ResetRota } from '@/components/rota/reset-rota';
 import { RotaAdminGrid } from '@/components/rota/rota-admin-grid';
 import { RotaChangeRequests, type RotaChangeRequestSummary } from '@/components/rota/rota-change-requests';
+import { RotaFormatting } from '@/components/rota/rota-formatting';
+import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -1162,12 +1164,15 @@ type RotaBuilderProps = {
   sections: RotaBuilderSection[];
   // Volunteers' open "Request a change" messages.
   changeRequests: RotaChangeRequestSummary[];
+  // The comp's rota formatting (the Formatting tab); the default look when not given.
+  rotaStyle?: RotaStyle;
 };
 
-// The admin staff-rota screen. Two tabs: "Rota" is the everyday view — the spreadsheet-style grid
+// The admin staff-rota screen. Three tabs: "Rota" is the everyday view — the spreadsheet-style grid
 // (tap a name for contact details / move / remove, "+ Add" to fill a slot) with volunteers' change
 // requests above it; "Edit layout" is where the columns, jobs, arrive-by times and number of spaces
-// are built and changed. Above both: the sign-up link, the open/closed switch and the contacts export.
+// are built and changed; "Formatting" sets the grid's line weights and colours. Above all three: the
+// sign-up link, the open/closed switch and the contacts export.
 export function RotaBuilder({
   competitionId,
   competitionName,
@@ -1180,6 +1185,7 @@ export function RotaBuilder({
   availableSessions,
   sections,
   changeRequests,
+  rotaStyle = DEFAULT_ROTA_STYLE,
 }: RotaBuilderProps) {
   const ordered = sections.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
 
@@ -1227,7 +1233,7 @@ export function RotaBuilder({
           description="Open the Edit layout tab to build it: generate a column for each session in one click, or add columns and roles yourself."
         />
       ) : (
-        <RotaAdminGrid competitionId={competitionId} sections={ordered} />
+        <RotaAdminGrid competitionId={competitionId} sections={ordered} look={rotaStyle} />
       )}
     </div>
   );
@@ -1284,6 +1290,21 @@ export function RotaBuilder({
     </div>
   );
 
+  // The live preview shows the real rota, names and all, as the grid lays it out.
+  const formattingPanel = (
+    <RotaFormatting
+      competitionId={competitionId}
+      initialStyle={rotaStyle}
+      sections={ordered.map((section) => ({
+        ...section,
+        roles: section.roles.map((role) => ({
+          ...role,
+          filled: role.signups.map((signup) => ({ key: signup.id, name: signup.name })),
+        })),
+      }))}
+    />
+  );
+
   return (
     <div className="space-y-6">
       {contactRows.length > 0 ? (
@@ -1309,9 +1330,10 @@ export function RotaBuilder({
         tabs={[
           { id: 'rota', label: 'Rota', badge: changeRequests.length },
           { id: 'layout', label: 'Edit layout' },
+          { id: 'formatting', label: 'Formatting' },
         ]}
         initialTabId={ordered.length === 0 ? 'layout' : 'rota'}
-        panels={{ rota: rotaPanel, layout: layoutPanel }}
+        panels={{ rota: rotaPanel, layout: layoutPanel, formatting: formattingPanel }}
       />
     </div>
   );

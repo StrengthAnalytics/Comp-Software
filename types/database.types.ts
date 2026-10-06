@@ -51,6 +51,9 @@ export type Database = {
           entry_form_open: boolean;
           rota_open: boolean;
           rota_withdrawal_contact: string | null;
+          // The organiser's rota formatting (types/rota-style.ts); null = the default look.
+          // Migration 20261006000002.
+          rota_style: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -69,6 +72,7 @@ export type Database = {
           entry_form_open?: boolean;
           rota_open?: boolean;
           rota_withdrawal_contact?: string | null;
+          rota_style?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -87,6 +91,7 @@ export type Database = {
           entry_form_open?: boolean;
           rota_open?: boolean;
           rota_withdrawal_contact?: string | null;
+          rota_style?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -766,6 +771,7 @@ export type Database = {
           ends_on: string | null;
           rota_open: boolean | null;
           rota_withdrawal_contact: string | null;
+          rota_style: Json | null;
         };
         Relationships: [];
       };

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { PublicRotaBoard, type PublicRotaRole, type PublicRotaSection } from '@/components/rota/public-rota-board';
+import { parseRotaStyle } from '@/types/rota-style';
 
 // UK-style "11 July 2026"; comp dates are stored as ISO date strings.
 function formatDate(iso: string): string {
@@ -41,7 +42,7 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
 
   const compId = comp.id;
 
-  const [{ data: sectionRows }, { data: roleRows }, { data: signupRows }] = await Promise.all([
+  const [{ data: sectionRows }, { data: roleRows }, { data: signupRows }, { data: styleRow }] = await Promise.all([
     supabase
       .from('rota_sections')
       .select('id, day_label, title, subtitle, sort_order')
@@ -60,6 +61,9 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
       .eq('competition_id', compId)
       .order('name', { ascending: true })
       .order('id', { ascending: true }),
+    // The organiser's formatting, read on its own so the board still shows (in the default look) if
+    // it can't be.
+    supabase.from('public_rota_comps').select('rota_style').eq('id', compId).maybeSingle(),
   ]);
 
   const namesByRole = new Map<string, string[]>();
@@ -108,7 +112,7 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
             {comp.starts_on ? `${formatDate(comp.starts_on)} · ` : ''}Volunteer rota
           </p>
           <p className="mx-auto mt-2 max-w-xl text-sm text-neutral-600">
-            Tap a grey slot to sign up. Only your name shows here — your email and mobile go only to
+            Tap an open slot to sign up. Only your name shows here — your email and mobile go only to
             the organisers.
           </p>
         </header>
@@ -117,6 +121,7 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
           competitionId={compId}
           sections={sections}
           withdrawalContact={comp.rota_withdrawal_contact}
+          look={parseRotaStyle(styleRow?.rota_style ?? null)}
         />
       </div>
     </main>

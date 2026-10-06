@@ -36,6 +36,7 @@ import {
   type RotaWithdrawalContactInput,
   type SetRotaOpenInput,
 } from '@/types/rota';
+import { setRotaStyleSchema, type SetRotaStyleInput } from '@/types/rota-style';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 
 // Admin actions for the volunteer staff rota builder. All are setup writes — deliberately NOT gated
@@ -94,6 +95,28 @@ export async function setRotaWithdrawalContactAction(
     if (error) {
       Sentry.captureException(error);
       return fail('Could not save that contact line. Please try again.');
+    }
+    return ok();
+  });
+}
+
+// The rota's look (the Formatting tab): line weights and colours. Null restores the default look.
+export async function setRotaStyleAction(input: SetRotaStyleInput): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('setRotaStyle', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = setRotaStyleSchema.safeParse(input);
+    if (!parsed.success) return fail('Could not save the formatting. Please try again.');
+
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from('competitions')
+      .update({ rota_style: parsed.data.style })
+      .eq('id', parsed.data.competitionId);
+    if (error) {
+      Sentry.captureException(error);
+      return fail('Could not save the formatting. Please try again.');
     }
     return ok();
   });

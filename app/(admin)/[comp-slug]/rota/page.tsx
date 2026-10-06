@@ -8,6 +8,7 @@ import {
   type RotaSignupSummary,
 } from '@/components/rota/rota-builder';
 import type { RotaChangeRequestSummary } from '@/components/rota/rota-change-requests';
+import { parseRotaStyle } from '@/types/rota-style';
 
 export default async function RotaPage({ params }: { params: Promise<{ 'comp-slug': string }> }) {
   const { 'comp-slug': slug } = await params;
@@ -25,6 +26,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
     { data: signupRows },
     { data: sessionRows },
     { data: changeRequestRows },
+    { data: styleRow },
   ] = await Promise.all([
       supabase
         .from('rota_sections')
@@ -53,6 +55,8 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
         .eq('competition_id', comp.id)
         .eq('status', 'open')
         .order('created_at', { ascending: true }),
+      // The rota's formatting, read on its own so the rest of the page still loads if it can't be.
+      supabase.from('competitions').select('rota_style').eq('id', comp.id).maybeSingle(),
     ]);
 
   const changeRequests: RotaChangeRequestSummary[] = (changeRequestRows ?? []).map((row) => ({
@@ -128,6 +132,7 @@ export default async function RotaPage({ params }: { params: Promise<{ 'comp-slu
         availableSessions={availableSessions}
         sections={sections}
         changeRequests={changeRequests}
+        rotaStyle={parseRotaStyle(styleRow?.rota_style ?? null)}
       />
     </div>
   );

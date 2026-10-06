@@ -6,12 +6,8 @@ import { addRotaSignupAction, moveRotaSignupAction, removeRotaSignupAction } fro
 import type { ActionResult, FieldErrors } from '@/types/action-result';
 import { Button } from '@/components/ui/button';
 import { RotaDialog } from '@/components/rota/rota-dialog';
-import {
-  FILLED_SLOT_CLASS,
-  OPEN_SLOT_CLASS,
-  RotaGrid,
-  type RotaGridSection,
-} from '@/components/rota/rota-grid';
+import { RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
+import type { RotaStyle } from '@/types/rota-style';
 import type { RotaBuilderRole, RotaBuilderSection, RotaSignupSummary } from '@/components/rota/rota-builder';
 
 const INPUT_CLASS =
@@ -270,12 +266,14 @@ function AddVolunteerDialog({
 type RotaAdminGridProps = {
   competitionId: string;
   sections: RotaBuilderSection[];
+  // The comp's rota formatting, so the admin sees what volunteers see.
+  look?: RotaStyle;
 };
 
 // The organiser's everyday view of the rota: the same grid volunteers see, but every name opens the
 // volunteer's contact details (with move and remove), and every open slot has "+ Add" to put someone
 // in directly. Changing the columns, jobs and number of spaces lives in the Edit layout tab.
-export function RotaAdminGrid({ competitionId, sections }: RotaAdminGridProps) {
+export function RotaAdminGrid({ competitionId, sections, look }: RotaAdminGridProps) {
   const [openSignupId, setOpenSignupId] = useState<string | null>(null);
   const [addingRoleId, setAddingRoleId] = useState<string | null>(null);
 
@@ -317,27 +315,28 @@ export function RotaAdminGrid({ competitionId, sections }: RotaAdminGridProps) {
     <>
       <RotaGrid
         sections={gridSections}
-        renderFilled={(role, volunteer) => {
+        look={look}
+        renderFilled={(role, volunteer, classes) => {
           const slot = slotByRole.get(role.id);
           return (
             <button
               type="button"
               onClick={() => setOpenSignupId(volunteer.key)}
               aria-label={`${volunteer.name}, ${slot ? rotaSlotLabel(slot.section, slot.role) : role.title}: contact details`}
-              className={`${FILLED_SLOT_CLASS} hover:bg-emerald-500`}
+              className={`${classes.filledSlot} ${classes.filledSlotHover}`}
             >
               {volunteer.name}
             </button>
           );
         }}
-        renderOpen={(role) => {
+        renderOpen={(role, _slotIndex, classes) => {
           const slot = slotByRole.get(role.id);
           return (
             <button
               type="button"
               onClick={() => setAddingRoleId(role.id)}
               aria-label={`Add a helper to ${slot ? rotaSlotLabel(slot.section, slot.role) : role.title}`}
-              className={`${OPEN_SLOT_CLASS} hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700`}
+              className={`${classes.openSlot} hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700`}
             >
               + Add
             </button>
