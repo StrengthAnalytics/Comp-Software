@@ -105,10 +105,16 @@ describe('ScheduleEditor', () => {
     );
   });
 
-  it('leaves a weigh-in time the operator already set alone', async () => {
+  it('moves a suggested weigh-in time along with the lift-off', () => {
     renderEditor();
     fireEvent.change(screen.getByLabelText('Lifting starts at'), { target: { value: '11:00' } });
-    expect(screen.getByLabelText<HTMLInputElement>('Weigh-ins open at').value).toBe('07:30');
+    expect(screen.getByLabelText<HTMLInputElement>('Weigh-ins open at').value).toBe('09:00');
+  });
+
+  it('leaves a weigh-in time the operator chose themselves alone', () => {
+    renderEditor({ sessions: [{ ...session, weigh_in_time: '08:00:00' }] });
+    fireEvent.change(screen.getByLabelText('Lifting starts at'), { target: { value: '11:00' } });
+    expect(screen.getByLabelText<HTMLInputElement>('Weigh-ins open at').value).toBe('08:00');
   });
 
   it('adds the next lettered flight with one click', async () => {

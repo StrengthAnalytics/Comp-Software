@@ -12,6 +12,7 @@ import {
 } from '@/lib/constants';
 import {
   buildDraftRows,
+  builderPlatformNames,
   compDays,
   flightNames,
   lifterPerFlightEstimate,
@@ -19,9 +20,9 @@ import {
   withLiftOff,
   type ScheduleDraftRow,
 } from '@/lib/sessions/schedule';
+import { readError } from '@/components/station/save-state';
 import { buttonClasses } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import type { ActionResult } from '@/types/action-result';
 
 // The guided schedule builder: four questions that turn the comp's own dates into every platform,
 // session and flight in one go, so a meet's structure isn't typed in one box at a time. Shown on the
@@ -34,18 +35,6 @@ const INPUT_CLASS =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const PRIMARY_BUTTON = buttonClasses('primary');
 const SECONDARY_BUTTON = buttonClasses('secondary');
-
-function readError(result: ActionResult<unknown>): string {
-  if (result.status !== 'error') {
-    return '';
-  }
-  const firstField = result.fieldErrors ? Object.values(result.fieldErrors)[0] : undefined;
-  return firstField?.[0] ?? result.message;
-}
-
-function platformName(index: number): string {
-  return `Platform ${String.fromCodePoint(('A'.codePointAt(0) ?? 0) + index)}`;
-}
 
 function Stepper({ step }: { step: number }) {
   return (
@@ -114,12 +103,16 @@ export function ScheduleBuilder({
   startsOn,
   endsOn,
   entryCount,
+  existingPlatformNames,
   onSkip,
 }: {
   competitionId: string;
   startsOn: string | null;
   endsOn: string | null;
   entryCount: number;
+  // Platforms the comp already has (e.g. added before any session): the builder reuses them by name
+  // rather than creating duplicates.
+  existingPlatformNames: string[];
   onSkip: () => void;
 }) {
   const router = useRouter();
@@ -132,6 +125,9 @@ export function ScheduleBuilder({
   const [rows, setRows] = useState<ScheduleDraftRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const platformNames = builderPlatformNames(existingPlatformNames, platformCount);
+  const platformName = (index: number) => platformNames[index] ?? '';
 
   const sessionTotal = counts.reduce((total, perDay) => total + perDay.slice(0, platformCount).reduce((a, b) => a + b, 0), 0);
   const flightTotal = rows.reduce((total, row) => total + row.flightCount, 0);
@@ -164,7 +160,7 @@ export function ScheduleBuilder({
     startTransition(async () => {
       const result = await buildScheduleAction({
         competitionId,
-        platforms: Array.from({ length: platformCount }, (_, index) => platformName(index)),
+        platforms: platformNames,
         sessions: rows.map((row) => ({
           platformIndex: row.platformIndex,
           date: row.date,
@@ -233,7 +229,7 @@ export function ScheduleBuilder({
             </div>
             {platformCount > 1 ? (
               <p className="text-sm text-neutral-600">
-                They&rsquo;ll be called {Array.from({ length: platformCount }, (_, index) => platformName(index)).join(', ')}.
+                They&rsquo;ll be called {platformNames.join(', ')}.
                 Each platform runs its own sessions and times, and you can rename them afterwards.
               </p>
             ) : null}

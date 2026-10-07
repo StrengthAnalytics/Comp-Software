@@ -114,6 +114,32 @@ export function nextFlightName(existing: readonly string[]): string {
   }
 }
 
+// Platforms are lettered: "Platform A", "Platform B", …
+export function platformName(index: number): string {
+  return index < LETTER_COUNT ? `Platform ${String.fromCodePoint(FIRST_LETTER + index)}` : `Platform ${index + 1}`;
+}
+
+// The first "Platform X" the comp doesn't already have.
+export function nextPlatformName(existing: readonly string[]): string {
+  const taken = new Set(existing.map((name) => name.trim().toLowerCase()));
+  for (let index = 0; ; index++) {
+    const candidate = platformName(index);
+    if (!taken.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+}
+
+// The names the guided builder uses for `count` platforms: the comp's existing platforms first (so
+// they are reused rather than duplicated), then fresh "Platform X" names that don't clash with them.
+export function builderPlatformNames(existing: readonly string[], count: number): string[] {
+  const names = existing.slice(0, count);
+  while (names.length < count) {
+    names.push(nextPlatformName([...existing, ...names]));
+  }
+  return names;
+}
+
 // Sessions are numbered per day (and per platform): "Session 1", "Session 2", …
 export function sessionName(index: number): string {
   return `Session ${index + 1}`;
@@ -238,13 +264,13 @@ export function orderSessionsChronologically<T extends ChronologicalSession>(
   sessions: readonly T[],
   platformNamesById: ReadonlyMap<string, string> = new Map(),
 ): T[] {
-  const platformName = (session: T) =>
+  const platformOf = (session: T) =>
     session.platform_id ? (platformNamesById.get(session.platform_id) ?? '') : '';
   return sessions.toSorted(
     (a, b) =>
       compareNullable(a.session_date, b.session_date) ||
       compareNullable(timeToMinutes(a.lift_off_time), timeToMinutes(b.lift_off_time)) ||
-      platformName(a).localeCompare(platformName(b)) ||
+      platformOf(a).localeCompare(platformOf(b)) ||
       a.name.localeCompare(b.name, 'en-GB', { numeric: true }) ||
       compareNullable(a.created_at ?? null, b.created_at ?? null) ||
       a.id.localeCompare(b.id),

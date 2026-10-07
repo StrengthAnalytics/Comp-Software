@@ -71,8 +71,9 @@ export async function buildScheduleAction(
       return fail("Every session must be on one of the competition's days. Check the comp dates on Setup.");
     }
 
-    // Resolve each platform: reuse one the comp already has by name; otherwise create it, unless this
-    // is a one-platform meet on a comp with no platforms (sessions then use the default platform).
+    // Resolve each platform: reuse one the comp already has by name; otherwise create it. A
+    // one-platform meet never adds a platform: it uses the comp's existing one if it has any, else the
+    // single default platform (no row), as hand-built sessions do.
     const existingPlatforms = existingPlatformsResult.data ?? [];
     const platformIds: (string | null)[] = [];
     const createdPlatformIds: string[] = [];
@@ -82,8 +83,8 @@ export async function buildScheduleAction(
         platformIds.push(existing.id);
         continue;
       }
-      if (platforms.length === 1 && existingPlatforms.length === 0) {
-        platformIds.push(null);
+      if (platforms.length === 1) {
+        platformIds.push(existingPlatforms[0]?.id ?? null);
         continue;
       }
       const { data: created, error } = await supabase

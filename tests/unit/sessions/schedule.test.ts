@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDraftRows,
+  builderPlatformNames,
   compDays,
   defaultLiftOffTimes,
   flightNames,
@@ -8,6 +9,7 @@ import {
   longDayLabel,
   minutesToTime,
   nextFlightName,
+  nextPlatformName,
   nextSessionName,
   orderSessionsChronologically,
   sessionDisplayLabels,
@@ -81,6 +83,17 @@ describe('names', () => {
   it('skips a flight name the session already uses, however it is cased', () => {
     expect(nextFlightName(['Flight A', 'flight b'])).toBe('Flight C');
     expect(nextFlightName(['Flight B'])).toBe('Flight A');
+  });
+
+  it('letters platforms, skipping a name the comp already has', () => {
+    expect(nextPlatformName([])).toBe('Platform A');
+    expect(nextPlatformName(['platform a', 'Main'])).toBe('Platform B');
+  });
+
+  it('gives the builder the existing platforms first, then fresh names', () => {
+    expect(builderPlatformNames([], 2)).toEqual(['Platform A', 'Platform B']);
+    expect(builderPlatformNames(['Platform B'], 2)).toEqual(['Platform B', 'Platform A']);
+    expect(builderPlatformNames(['Main', 'Side'], 1)).toEqual(['Main']);
   });
 
   it('keeps a renamed session from blocking the next number', () => {

@@ -33,12 +33,17 @@ export function useStationSave<TFlag, TPayload>({
   serialized,
   buildPayload,
   save,
+  refreshOnAutosave = false,
 }: {
   entryId: string;
   initialFlag: TFlag;
   serialized: string;
   buildPayload: (flag: TFlag) => TPayload;
   save: (payload: TPayload) => Promise<ActionResult>;
+  // Re-pull server props after every background save too, for a screen where a field edit changes
+  // what the server renders (e.g. a session's time re-orders the schedule). Off for the station
+  // screens, whose field saves change nothing else on the page.
+  refreshOnAutosave?: boolean;
 }) {
   const router = useRouter();
   const { online, report } = useContext(SaveContext);
@@ -139,7 +144,7 @@ export function useStationSave<TFlag, TPayload>({
   // Latest-closure autosave, held in a ref so the debounce effect can fire it without re-subscribing on
   // every keystroke (mirrors the realtime hooks' callback-ref pattern).
   const autosaveRef = useRef<() => void>(() => {});
-  autosaveRef.current = () => runSave(flag, { refresh: false });
+  autosaveRef.current = () => runSave(flag, { refresh: refreshOnAutosave });
 
   // Debounced autosave: once input settles and we're online and idle, persist it. Skips while a save is
   // in flight (re-runs when it clears), while offline (flushes when online returns), and while the last
@@ -164,7 +169,7 @@ export function useStationSave<TFlag, TPayload>({
     if (serialized === savedSnapshot || serialized === failedSnapshotRef.current) {
       return;
     }
-    runSave(flag, { refresh: false });
+    runSave(flag, { refresh: refreshOnAutosave });
   }
 
   // Fire-and-forget save when the row unmounts (session switch / search filter) carrying a dirty edit a

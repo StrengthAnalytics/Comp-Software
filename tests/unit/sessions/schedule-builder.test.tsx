@@ -23,6 +23,7 @@ function renderBuilder(overrides: Partial<Parameters<typeof ScheduleBuilder>[0]>
       startsOn="2026-07-11"
       endsOn="2026-07-12"
       entryCount={0}
+      existingPlatformNames={[]}
       onSkip={onSkip}
       {...overrides}
     />,
@@ -101,6 +102,20 @@ describe('ScheduleBuilder', () => {
     const input = build.mock.calls[0][0];
     expect(input.platforms).toEqual(['Platform A', 'Platform B']);
     expect(input.sessions.map((session) => session.platformIndex)).toEqual([0, 1]);
+  });
+
+  it('reuses the platform the comp already has rather than adding another', async () => {
+    build.mockResolvedValue({ status: 'ok', data: { sessionCount: 2, flightCount: 4 } });
+    renderBuilder({ startsOn: '2026-07-11', endsOn: '2026-07-11', existingPlatformNames: ['Main stage'] });
+
+    fireEvent.click(screen.getByRole('button', { name: /2 platforms/ }));
+    next();
+    next();
+    next();
+    fireEvent.click(screen.getByRole('button', { name: 'Create schedule' }));
+
+    await waitFor(() => expect(build).toHaveBeenCalled());
+    expect(build.mock.calls[0][0].platforms).toEqual(['Main stage', 'Platform A']);
   });
 
   it('warns when the flights would be over the running size', () => {

@@ -12,6 +12,7 @@ import {
   longDayLabel,
   minutesToTime,
   nextFlightName,
+  nextPlatformName,
   nextSessionName,
   timeToMinutes,
   weighInForLiftOff,
@@ -155,7 +156,7 @@ function PlatformsCard({ competitionId, platforms }: { competitionId: string; pl
             run(() =>
               createPlatformAction({
                 competitionId,
-                name: `Platform ${String.fromCodePoint(('A'.codePointAt(0) ?? 0) + platforms.length)}`,
+                name: nextPlatformName(platforms.map((platform) => platform.name)),
               }),
             )
           }
@@ -339,13 +340,10 @@ const SessionCard = memo(function SessionCard({
     serialized: JSON.stringify(payload),
     buildPayload: () => payload,
     save: updateSessionAction,
+    // A session's day or time re-orders (and can regroup) the schedule server-side, so every save
+    // re-pulls the page.
+    refreshOnAutosave: true,
   });
-
-  // Changing the time or the day re-orders the sessions server-side, so these save straight away and
-  // re-pull the page rather than waiting out the typing debounce.
-  function saveNow() {
-    save.runSave(null, { refresh: true });
-  }
 
   return (
     <section className="rounded-lg border border-neutral-200 bg-white p-5">
@@ -365,7 +363,7 @@ const SessionCard = memo(function SessionCard({
             type="date"
             value={sessionDate}
             onChange={(event) => setSessionDate(event.target.value)}
-            onBlur={saveNow}
+            onBlur={save.flushSave}
             className={INPUT_CLASS}
           />
         </label>
@@ -386,13 +384,14 @@ const SessionCard = memo(function SessionCard({
             value={liftOffTime}
             onChange={(event) => {
               const next = event.target.value;
-              setLiftOffTime(next);
-              // Weigh-in follows lift-off (two hours before) until it has a time of its own.
-              if (weighInTime === '') {
-                setWeighInTime(weighInForLiftOff(next) ?? '');
+              // Weigh-in follows lift-off (two hours before) while it is empty or still the time worked
+              // out from the old lift-off; a weigh-in time set by hand is left alone.
+              if (weighInTime === '' || weighInTime === weighInForLiftOff(liftOffTime)) {
+                setWeighInTime(weighInForLiftOff(next) ?? weighInTime);
               }
+              setLiftOffTime(next);
             }}
-            onBlur={saveNow}
+            onBlur={save.flushSave}
             className={INPUT_CLASS}
           />
         </label>
@@ -402,7 +401,7 @@ const SessionCard = memo(function SessionCard({
             <select
               value={platformId}
               onChange={(event) => setPlatformId(event.target.value)}
-              onBlur={saveNow}
+              onBlur={save.flushSave}
               className={INPUT_CLASS}
             >
               <option value="">—</option>

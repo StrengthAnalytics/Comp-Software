@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { sessionDisplayLabels } from '@/lib/sessions/schedule';
 import type { Database } from '@/types/database.types';
@@ -18,6 +19,12 @@ export async function loadSessionOptions(supabase: Client, competitionId: string
       .order('sort_order', { ascending: true }),
     supabase.from('platforms').select('id, name').eq('competition_id', competitionId),
   ]);
+  // A failed read shows no sessions (or bare names) rather than breaking the page, but is reported.
+  for (const error of [sessionsResult.error, platformsResult.error]) {
+    if (error) {
+      Sentry.captureException(error);
+    }
+  }
 
   const sessions = sessionsResult.data ?? [];
   const labels = sessionDisplayLabels(

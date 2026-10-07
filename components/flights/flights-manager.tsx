@@ -12,7 +12,7 @@ import { TeamFlightBoard, type BoardTeam } from '@/components/flights/team-fligh
 import { buttonClasses } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import type { BoardEntry, FlightRow, PlatformOption, SessionRow } from '@/components/flights/flights-types';
-import type { ActionResult } from '@/types/action-result';
+import { readError } from '@/components/station/save-state';
 
 export type { BoardEntry, FlightRow, PlatformOption, SessionRow } from '@/components/flights/flights-types';
 
@@ -20,14 +20,6 @@ const UNASSIGNED = 'unassigned';
 
 const INPUT_CLASS =
   'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
-
-function readError(result: ActionResult<unknown>): string {
-  if (result.status !== 'error') {
-    return '';
-  }
-  const firstField = result.fieldErrors ? Object.values(result.fieldErrors)[0] : undefined;
-  return firstField?.[0] ?? result.message;
-}
 
 // ----- Roster board --------------------------------------------------------------------------
 
@@ -280,6 +272,7 @@ export function FlightsManager({
           startsOn={startsOn}
           endsOn={endsOn}
           entryCount={entries.length}
+          existingPlatformNames={platforms.map((platform) => platform.name)}
           onSkip={() => setBuilderDismissed(true)}
         />
       ) : (
