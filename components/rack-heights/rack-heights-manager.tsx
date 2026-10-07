@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { updateRackHeightsAction } from '@/actions/entries';
@@ -12,10 +12,8 @@ import { CellNumber, NumberField, SegmentedToggle } from '@/components/station/c
 import {
   SaveContext,
   SaveStatus,
-  computeSaveIndicator,
-  useOnline,
-  type ReportedSaveState,
-  type SaveContextValue,
+  SaveIndicatorPill,
+  useSaveReporting,
 } from '@/components/station/save-state';
 import {
   CELL_PRIMARY,
@@ -51,6 +49,7 @@ import type { RackHeightsInput } from '@/types/entry';
 import type { TeamLift } from '@/types/team';
 import { buttonClasses } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import type { SessionOption } from '@/lib/sessions/options';
 
 // Rack settings only ever apply to the squat and the bench (the deadlift has none), so this screen
 // shows just those columns — no Simple/Full toggle. It reuses the weigh-in calling order (sex / team
@@ -75,8 +74,6 @@ export type RackEntry = {
   benchSpotting: BenchSpotting | null;
   racksSet: boolean;
 };
-
-export type RackSessionOption = { id: string; name: string };
 
 type ViewMode = 'cards' | 'table';
 
@@ -616,7 +613,7 @@ export function RackHeightsManager({
   compName: string;
   isTeamCompetition: boolean;
   lifts: Lifts;
-  sessions: RackSessionOption[];
+  sessions: SessionOption[];
   entries: RackEntry[];
   unflightedCount: number;
 }) {
@@ -627,25 +624,7 @@ export function RackHeightsManager({
   const view: ViewMode = storedView === 'table' ? 'table' : 'cards';
   const fullScreen = storedLayout === 'full';
 
-  const online = useOnline();
-  // Each row reports its non-clean save state here; the page-level indicator rolls them up.
-  const [rowStates, setRowStates] = useState<Map<string, ReportedSaveState>>(() => new Map());
-  const report = useCallback((id: string, state: ReportedSaveState | null) => {
-    setRowStates((current) => {
-      const existing = current.get(id) ?? null;
-      if (existing === state) {
-        return current;
-      }
-      const next = new Map(current);
-      if (state === null) {
-        next.delete(id);
-      } else {
-        next.set(id, state);
-      }
-      return next;
-    });
-  }, []);
-  const saveContext = useMemo<SaveContextValue>(() => ({ online, report }), [online, report]);
+  const { saveContext, indicator } = useSaveReporting();
 
   // Real-time: when another device (e.g. the head table, or a second warm-up phone) changes an entry
   // or flight, re-pull the server props so the roster, flight assignments and racks-set completion
@@ -733,8 +712,6 @@ export function RackHeightsManager({
     );
   }
 
-  const indicator = computeSaveIndicator(online, new Set(rowStates.values()));
-
   return (
     <SaveContext.Provider value={saveContext}>
       <div className={fullScreen ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
@@ -749,14 +726,7 @@ export function RackHeightsManager({
                 { value: 'table', label: 'Table' },
               ]}
             />
-            <div
-              role="status"
-              aria-live="polite"
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${indicator.box}`}
-            >
-              <span className={`h-2 w-2 rounded-full ${indicator.dot} ${indicator.pulse ? 'animate-pulse' : ''}`} />
-              {indicator.text}
-            </div>
+            <SaveIndicatorPill indicator={indicator} />
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => globalThis.print()} className={GHOST_BUTTON}>
                 Print sheet

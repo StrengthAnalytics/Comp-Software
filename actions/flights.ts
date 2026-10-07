@@ -6,7 +6,7 @@ import type { PostgrestError } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
-import { assignTeamFlightSchema, flightInputSchema, flightUpdateSchema } from '@/types/flight';
+import { assignTeamFlightSchema, flightInputSchema, flightUpdateSchema, moveFlightSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
 
@@ -66,11 +66,7 @@ export async function createFlightAction(input: {
   });
 }
 
-export async function updateFlightAction(input: {
-  id: string;
-  name: string;
-  sortOrder: number;
-}): Promise<ActionResult> {
+export async function updateFlightAction(input: { id: string; name: string }): Promise<ActionResult> {
   return Sentry.withServerActionInstrumentation('updateFlight', async () => {
     const guard = await adminGuard();
     if (guard) return guard;
@@ -83,12 +79,68 @@ export async function updateFlightAction(input: {
     const supabase = await createClient();
     const { error } = await supabase
       .from('flights')
-      .update({ name: parsed.data.name, sort_order: parsed.data.sortOrder })
+      .update({ name: parsed.data.name })
       .eq('id', parsed.data.id);
 
     if (error) {
       Sentry.captureException(error);
       return mapFlightWriteError(error);
+    }
+
+    return ok();
+  });
+}
+
+// Moves a flight one place earlier or later in its session by swapping places with the neighbouring
+// flight (the flights' running order). Re-numbers the session's flights 0..n-1 as it goes, so legacy
+// duplicate or gapped sort orders can't make the swap a no-op. Moving the first flight up or the last
+// one down does nothing.
+export async function moveFlightAction(input: {
+  id: string;
+  sessionId: string;
+  direction: 'up' | 'down';
+}): Promise<ActionResult> {
+  return Sentry.withServerActionInstrumentation('moveFlight', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = moveFlightSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Could not move the flight. Please try again.');
+    }
+
+    const supabase = await createClient();
+    const { data: siblings, error: siblingsError } = await supabase
+      .from('flights')
+      .select('id, sort_order, created_at')
+      .eq('session_id', parsed.data.sessionId);
+    if (siblingsError) {
+      Sentry.captureException(siblingsError);
+      return fail('Could not move the flight. Please try again.');
+    }
+
+    const ordered = (siblings ?? []).toSorted(
+      (a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+    );
+    const index = ordered.findIndex((row) => row.id === parsed.data.id);
+    if (index === -1) {
+      return fail('Could not find that flight.');
+    }
+    const target = parsed.data.direction === 'up' ? index - 1 : index + 1;
+    if (target < 0 || target >= ordered.length) {
+      return ok();
+    }
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+
+    const results = await Promise.all(
+      ordered.flatMap((row, position) =>
+        row.sort_order === position ? [] : [supabase.from('flights').update({ sort_order: position }).eq('id', row.id)],
+      ),
+    );
+    const updateError = results.find((result) => result.error)?.error;
+    if (updateError) {
+      Sentry.captureException(updateError);
+      return fail('Could not move the flight. Please try again.');
     }
 
     return ok();

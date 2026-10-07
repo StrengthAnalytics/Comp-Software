@@ -72,7 +72,7 @@ export async function createCompetitionAction(
     const { data, error } = await supabase
       .from('competitions')
       .insert(parsed.data)
-      .select('id')
+      .select('id, slug')
       .single();
 
     if (error) {
@@ -105,7 +105,9 @@ export async function createCompetitionAction(
     }
 
     revalidatePath('/comps');
-    redirect(seedFailed ? `/comps/${data.id}/edit?setup=seed-failed` : `/comps/${data.id}/edit`);
+    // Straight to the comp's Checklist, which is where the next step (build the schedule, register
+    // lifters) is laid out — unless the IPF seed failed, which is recovered on the Setup screen.
+    redirect(seedFailed ? `/comps/${data.id}/edit?setup=seed-failed` : `/${data.slug}/checklist`);
   });
 }
 

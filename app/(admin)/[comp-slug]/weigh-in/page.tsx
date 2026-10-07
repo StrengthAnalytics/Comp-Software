@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { loadSessionOptions } from '@/lib/sessions/options';
 import { getCompBySlug } from '@/lib/comps/get-comp-by-slug';
 import { LIFTS_FOR_EVENT, type Gender } from '@/lib/constants';
 import { formatLifterName } from '@/lib/lifters/name';
@@ -23,12 +24,8 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
 
   const supabase = await createClient();
 
-  const [{ data: sessions }, { data: flights }, { data: weightClassRows }, { data: entryRows }] = await Promise.all([
-    supabase
-      .from('sessions')
-      .select('id, name, sort_order')
-      .eq('competition_id', comp.id)
-      .order('sort_order', { ascending: true }),
+  const [sessionOptions, { data: flights }, { data: weightClassRows }, { data: entryRows }] = await Promise.all([
+    loadSessionOptions(supabase, comp.id),
     supabase
       .from('flights')
       .select('id, session_id, name, sort_order')
@@ -114,7 +111,7 @@ export default async function WeighInPage({ params }: { params: Promise<{ 'comp-
         compName={comp.name}
         isTeamCompetition={comp.is_team_competition}
         lifts={LIFTS_FOR_EVENT[comp.event_type]}
-        sessions={sessions ?? []}
+        sessions={sessionOptions}
         weightClasses={weightClasses}
         entries={entries}
         unflightedCount={unflightedCount}

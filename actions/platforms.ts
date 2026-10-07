@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { syncRotaWithSessions } from '@/lib/rota/sync';
+import { resequenceSessions } from '@/lib/sessions/sequence';
 import { platformInputSchema, platformUpdateSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
@@ -18,13 +19,18 @@ function mapPlatformWriteError(error: PostgrestError): ActionResult<never> {
   return fail('Could not save the platform. Please try again.');
 }
 
-// The rota's session column headers name the platform when a comp runs more than one, so a rename or
-// delete is passed on (lib/rota/sync.ts). The platform write has already succeeded; a rota hiccup is
-// logged rather than reported as a failed save.
+// The platform name breaks ties in the sessions' time order, and the rota's session column headers
+// name the platform when a comp runs more than one, so a rename or delete re-sequences the sessions
+// (lib/sessions/sequence.ts) and is passed on to the rota (lib/rota/sync.ts). The platform write has
+// already succeeded; a hiccup in either is logged rather than reported as a failed save.
 async function followPlatformsInRota(
   supabase: Awaited<ReturnType<typeof createClient>>,
   competitionId: string,
 ): Promise<void> {
+  const resequenced = await resequenceSessions(supabase, competitionId);
+  if (resequenced.error) {
+    Sentry.captureException(resequenced.error);
+  }
   const { error } = await syncRotaWithSessions(supabase, competitionId);
   if (error) {
     Sentry.captureException(error);

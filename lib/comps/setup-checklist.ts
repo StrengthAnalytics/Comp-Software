@@ -26,6 +26,12 @@ export type SetupChecklistInput = {
   weightClassCount: number;
   platformCount: number;
   sessionCount: number;
+  flightCount: number;
+  // Sessions with no flights: there is nowhere to put that session's lifters yet.
+  sessionsWithoutFlights: number;
+  // Sessions with no lift-off time yet: the schedule step isn't finished until every session has one
+  // (the weigh-in and rota times are worked out from it).
+  sessionsMissingLiftOff: number;
   entryCount: number;
   entriesInFlights: number;
   entriesWeighedIn: number;
@@ -60,6 +66,32 @@ function progressItem(
 // "3 sessions on 1 platform" / "10 age categories" — count + correctly pluralised noun.
 function counted(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+// The schedule step: sessions alone aren't a schedule — every session needs its lift-off time (the
+// weigh-in and the rota's arrive-by times follow it) and at least one flight to put lifters in.
+function scheduleItem(input: SetupChecklistInput): { state: ChecklistState; detail: string } {
+  if (input.sessionCount === 0) {
+    return { state: 'todo', detail: 'No sessions yet' };
+  }
+  const platforms = input.platformCount > 0 ? input.platformCount : 1;
+  const done = `${counted(input.sessionCount, 'session', 'sessions')} on ${counted(platforms, 'platform', 'platforms')}`;
+  if (input.flightCount === 0) {
+    return { state: 'partial', detail: `${done} — no flights yet` };
+  }
+  if (input.sessionsWithoutFlights > 0) {
+    return {
+      state: 'partial',
+      detail: `${input.sessionsWithoutFlights} of ${counted(input.sessionCount, 'session', 'sessions')} without flights`,
+    };
+  }
+  if (input.sessionsMissingLiftOff > 0) {
+    return {
+      state: 'partial',
+      detail: `${input.sessionsMissingLiftOff} of ${counted(input.sessionCount, 'session', 'sessions')} without a start time`,
+    };
+  }
+  return { state: 'done', detail: `${done}, ${counted(input.flightCount, 'flight', 'flights')}` };
 }
 
 export function buildSetupChecklist(input: SetupChecklistInput): ChecklistItem[] {
@@ -124,12 +156,8 @@ export function buildSetupChecklist(input: SetupChecklistInput): ChecklistItem[]
     },
     {
       key: 'sessions',
-      label: 'Create platforms & sessions',
-      state: input.sessionCount > 0 ? 'done' : 'todo',
-      detail:
-        input.sessionCount > 0
-          ? `${counted(input.sessionCount, 'session', 'sessions')} on ${counted(input.platformCount, 'platform', 'platforms')}`
-          : 'No sessions yet',
+      label: 'Build the schedule',
+      ...scheduleItem(input),
       href: `/${input.slug}/flights`,
     },
     ...(input.isTeamCompetition ? [teamsItem] : []),

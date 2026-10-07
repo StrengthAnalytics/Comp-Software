@@ -2,7 +2,6 @@
 
 import {
   memo,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -40,12 +39,10 @@ import {
   SAVED_TICK_MS,
   SaveContext,
   SaveStatus,
-  computeSaveIndicator,
+  SaveIndicatorPill,
   readError,
-  useOnline,
-  type ReportedSaveState,
+  useSaveReporting,
   type RowSaveState,
-  type SaveContextValue,
 } from '@/components/station/save-state';
 import {
   BENCH_SPOTTING_LABELS,
@@ -77,6 +74,7 @@ import type { WeighInInput } from '@/types/entry';
 import type { TeamLift } from '@/types/team';
 import { buttonClasses } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import type { SessionOption } from '@/lib/sessions/options';
 
 type EntryStatus = Database['public']['Enums']['entry_status'];
 
@@ -103,8 +101,6 @@ export type WeighInEntry = {
 };
 
 export type WeightClassOption = WeightClassBounds & { gender: Gender };
-
-export type WeighInSessionOption = { id: string; name: string };
 
 type ViewMode = 'cards' | 'table';
 // How much of each lifter to show. 'simple' is bodyweight + openers only; 'full' adds the rack/bench
@@ -1211,7 +1207,7 @@ export function WeighInManager({
   compName: string;
   isTeamCompetition: boolean;
   lifts: Lifts;
-  sessions: WeighInSessionOption[];
+  sessions: SessionOption[];
   weightClasses: WeightClassOption[];
   entries: WeighInEntry[];
   unflightedCount: number;
@@ -1226,26 +1222,7 @@ export function WeighInManager({
   const detail: DetailMode = storedDetail === 'simple' ? 'simple' : 'full';
   const showRacks = detail === 'full';
 
-  const online = useOnline();
-  // Each row reports its non-clean save state here; the page-level indicator rolls them up so the
-  // operator always knows whether autosaves are landing.
-  const [rowStates, setRowStates] = useState<Map<string, ReportedSaveState>>(() => new Map());
-  const report = useCallback((id: string, state: ReportedSaveState | null) => {
-    setRowStates((current) => {
-      const existing = current.get(id) ?? null;
-      if (existing === state) {
-        return current;
-      }
-      const next = new Map(current);
-      if (state === null) {
-        next.delete(id);
-      } else {
-        next.set(id, state);
-      }
-      return next;
-    });
-  }, []);
-  const saveContext = useMemo<SaveContextValue>(() => ({ online, report }), [online, report]);
+  const { saveContext, indicator } = useSaveReporting();
 
   // Esc leaves the full-screen view (matching the run scoresheet).
   useEffect(() => {
@@ -1316,8 +1293,6 @@ export function WeighInManager({
     );
   }
 
-  const indicator = computeSaveIndicator(online, new Set(rowStates.values()));
-
   return (
     <SaveContext.Provider value={saveContext}>
     <div className={fullScreen ? 'fixed inset-0 z-50 overflow-auto bg-white p-4' : ''}>
@@ -1343,14 +1318,7 @@ export function WeighInManager({
               ]}
             />
           </div>
-          <div
-            role="status"
-            aria-live="polite"
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${indicator.box}`}
-          >
-            <span className={`h-2 w-2 rounded-full ${indicator.dot} ${indicator.pulse ? 'animate-pulse' : ''}`} />
-            {indicator.text}
-          </div>
+          <SaveIndicatorPill indicator={indicator} />
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => globalThis.print()} className={GHOST_BUTTON}>
               Print sheet
