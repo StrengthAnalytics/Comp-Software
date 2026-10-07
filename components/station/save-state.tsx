@@ -1,6 +1,7 @@
 'use client';
 
-import { createContext } from 'react';
+import { createContext, useCallback, useMemo, useState } from 'react';
+import { useOnline } from '@/lib/use-online';
 import type { ActionResult } from '@/types/action-result';
 
 // Browser connectivity hook now lives in lib so the realtime layer can share it; re-exported here so
@@ -98,4 +99,42 @@ export function computeSaveIndicator(online: boolean, states: Set<ReportedSaveSt
     box: 'border-green-300 bg-green-50 text-green-800',
     pulse: false,
   };
+}
+
+// The page side of the row→page reporting channel: collects each row's non-clean save state, hands the
+// rows a SaveContext value, and rolls the states up into the toolbar indicator.
+export function useSaveReporting() {
+  const online = useOnline();
+  const [rowStates, setRowStates] = useState<Map<string, ReportedSaveState>>(() => new Map());
+  const report = useCallback((id: string, state: ReportedSaveState | null) => {
+    setRowStates((current) => {
+      if ((current.get(id) ?? null) === state) {
+        return current;
+      }
+      const next = new Map(current);
+      if (state === null) {
+        next.delete(id);
+      } else {
+        next.set(id, state);
+      }
+      return next;
+    });
+  }, []);
+  const saveContext = useMemo<SaveContextValue>(() => ({ online, report }), [online, report]);
+  const indicator = computeSaveIndicator(online, new Set(rowStates.values()));
+  return { online, saveContext, indicator };
+}
+
+// The toolbar pill showing the rolled-up connectivity and save state.
+export function SaveIndicatorPill({ indicator }: { indicator: SaveIndicator }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${indicator.box}`}
+    >
+      <span className={`h-2 w-2 rounded-full ${indicator.dot} ${indicator.pulse ? 'animate-pulse' : ''}`} />
+      {indicator.text}
+    </div>
+  );
 }

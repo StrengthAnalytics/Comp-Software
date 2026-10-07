@@ -1,7 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { buildScheduleAction } from '@/actions/schedule';
 import {
   DEFAULT_SESSIONS_PER_DAY,
@@ -16,11 +15,12 @@ import {
   compDays,
   flightNames,
   lifterPerFlightEstimate,
-  longDayLabel,
   withLiftOff,
   type ScheduleDraftRow,
 } from '@/lib/sessions/schedule';
-import { readError } from '@/components/station/save-state';
+import { longDayLabel } from '@/lib/dates';
+import { useAction } from '@/components/flights/use-action';
+import { GHOST_BUTTON, INPUT_CLASS, PRIMARY_BUTTON } from '@/components/station/styles';
 import { buttonClasses } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
@@ -30,11 +30,6 @@ import { Card } from '@/components/ui/card';
 // afterwards on that same screen.
 
 const STEPS = ['Platforms', 'Sessions', 'Times', 'Check'] as const;
-
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
-const PRIMARY_BUTTON = buttonClasses('primary');
-const SECONDARY_BUTTON = buttonClasses('secondary');
 
 function Stepper({ step }: { step: number }) {
   return (
@@ -115,7 +110,6 @@ export function ScheduleBuilder({
   existingPlatformNames: string[];
   onSkip: () => void;
 }) {
-  const router = useRouter();
   const days = useMemo(() => compDays(startsOn, endsOn), [startsOn, endsOn]);
 
   const [step, setStep] = useState(0);
@@ -123,13 +117,12 @@ export function ScheduleBuilder({
   // counts[dayIndex][platformIndex] — how many sessions that platform runs that day.
   const [counts, setCounts] = useState<number[][]>(() => days.map(() => [DEFAULT_SESSIONS_PER_DAY]));
   const [rows, setRows] = useState<ScheduleDraftRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const { run, error, pending } = useAction();
 
   const platformNames = builderPlatformNames(existingPlatformNames, platformCount);
   const platformName = (index: number) => platformNames[index] ?? '';
 
-  const sessionTotal = counts.reduce((total, perDay) => total + perDay.slice(0, platformCount).reduce((a, b) => a + b, 0), 0);
+  const sessionTotal = counts.reduce((total, perDay) => total + perDay.reduce((a, b) => a + b, 0), 0);
   const flightTotal = rows.reduce((total, row) => total + row.flightCount, 0);
   const perFlight = lifterPerFlightEstimate(entryCount, flightTotal);
 
@@ -156,9 +149,8 @@ export function ScheduleBuilder({
   }
 
   function create() {
-    setError(null);
-    startTransition(async () => {
-      const result = await buildScheduleAction({
+    run(() =>
+      buildScheduleAction({
         competitionId,
         platforms: platformNames,
         sessions: rows.map((row) => ({
@@ -169,13 +161,8 @@ export function ScheduleBuilder({
           weighInTime: row.weighInTime === '' ? null : row.weighInTime,
           flightCount: row.flightCount,
         })),
-      });
-      if (result.status === 'error') {
-        setError(readError(result));
-        return;
-      }
-      router.refresh();
-    });
+      }),
+    );
   }
 
   if (days.length === 0) {
@@ -312,11 +299,7 @@ export function ScheduleBuilder({
                           aria-label={`Weigh-in time — ${row.name}, ${longDayLabel(row.date)}`}
                           value={row.weighInTime}
                           onChange={(event) =>
-                            updateRow(row.key, (current) => ({
-                              ...current,
-                              weighInTime: event.target.value,
-                              weighInEdited: true,
-                            }))
+                            updateRow(row.key, (current) => ({ ...current, weighInTime: event.target.value }))
                           }
                           className={INPUT_CLASS}
                         />
@@ -406,7 +389,7 @@ export function ScheduleBuilder({
               type="button"
               onClick={() => setStep((current) => Math.max(0, current - 1))}
               disabled={step === 0 || pending}
-              className={SECONDARY_BUTTON}
+              className={GHOST_BUTTON}
             >
               Back
             </button>
@@ -415,14 +398,14 @@ export function ScheduleBuilder({
             </button>
           </div>
           {step === STEPS.length - 1 ? (
-            <button type="button" onClick={create} disabled={pending || rows.length === 0} className={PRIMARY_BUTTON}>
+            <button type="button" onClick={create} disabled={pending} className={PRIMARY_BUTTON}>
               {pending ? 'Creating…' : 'Create schedule'}
             </button>
           ) : (
             <button
               type="button"
               onClick={() => (step === 1 ? goToTimes() : setStep((current) => current + 1))}
-              disabled={(step === 1 && sessionTotal === 0) || (step === 2 && rows.length === 0)}
+              disabled={step === 1 && sessionTotal === 0}
               className={PRIMARY_BUTTON}
             >
               Next

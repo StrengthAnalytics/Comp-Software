@@ -1,5 +1,5 @@
-// Row shapes shared by the Sessions & flights screen's parts (the schedule editor, the guided
-// builder and the roster board), so the page builds them once and every part reads the same type.
+// Row shapes shared by the Sessions & flights screen's parts (the schedule editor, the team
+// board and the roster board), so the page builds them once and every part reads the same type.
 
 export type PlatformOption = { id: string; name: string };
 

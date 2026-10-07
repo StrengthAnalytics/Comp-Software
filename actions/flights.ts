@@ -91,11 +91,15 @@ export async function updateFlightAction(input: { id: string; name: string }): P
   });
 }
 
-// Moves a flight one place earlier or later in its session by swapping sort_order with the
-// neighbouring flight (the flights' running order). Re-numbers the session's flights 0..n-1 first, so
-// legacy duplicate or gapped sort orders can't make the swap a no-op. Moving the first flight up or
-// the last one down does nothing.
-export async function moveFlightAction(input: { id: string; direction: 'up' | 'down' }): Promise<ActionResult> {
+// Moves a flight one place earlier or later in its session by swapping places with the neighbouring
+// flight (the flights' running order). Re-numbers the session's flights 0..n-1 as it goes, so legacy
+// duplicate or gapped sort orders can't make the swap a no-op. Moving the first flight up or the last
+// one down does nothing.
+export async function moveFlightAction(input: {
+  id: string;
+  sessionId: string;
+  direction: 'up' | 'down';
+}): Promise<ActionResult> {
   return Sentry.withServerActionInstrumentation('moveFlight', async () => {
     const guard = await adminGuard();
     if (guard) return guard;
@@ -106,23 +110,10 @@ export async function moveFlightAction(input: { id: string; direction: 'up' | 'd
     }
 
     const supabase = await createClient();
-    const { data: flight, error: flightError } = await supabase
-      .from('flights')
-      .select('session_id')
-      .eq('id', parsed.data.id)
-      .maybeSingle();
-    if (flightError) {
-      Sentry.captureException(flightError);
-      return fail('Could not move the flight. Please try again.');
-    }
-    if (!flight) {
-      return fail('Could not find that flight.');
-    }
-
     const { data: siblings, error: siblingsError } = await supabase
       .from('flights')
       .select('id, sort_order, created_at')
-      .eq('session_id', flight.session_id);
+      .eq('session_id', parsed.data.sessionId);
     if (siblingsError) {
       Sentry.captureException(siblingsError);
       return fail('Could not move the flight. Please try again.');
@@ -132,19 +123,18 @@ export async function moveFlightAction(input: { id: string; direction: 'up' | 'd
       (a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
     );
     const index = ordered.findIndex((row) => row.id === parsed.data.id);
+    if (index === -1) {
+      return fail('Could not find that flight.');
+    }
     const target = parsed.data.direction === 'up' ? index - 1 : index + 1;
-    if (index === -1 || target < 0 || target >= ordered.length) {
+    if (target < 0 || target >= ordered.length) {
       return ok();
     }
-    const reordered = ordered.map((row) => row.id);
-    reordered[index] = ordered[target].id;
-    reordered[target] = ordered[index].id;
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
 
     const results = await Promise.all(
-      reordered.flatMap((id, position) =>
-        ordered.find((row) => row.id === id)?.sort_order === position
-          ? []
-          : [supabase.from('flights').update({ sort_order: position }).eq('id', id)],
+      ordered.flatMap((row, position) =>
+        row.sort_order === position ? [] : [supabase.from('flights').update({ sort_order: position }).eq('id', row.id)],
       ),
     );
     const updateError = results.find((result) => result.error)?.error;

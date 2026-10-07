@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { syncRotaWithSessions } from '@/lib/rota/sync';
-import { compDays, flightNames, orderSessionsChronologically } from '@/lib/sessions/schedule';
+import { compDays, flightRowsFor, orderSessionsChronologically } from '@/lib/sessions/schedule';
 import { buildScheduleSchema, type BuildScheduleInput } from '@/types/schedule';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
@@ -75,91 +75,62 @@ export async function buildScheduleAction(
     // one-platform meet never adds a platform: it uses the comp's existing one if it has any, else the
     // single default platform (no row), as hand-built sessions do.
     const existingPlatforms = existingPlatformsResult.data ?? [];
-    const platformIds: (string | null)[] = [];
+    const platformIdByName = new Map(existingPlatforms.map((platform) => [platform.name.trim().toLowerCase(), platform.id]));
+    const missing = platforms.length === 1 ? [] : platforms.filter((name) => !platformIdByName.has(name.toLowerCase()));
     const createdPlatformIds: string[] = [];
-    for (const name of platforms) {
-      const existing = existingPlatforms.find((platform) => platform.name.trim().toLowerCase() === name.toLowerCase());
-      if (existing) {
-        platformIds.push(existing.id);
-        continue;
-      }
-      if (platforms.length === 1) {
-        platformIds.push(existingPlatforms[0]?.id ?? null);
-        continue;
-      }
+    if (missing.length > 0) {
       const { data: created, error } = await supabase
         .from('platforms')
-        .insert({ competition_id: competitionId, name })
-        .select('id')
-        .single();
+        .insert(missing.map((name) => ({ competition_id: competitionId, name })))
+        .select('id, name');
       if (error || !created) {
         Sentry.captureException(error);
-        await undoBuild(supabase, [], createdPlatformIds);
         return fail(BUILD_FAILED);
       }
-      createdPlatformIds.push(created.id);
-      platformIds.push(created.id);
+      for (const platform of created) {
+        createdPlatformIds.push(platform.id);
+        platformIdByName.set(platform.name.toLowerCase(), platform.id);
+      }
     }
-
-    // Number the sessions in time order; the index into `sessions` stands in for an id until insert.
+    // Every name now has an id, except a one-platform meet's, which falls back as described above.
+    const platformIds = platforms.map((name) => platformIdByName.get(name.toLowerCase()) ?? existingPlatforms[0]?.id ?? null);
     const platformNamesById = new Map(
       platformIds.flatMap((id, index) => (id ? [[id, platforms[index]] as const] : [])),
     );
+
+    // Each session gets its id up front so its flights can reference it, and its sort_order from the
+    // clock.
     const ordered = orderSessionsChronologically(
-      sessions.map((session, index) => ({
-        id: String(index).padStart(4, '0'),
-        index,
-        name: session.name,
+      sessions.map((session) => ({
+        ...session,
+        id: crypto.randomUUID(),
         session_date: session.date,
         lift_off_time: session.liftOffTime,
         platform_id: platformIds[session.platformIndex] ?? null,
       })),
       platformNamesById,
     );
+    const sessionIds = ordered.map((session) => session.id);
 
-    const { data: insertedSessions, error: sessionsError } = await supabase
-      .from('sessions')
-      .insert(
-        ordered.map((row, sortOrder) => {
-          const session = sessions[row.index];
-          return {
-            competition_id: competitionId,
-            name: session.name,
-            session_date: session.date,
-            weigh_in_time: session.weighInTime,
-            lift_off_time: session.liftOffTime,
-            platform_id: row.platform_id,
-            sort_order: sortOrder,
-          };
-        }),
-      )
-      .select('id, sort_order');
-    if (sessionsError || !insertedSessions || insertedSessions.length !== ordered.length) {
-      Sentry.captureException(sessionsError ?? new Error('Schedule build inserted an unexpected number of sessions.'));
-      await undoBuild(
-        supabase,
-        (insertedSessions ?? []).map((row) => row.id),
-        createdPlatformIds,
-      );
+    const { error: sessionsError } = await supabase.from('sessions').insert(
+      ordered.map((session, sortOrder) => ({
+        id: session.id,
+        competition_id: competitionId,
+        name: session.name,
+        session_date: session.date,
+        weigh_in_time: session.weighInTime,
+        lift_off_time: session.liftOffTime,
+        platform_id: session.platform_id,
+        sort_order: sortOrder,
+      })),
+    );
+    if (sessionsError) {
+      Sentry.captureException(sessionsError);
+      await undoBuild(supabase, [], createdPlatformIds);
       return fail(BUILD_FAILED);
     }
 
-    // sort_order is unique within this build, so it maps each inserted row back to its draft session.
-    const sessionIdBySortOrder = new Map(insertedSessions.map((row) => [row.sort_order, row.id]));
-    const sessionIds = insertedSessions.map((row) => row.id);
-    const flights = ordered.flatMap((row, sortOrder) => {
-      const sessionId = sessionIdBySortOrder.get(sortOrder);
-      if (!sessionId) {
-        return [];
-      }
-      return flightNames(sessions[row.index].flightCount).map((name, flightOrder) => ({
-        competition_id: competitionId,
-        session_id: sessionId,
-        name,
-        sort_order: flightOrder,
-      }));
-    });
-
+    const flights = ordered.flatMap((session) => flightRowsFor(competitionId, session.id, session.flightCount));
     const { error: flightsError } = await supabase.from('flights').insert(flights);
     if (flightsError) {
       Sentry.captureException(flightsError);

@@ -6,7 +6,7 @@ import {
   MAX_SCHEDULE_DAYS,
   WEIGH_IN_LEAD_MINUTES,
 } from '@/lib/constants';
-import { isRealIsoDate } from '@/lib/dates';
+import { daysBetweenIsoDates, isRealIsoDate, shortDayLabel } from '@/lib/dates';
 
 // The rules behind the Sessions & flights screen's guided schedule builder and its quick edits:
 // the comp's days, suggested lift-off and weigh-in times, default session and flight names, the
@@ -44,6 +44,16 @@ export function weighInForLiftOff(liftOff: string | null): string | null {
   return minutes === null ? null : minutesToTime(minutes - WEIGH_IN_LEAD_MINUTES);
 }
 
+// The weigh-in time to keep after a lift-off change from `oldLiftOff` to `newLiftOff`: it follows the
+// lift-off while it is empty or still the time worked out from the old lift-off; a time set by hand
+// is left alone.
+export function followWeighIn(weighIn: string, oldLiftOff: string, newLiftOff: string): string {
+  if (weighIn !== '' && weighIn !== weighInForLiftOff(oldLiftOff)) {
+    return weighIn;
+  }
+  return weighInForLiftOff(newLiftOff) ?? weighIn;
+}
+
 // Suggested lift-off times for a platform running `count` sessions in a day.
 export function defaultLiftOffTimes(count: number): string[] {
   if (count <= 0) {
@@ -63,71 +73,60 @@ export function compDays(startsOn: string | null, endsOn: string | null): string
   if (!startsOn || !isRealIsoDate(startsOn)) {
     return [];
   }
+  const span = Math.max(0, (endsOn ? daysBetweenIsoDates(startsOn, endsOn) : null) ?? 0);
   const start = Date.parse(`${startsOn}T00:00:00Z`);
-  const end = endsOn && isRealIsoDate(endsOn) ? Date.parse(`${endsOn}T00:00:00Z`) : start;
-  const span = Math.max(0, Math.round((end - start) / MS_PER_DAY));
-  const count = Math.min(span + 1, MAX_SCHEDULE_DAYS);
-  return Array.from({ length: count }, (_, index) => new Date(start + index * MS_PER_DAY).toISOString().slice(0, 10));
+  return Array.from({ length: Math.min(span + 1, MAX_SCHEDULE_DAYS) }, (_, index) =>
+    new Date(start + index * MS_PER_DAY).toISOString().slice(0, 10),
+  );
 }
 
-// "2026-07-11" → "Sat"; null for anything that isn't a real date.
-export function shortDayLabel(date: string | null): string | null {
-  if (!date || !isRealIsoDate(date)) {
-    return null;
-  }
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
-}
-
-// "2026-07-11" → "Saturday 11 July"; null for anything that isn't a real date.
-export function longDayLabel(date: string | null): string | null {
-  if (!date || !isRealIsoDate(date)) {
-    return null;
-  }
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'UTC',
-  });
-}
-
-// Flights are lettered: index 0 → "Flight A". Past Z (never reached in practice) they are numbered.
+// Default names. Flights and platforms are lettered ("Flight A", "Platform B"; numbered past Z,
+// never reached in practice); sessions are numbered per day and platform ("Session 1").
 const LETTER_COUNT = 26;
 const FIRST_LETTER = 'A'.codePointAt(0) ?? 0;
-export function flightName(index: number): string {
-  return index < LETTER_COUNT ? `Flight ${String.fromCodePoint(FIRST_LETTER + index)}` : `Flight ${index + 1}`;
+
+function lettered(prefix: string, index: number): string {
+  return index < LETTER_COUNT ? `${prefix} ${String.fromCodePoint(FIRST_LETTER + index)}` : `${prefix} ${index + 1}`;
+}
+
+const flightName = (index: number) => lettered('Flight', index);
+const platformName = (index: number) => lettered('Platform', index);
+const sessionName = (index: number) => `Session ${index + 1}`;
+
+// The first of nameAt(0), nameAt(1), … that `existing` doesn't already use, ignoring case.
+function firstUnused(existing: readonly string[], nameAt: (index: number) => string): string {
+  const taken = new Set(existing.map((name) => name.trim().toLowerCase()));
+  for (let index = 0; ; index++) {
+    const candidate = nameAt(index);
+    if (!taken.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
 }
 
 export function flightNames(count: number): string[] {
   return Array.from({ length: Math.max(0, count) }, (_, index) => flightName(index));
 }
 
+// The lettered flight rows a new session starts with, ready to insert.
+export function flightRowsFor(competitionId: string, sessionId: string, count: number) {
+  return flightNames(count).map((name, sortOrder) => ({
+    competition_id: competitionId,
+    session_id: sessionId,
+    name,
+    sort_order: sortOrder,
+  }));
+}
+
 // The first "Flight X" a session doesn't already have, so "+ Add flight" never collides with the
 // one-name-per-session rule.
 export function nextFlightName(existing: readonly string[]): string {
-  const taken = new Set(existing.map((name) => name.trim().toLowerCase()));
-  for (let index = 0; ; index++) {
-    const candidate = flightName(index);
-    if (!taken.has(candidate.toLowerCase())) {
-      return candidate;
-    }
-  }
-}
-
-// Platforms are lettered: "Platform A", "Platform B", …
-export function platformName(index: number): string {
-  return index < LETTER_COUNT ? `Platform ${String.fromCodePoint(FIRST_LETTER + index)}` : `Platform ${index + 1}`;
+  return firstUnused(existing, flightName);
 }
 
 // The first "Platform X" the comp doesn't already have.
 export function nextPlatformName(existing: readonly string[]): string {
-  const taken = new Set(existing.map((name) => name.trim().toLowerCase()));
-  for (let index = 0; ; index++) {
-    const candidate = platformName(index);
-    if (!taken.has(candidate.toLowerCase())) {
-      return candidate;
-    }
-  }
+  return firstUnused(existing, platformName);
 }
 
 // The names the guided builder uses for `count` platforms: the comp's existing platforms first (so
@@ -140,20 +139,9 @@ export function builderPlatformNames(existing: readonly string[], count: number)
   return names;
 }
 
-// Sessions are numbered per day (and per platform): "Session 1", "Session 2", …
-export function sessionName(index: number): string {
-  return `Session ${index + 1}`;
-}
-
 // The first "Session N" not already used on that day/platform.
 export function nextSessionName(existing: readonly string[]): string {
-  const taken = new Set(existing.map((name) => name.trim().toLowerCase()));
-  for (let index = 0; ; index++) {
-    const candidate = sessionName(index);
-    if (!taken.has(candidate.toLowerCase())) {
-      return candidate;
-    }
-  }
+  return firstUnused(existing, sessionName);
 }
 
 // ----- Guided builder draft ---------------------------------------------------------------------
@@ -167,12 +155,10 @@ export type ScheduleDraftRow = {
   name: string;
   liftOffTime: string;
   weighInTime: string;
-  // True once the operator types their own weigh-in time; until then it follows the lift-off time.
-  weighInEdited: boolean;
   flightCount: number;
 };
 
-export function draftRowKey(date: string, platformIndex: number, position: number): string {
+function draftRowKey(date: string, platformIndex: number, position: number): string {
   return `${date}|${platformIndex}|${position}`;
 }
 
@@ -205,7 +191,6 @@ export function buildDraftRows(
           name: sessionName(position),
           liftOffTime,
           weighInTime: weighInForLiftOff(liftOffTime) ?? '',
-          weighInEdited: false,
           flightCount: DEFAULT_FLIGHTS_PER_SESSION,
         });
       }
@@ -216,11 +201,7 @@ export function buildDraftRows(
 
 // A new lift-off time for a draft row; the weigh-in follows it unless the operator set their own.
 export function withLiftOff(row: ScheduleDraftRow, liftOffTime: string): ScheduleDraftRow {
-  return {
-    ...row,
-    liftOffTime,
-    weighInTime: row.weighInEdited ? row.weighInTime : (weighInForLiftOff(liftOffTime) ?? row.weighInTime),
-  };
+  return { ...row, liftOffTime, weighInTime: followWeighIn(row.weighInTime, row.liftOffTime, liftOffTime) };
 }
 
 // Roughly how many lifters each flight would hold — the builder's sanity hint. Null with no flights.
@@ -233,7 +214,7 @@ export function lifterPerFlightEstimate(entryCount: number, flightCount: number)
 
 // ----- Order and labels -------------------------------------------------------------------------
 
-export type ChronologicalSession = {
+type ChronologicalSession = {
   id: string;
   name: string;
   session_date: string | null;
@@ -288,7 +269,7 @@ export function sessionSortOrderUpdates<T extends ChronologicalSession & { sort_
   );
 }
 
-export type LabelledSession = {
+type LabelledSession = {
   id: string;
   name: string;
   session_date: string | null;

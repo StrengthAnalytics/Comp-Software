@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { MAX_FLIGHTS_PER_SESSION } from '@/lib/constants';
 
 // Blank string → null so optional date/time fields clear cleanly when the operator empties them.
-export const optionalDate = z.preprocess(
+const optionalDate = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
   z
     .string()
@@ -70,6 +70,7 @@ export const flightUpdateSchema = z.object({
 // Moves a flight one place earlier or later within its session (swapping with its neighbour).
 export const moveFlightSchema = z.object({
   id: z.uuid(),
+  sessionId: z.uuid(),
   direction: z.enum(['up', 'down']),
 });
 

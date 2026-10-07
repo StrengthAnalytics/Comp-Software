@@ -8,7 +8,7 @@ import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { findRotaColumnForSession, retireRotaColumn, syncRotaWithSessions } from '@/lib/rota/sync';
 import { resequenceSessions } from '@/lib/sessions/sequence';
-import { flightNames } from '@/lib/sessions/schedule';
+import { flightRowsFor } from '@/lib/sessions/schedule';
 import { sessionInputSchema, sessionUpdateSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
@@ -115,25 +115,19 @@ export async function createSessionAction(input: {
       return error ? mapSessionWriteError(error) : fail('Could not save the session. Please try again.');
     }
 
-    // A session is created with its flights, so the operator never has to name "Flight A" by hand.
-    if (parsed.data.flightCount > 0) {
-      const { error: flightsError } = await supabase.from('flights').insert(
-        flightNames(parsed.data.flightCount).map((flightName, sortOrder) => ({
-          competition_id: parsed.data.competitionId,
-          session_id: created.id,
-          name: flightName,
-          sort_order: sortOrder,
-        })),
-      );
-      if (flightsError) {
-        // The session itself saved; a failed flight insert is logged and the operator can add flights
-        // on the session that is now on screen.
-        Sentry.captureException(flightsError);
-      }
+    // A session is created with its flights, so the operator never has to name "Flight A" by hand, and a
+    // rota built from the sessions gets a column for the new one too. Neither depends on the other.
+    const [flightsResult] = await Promise.all([
+      parsed.data.flightCount > 0
+        ? supabase.from('flights').insert(flightRowsFor(parsed.data.competitionId, created.id, parsed.data.flightCount))
+        : null,
+      followSessionsInRota(supabase, parsed.data.competitionId, { addColumnFor: [created.id] }),
+    ]);
+    if (flightsResult?.error) {
+      // The session itself saved; a failed flight insert is logged and the operator can add flights on
+      // the session that is now on screen.
+      Sentry.captureException(flightsResult.error);
     }
-
-    // A rota built from the sessions gets a column for the new one too.
-    await followSessionsInRota(supabase, parsed.data.competitionId, { addColumnFor: [created.id] });
 
     return ok();
   });

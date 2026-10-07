@@ -120,11 +120,7 @@ export default async function ChecklistPage({
     countOf('platforms'),
     countOf('sessions'),
     countOf('flights'),
-    supabase
-      .from('sessions')
-      .select('id', { count: 'exact', head: true })
-      .eq('competition_id', comp.id)
-      .is('lift_off_time', null),
+    countOf('sessions').is('lift_off_time', null),
     supabase.from('entries').select('id', { count: 'exact', head: true }).eq('competition_id', comp.id),
     supabase
       .from('entries')

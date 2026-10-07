@@ -13,13 +13,9 @@ import { buttonClasses } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import type { BoardEntry, FlightRow, PlatformOption, SessionRow } from '@/components/flights/flights-types';
 import { readError } from '@/components/station/save-state';
-
-export type { BoardEntry, FlightRow, PlatformOption, SessionRow } from '@/components/flights/flights-types';
+import { INPUT_CLASS } from '@/components/station/styles';
 
 const UNASSIGNED = 'unassigned';
-
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 
 // ----- Roster board --------------------------------------------------------------------------
 
@@ -282,7 +278,7 @@ export function FlightsManager({
           endsOn={endsOn}
           platforms={platforms}
           sessions={sessions}
-          flights={flights}
+          flightsBySession={flightsBySession}
           lifterCountByFlight={lifterCountByFlight}
         />
       )}

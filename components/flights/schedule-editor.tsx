@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback, useMemo, useState, useTransition } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createPlatformAction, deletePlatformAction, updatePlatformAction } from '@/actions/platforms';
 import { createSessionAction, deleteSessionAction, updateSessionAction } from '@/actions/sessions';
@@ -9,7 +9,7 @@ import { DEFAULT_FLIGHTS_PER_SESSION, FALLBACK_SESSION_GAP_MINUTES } from '@/lib
 import {
   compDays,
   defaultLiftOffTimes,
-  longDayLabel,
+  followWeighIn,
   minutesToTime,
   nextFlightName,
   nextPlatformName,
@@ -17,64 +17,27 @@ import {
   timeToMinutes,
   weighInForLiftOff,
 } from '@/lib/sessions/schedule';
-import {
-  computeSaveIndicator,
-  readError,
-  SaveContext,
-  SaveStatus,
-  useOnline,
-  type ReportedSaveState,
-  type SaveContextValue,
-} from '@/components/station/save-state';
+import { longDayLabel } from '@/lib/dates';
+import { SaveContext, SaveIndicatorPill, SaveStatus, useSaveReporting } from '@/components/station/save-state';
+import { INPUT_CLASS, LABEL_CLASS } from '@/components/station/styles';
 import { useStationSave } from '@/components/station/use-station-save';
+import { useAction } from '@/components/flights/use-action';
 import { buttonClasses } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import type { FlightRow, PlatformOption, SessionRow } from '@/components/flights/flights-types';
-import type { ActionResult } from '@/types/action-result';
 
 // The schedule half of the Sessions & flights screen: the comp's platforms, its sessions grouped by
 // day, and each session's flights. Every field here saves itself as it is typed (the station
 // autosave engine the weigh-in and rack-heights screens use), sessions are ordered by the clock
 // server-side, and flights are added with one click rather than typed in.
 
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
-const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
 const GHOST_BUTTON = buttonClasses('secondary', 'sm');
 
 const NO_DATE = 'no-date';
+const NO_FLIGHTS: FlightRow[] = [];
 
 function timeForInput(value: string | null): string {
   return (value ?? '').slice(0, 5);
-}
-
-// A deletion or an add is an explicit action rather than an autosaved field, so it keeps its own
-// pending state and error line.
-function useAction() {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  const run = useCallback(
-    (action: () => Promise<ActionResult<unknown>>) => {
-      setError(null);
-      startTransition(async () => {
-        try {
-          const result = await action();
-          if (result.status === 'error') {
-            setError(readError(result));
-            return;
-          }
-          router.refresh();
-        } catch {
-          setError('Couldn’t reach the server. Check your connection and try again.');
-        }
-      });
-    },
-    [router],
-  );
-
-  return { run, error, pending };
 }
 
 // ----- Platforms ---------------------------------------------------------------------------------
@@ -214,7 +177,7 @@ function FlightChip({
           type="button"
           aria-label={`Move ${flight.name} earlier`}
           disabled={isFirst || pending}
-          onClick={() => run(() => moveFlightAction({ id: flight.id, direction: 'up' }))}
+          onClick={() => run(() => moveFlightAction({ id: flight.id, sessionId: flight.session_id, direction: 'up' }))}
           className="px-1 text-neutral-500 hover:text-neutral-900 disabled:text-neutral-300"
         >
           ↑
@@ -223,7 +186,7 @@ function FlightChip({
           type="button"
           aria-label={`Move ${flight.name} later`}
           disabled={isLast || pending}
-          onClick={() => run(() => moveFlightAction({ id: flight.id, direction: 'down' }))}
+          onClick={() => run(() => moveFlightAction({ id: flight.id, sessionId: flight.session_id, direction: 'down' }))}
           className="px-1 text-neutral-500 hover:text-neutral-900 disabled:text-neutral-300"
         >
           ↓
@@ -303,7 +266,7 @@ function FlightsStrip({
 
 // ----- Sessions ----------------------------------------------------------------------------------
 
-const SessionCard = memo(function SessionCard({
+function SessionCard({
   competitionId,
   session,
   flights,
@@ -321,6 +284,7 @@ const SessionCard = memo(function SessionCard({
   const [weighInTime, setWeighInTime] = useState(timeForInput(session.weigh_in_time));
   const [liftOffTime, setLiftOffTime] = useState(timeForInput(session.lift_off_time));
   const [platformId, setPlatformId] = useState(session.platform_id ?? '');
+  const router = useRouter();
   const { run, error: actionError, pending } = useAction();
 
   const showPlatform = platforms.length > 1;
@@ -339,10 +303,19 @@ const SessionCard = memo(function SessionCard({
     initialFlag: null,
     serialized: JSON.stringify(payload),
     buildPayload: () => payload,
-    save: updateSessionAction,
-    // A session's day or time re-orders (and can regroup) the schedule server-side, so every save
-    // re-pulls the page.
-    refreshOnAutosave: true,
+    save: async (next) => {
+      const result = await updateSessionAction(next);
+      // A new day, time or platform re-orders (and can regroup) the schedule server-side, so re-pull
+      // the page; a name or weigh-in edit changes nothing else on it.
+      const moved =
+        next.sessionDate !== session.session_date ||
+        next.liftOffTime !== (timeForInput(session.lift_off_time) || null) ||
+        next.platformId !== session.platform_id;
+      if (result.status === 'ok' && moved) {
+        router.refresh();
+      }
+      return result;
+    },
   });
 
   return (
@@ -383,13 +356,8 @@ const SessionCard = memo(function SessionCard({
             type="time"
             value={liftOffTime}
             onChange={(event) => {
-              const next = event.target.value;
-              // Weigh-in follows lift-off (two hours before) while it is empty or still the time worked
-              // out from the old lift-off; a weigh-in time set by hand is left alone.
-              if (weighInTime === '' || weighInTime === weighInForLiftOff(liftOffTime)) {
-                setWeighInTime(weighInForLiftOff(next) ?? weighInTime);
-              }
-              setLiftOffTime(next);
+              setWeighInTime(followWeighIn(weighInTime, liftOffTime, event.target.value));
+              setLiftOffTime(event.target.value);
             }}
             onBlur={save.flushSave}
             className={INPUT_CLASS}
@@ -440,7 +408,7 @@ const SessionCard = memo(function SessionCard({
       />
     </section>
   );
-});
+}
 
 // The lift-off a new session on this day should suggest: a gap after the day's last session, or the
 // usual first lift-off when the day is empty.
@@ -507,7 +475,7 @@ export function ScheduleEditor({
   endsOn,
   platforms,
   sessions,
-  flights,
+  flightsBySession,
   lifterCountByFlight,
 }: {
   competitionId: string;
@@ -515,37 +483,13 @@ export function ScheduleEditor({
   endsOn: string | null;
   platforms: PlatformOption[];
   sessions: SessionRow[];
-  flights: FlightRow[];
+  // Each session's flights in running order.
+  flightsBySession: Map<string, FlightRow[]>;
   lifterCountByFlight: Map<string, number>;
 }) {
-  const online = useOnline();
-  // Each row reports its non-clean save state here; the header indicator rolls them up, exactly as
-  // the weigh-in and rack-heights screens do.
-  const [rowStates, setRowStates] = useState<Map<string, ReportedSaveState>>(() => new Map());
-  const report = useCallback((id: string, state: ReportedSaveState | null) => {
-    setRowStates((current) => {
-      if ((current.get(id) ?? null) === state) {
-        return current;
-      }
-      const next = new Map(current);
-      if (state === null) {
-        next.delete(id);
-      } else {
-        next.set(id, state);
-      }
-      return next;
-    });
-  }, []);
-  const saveContext = useMemo<SaveContextValue>(() => ({ online, report }), [online, report]);
-  const indicator = computeSaveIndicator(online, new Set(rowStates.values()));
-
-  const flightsBySession = useMemo(() => {
-    const map = new Map<string, FlightRow[]>();
-    for (const flight of flights.toSorted((a, b) => a.sort_order - b.sort_order)) {
-      map.set(flight.session_id, [...(map.get(flight.session_id) ?? []), flight]);
-    }
-    return map;
-  }, [flights]);
+  // Each row reports its non-clean save state; the header indicator rolls them up, exactly as the
+  // weigh-in and rack-heights screens do.
+  const { saveContext, indicator } = useSaveReporting();
 
   // One group per comp day (in date order), plus any session whose date is unset or outside the comp.
   const groups = useMemo(() => {
@@ -568,14 +512,7 @@ export function ScheduleEditor({
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-tight">Schedule</h2>
-          <div
-            role="status"
-            aria-live="polite"
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${indicator.box}`}
-          >
-            <span className={`h-2 w-2 rounded-full ${indicator.dot} ${indicator.pulse ? 'animate-pulse' : ''}`} />
-            {indicator.text}
-          </div>
+          <SaveIndicatorPill indicator={indicator} />
         </div>
 
         <PlatformsCard competitionId={competitionId} platforms={platforms} />
@@ -590,7 +527,7 @@ export function ScheduleEditor({
                 key={session.id}
                 competitionId={competitionId}
                 session={session}
-                flights={flightsBySession.get(session.id) ?? []}
+                flights={flightsBySession.get(session.id) ?? NO_FLIGHTS}
                 platforms={platforms}
                 lifterCountByFlight={lifterCountByFlight}
               />

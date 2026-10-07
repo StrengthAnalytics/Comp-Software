@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { longDayLabel, shortDayLabel } from '@/lib/dates';
 import {
   buildDraftRows,
   builderPlatformNames,
@@ -6,7 +7,6 @@ import {
   defaultLiftOffTimes,
   flightNames,
   lifterPerFlightEstimate,
-  longDayLabel,
   minutesToTime,
   nextFlightName,
   nextPlatformName,
@@ -14,7 +14,6 @@ import {
   orderSessionsChronologically,
   sessionDisplayLabels,
   sessionSortOrderUpdates,
-  shortDayLabel,
   timeToMinutes,
   weighInForLiftOff,
   withLiftOff,
@@ -133,8 +132,10 @@ describe('the builder draft', () => {
   it('moves the weigh-in with the lift-off until the operator sets their own', () => {
     const [row] = buildDraftRows(['2026-07-11'], 1, [[1]]);
     expect(withLiftOff(row, '11:00').weighInTime).toBe('09:00');
-    const ownTime = { ...row, weighInTime: '06:00', weighInEdited: true };
+    const ownTime = { ...row, weighInTime: '06:00' };
     expect(withLiftOff(ownTime, '11:00').weighInTime).toBe('06:00');
+    const emptied = { ...row, weighInTime: '' };
+    expect(withLiftOff(emptied, '11:00').weighInTime).toBe('09:00');
   });
 
   it('estimates lifters per flight', () => {

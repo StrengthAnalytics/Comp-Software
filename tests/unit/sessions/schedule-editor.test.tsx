@@ -69,7 +69,7 @@ function renderEditor(overrides: Partial<Parameters<typeof ScheduleEditor>[0]> =
       endsOn="2026-07-11"
       platforms={[]}
       sessions={[session]}
-      flights={flights}
+      flightsBySession={new Map([['session-1', flights]])}
       lifterCountByFlight={new Map([['flight-a', 11]])}
       {...overrides}
     />,
@@ -89,6 +89,16 @@ describe('ScheduleEditor', () => {
       expect.objectContaining({ id: 'session-1', competitionId: COMP_ID, name: 'Women' }),
     );
     await waitFor(() => expect(screen.getByText('Saved ✓')).toBeTruthy());
+    // A rename changes nothing else on the page, so it doesn't re-pull it.
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it('re-pulls the page after a time change, which can re-order the sessions', async () => {
+    renderEditor();
+    const liftOff = screen.getByLabelText('Lifting starts at');
+    fireEvent.change(liftOff, { target: { value: '15:00' } });
+    fireEvent.blur(liftOff);
+    await waitFor(() => expect(refreshMock).toHaveBeenCalledTimes(1));
   });
 
   it('fills the weigh-in time in two hours before a newly set lift-off', async () => {
@@ -132,7 +142,7 @@ describe('ScheduleEditor', () => {
     expect(screen.getByLabelText<HTMLButtonElement>('Move Flight A earlier').disabled).toBe(true);
 
     fireEvent.click(screen.getByLabelText('Move Flight A later'));
-    await waitFor(() => expect(moveFlight).toHaveBeenCalledWith({ id: 'flight-a', direction: 'down' }));
+    await waitFor(() => expect(moveFlight).toHaveBeenCalledWith({ id: 'flight-a', sessionId: 'session-1', direction: 'down' }));
   });
 
   it('adds a session already dated, timed and with its flights', async () => {
