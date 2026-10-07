@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createPlatformAction, deletePlatformAction, updatePlatformAction } from '@/actions/platforms';
 import { createSessionAction, deleteSessionAction, updateSessionAction } from '@/actions/sessions';
@@ -246,7 +246,8 @@ function FlightsStrip({
                 competitionId,
                 sessionId,
                 name: nextFlightName(flights.map((flight) => flight.name)),
-                sortOrder: flights.length,
+                // After the last flight, even if a deletion left a gap in the numbering.
+                sortOrder: Math.max(-1, ...flights.map((flight) => flight.sort_order)) + 1,
               }),
             )
           }
@@ -280,10 +281,17 @@ function SessionCard({
   lifterCountByFlight: Map<string, number>;
 }) {
   const [name, setName] = useState(session.name);
-  const [sessionDate, setSessionDate] = useState(session.session_date ?? '');
-  const [weighInTime, setWeighInTime] = useState(timeForInput(session.weigh_in_time));
-  const [liftOffTime, setLiftOffTime] = useState(timeForInput(session.lift_off_time));
   const [platformId, setPlatformId] = useState(session.platform_id ?? '');
+  // The date and time boxes are drafts that reach the autosave only when the operator leaves the box:
+  // typed a digit at a time they pass through real but wrong values (year 0002, 01:30) that would
+  // otherwise be saved and re-sort the schedule mid-typing.
+  const [timing, setTiming] = useState(() => ({
+    sessionDate: session.session_date ?? '',
+    weighInTime: timeForInput(session.weigh_in_time),
+    liftOffTime: timeForInput(session.lift_off_time),
+  }));
+  const [draft, setDraft] = useState(timing);
+  const flushAfterCommit = useRef(false);
   const router = useRouter();
   const { run, error: actionError, pending } = useAction();
 
@@ -292,9 +300,9 @@ function SessionCard({
     id: session.id,
     competitionId,
     name: name.trim(),
-    sessionDate: sessionDate.trim() || null,
-    weighInTime: weighInTime.trim() || null,
-    liftOffTime: liftOffTime.trim() || null,
+    sessionDate: timing.sessionDate.trim() || null,
+    weighInTime: timing.weighInTime.trim() || null,
+    liftOffTime: timing.liftOffTime.trim() || null,
     platformId: platformId === '' ? null : platformId,
   };
 
@@ -318,6 +326,19 @@ function SessionCard({
     },
   });
 
+  // Leaving a date or time box commits the drafts and saves them straight away (once the commit has
+  // rendered, so the save sees the new values).
+  function commitTiming() {
+    setTiming(draft);
+    flushAfterCommit.current = true;
+  }
+  useEffect(() => {
+    if (flushAfterCommit.current) {
+      flushAfterCommit.current = false;
+      save.flushSave();
+    }
+  });
+
   return (
     <section className="rounded-lg border border-neutral-200 bg-white p-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -334,9 +355,9 @@ function SessionCard({
           <span className={LABEL_CLASS}>Date</span>
           <input
             type="date"
-            value={sessionDate}
-            onChange={(event) => setSessionDate(event.target.value)}
-            onBlur={save.flushSave}
+            value={draft.sessionDate}
+            onChange={(event) => setDraft({ ...draft, sessionDate: event.target.value })}
+            onBlur={commitTiming}
             className={INPUT_CLASS}
           />
         </label>
@@ -344,9 +365,9 @@ function SessionCard({
           <span className={LABEL_CLASS}>Weigh-ins open at</span>
           <input
             type="time"
-            value={weighInTime}
-            onChange={(event) => setWeighInTime(event.target.value)}
-            onBlur={save.flushSave}
+            value={draft.weighInTime}
+            onChange={(event) => setDraft({ ...draft, weighInTime: event.target.value })}
+            onBlur={commitTiming}
             className={INPUT_CLASS}
           />
         </label>
@@ -354,12 +375,15 @@ function SessionCard({
           <span className={LABEL_CLASS}>Lifting starts at</span>
           <input
             type="time"
-            value={liftOffTime}
-            onChange={(event) => {
-              setWeighInTime(followWeighIn(weighInTime, liftOffTime, event.target.value));
-              setLiftOffTime(event.target.value);
-            }}
-            onBlur={save.flushSave}
+            value={draft.liftOffTime}
+            onChange={(event) =>
+              setDraft({
+                ...draft,
+                liftOffTime: event.target.value,
+                weighInTime: followWeighIn(draft.weighInTime, draft.liftOffTime, event.target.value),
+              })
+            }
+            onBlur={commitTiming}
             className={INPUT_CLASS}
           />
         </label>
@@ -524,7 +548,9 @@ export function ScheduleEditor({
             </h3>
             {group.sessions.map((session) => (
               <SessionCard
-                key={session.id}
+                // Re-mounts the card when the server changes its platform (a platform deleted), so the
+                // card never keeps saving a platform that no longer exists.
+                key={`${session.id}:${session.platform_id ?? ''}`}
                 competitionId={competitionId}
                 session={session}
                 flights={flightsBySession.get(session.id) ?? NO_FLIGHTS}

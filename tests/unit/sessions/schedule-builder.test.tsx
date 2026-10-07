@@ -37,8 +37,11 @@ function next() {
 
 describe('ScheduleBuilder', () => {
   it('asks for the dates first when the comp has none', () => {
-    renderBuilder({ startsOn: null, endsOn: null });
+    const { onSkip } = renderBuilder({ startsOn: null, endsOn: null });
     expect(screen.getByText(/Set the competition.s dates on Setup first/)).toBeTruthy();
+    // …without trapping the operator: sessions can still be added by hand.
+    fireEvent.click(screen.getByRole('button', { name: 'Add sessions by hand instead' }));
+    expect(onSkip).toHaveBeenCalled();
   });
 
   it('creates every session and flight from the answers', async () => {

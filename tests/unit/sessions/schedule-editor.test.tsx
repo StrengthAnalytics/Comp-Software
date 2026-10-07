@@ -93,6 +93,27 @@ describe('ScheduleEditor', () => {
     expect(refreshMock).not.toHaveBeenCalled();
   });
 
+  it('waits until the operator leaves a time box before saving it', async () => {
+    renderEditor();
+    const liftOff = screen.getByLabelText('Lifting starts at');
+    fireEvent.change(liftOff, { target: { value: '01:30' } });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(updateSession).not.toHaveBeenCalled();
+
+    fireEvent.change(liftOff, { target: { value: '13:30' } });
+    fireEvent.blur(liftOff);
+    await waitFor(() => expect(updateSession).toHaveBeenCalledTimes(1));
+    expect(updateSession).toHaveBeenCalledWith(expect.objectContaining({ liftOffTime: '13:30' }));
+  });
+
+  it('adds a flight after the last one even when a deletion left a gap', async () => {
+    renderEditor({
+      flightsBySession: new Map([['session-1', [flights[0], { ...flights[1], name: 'Flight C', sort_order: 2 }]]]),
+    });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add flight' }));
+    await waitFor(() => expect(createFlight).toHaveBeenCalledWith(expect.objectContaining({ sortOrder: 3 })));
+  });
+
   it('re-pulls the page after a time change, which can re-order the sessions', async () => {
     renderEditor();
     const liftOff = screen.getByLabelText('Lifting starts at');

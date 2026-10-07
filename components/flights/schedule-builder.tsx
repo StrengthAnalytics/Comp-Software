@@ -171,6 +171,9 @@ export function ScheduleBuilder({
         <p className="text-sm text-neutral-600">
           Set the competition&rsquo;s dates on Setup first — the builder uses them to lay out the days.
         </p>
+        <button type="button" onClick={onSkip} className={`${buttonClasses('ghost')} mt-3`}>
+          Add sessions by hand instead
+        </button>
       </Card>
     );
   }
@@ -371,8 +374,8 @@ export function ScheduleBuilder({
             </div>
             <p className="text-sm text-neutral-600">
               Creating this makes {rows.length} session{rows.length === 1 ? '' : 's'} and {flightTotal} flight
-              {flightTotal === 1 ? '' : 's'}. Everything stays editable, and a staff rota built from sessions picks the
-              new sessions up.
+              {flightTotal === 1 ? '' : 's'}. Everything stays editable, and the staff rota can build its columns from these
+              sessions with Generate from sessions on the Rota page.
             </p>
           </div>
         ) : null}

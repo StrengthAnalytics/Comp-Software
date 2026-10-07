@@ -16,6 +16,7 @@ const base: SetupChecklistInput = {
   platformCount: 1,
   sessionCount: 2,
   flightCount: 4,
+  sessionsWithoutFlights: 0,
   sessionsMissingLiftOff: 0,
   entryCount: 24,
   entriesInFlights: 24,
@@ -157,6 +158,13 @@ describe('the schedule step', () => {
     expect(item({ ...base, flightCount: 0 }, 'sessions')).toMatchObject({
       state: 'partial',
       detail: '2 sessions on 1 platform — no flights yet',
+    });
+  });
+
+  it('is partial while a session has no flights', () => {
+    expect(item({ ...base, sessionsWithoutFlights: 1 }, 'sessions')).toMatchObject({
+      state: 'partial',
+      detail: '1 of 2 sessions without flights',
     });
   });
 

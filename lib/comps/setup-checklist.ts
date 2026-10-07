@@ -27,6 +27,8 @@ export type SetupChecklistInput = {
   platformCount: number;
   sessionCount: number;
   flightCount: number;
+  // Sessions with no flights: there is nowhere to put that session's lifters yet.
+  sessionsWithoutFlights: number;
   // Sessions with no lift-off time yet: the schedule step isn't finished until every session has one
   // (the weigh-in and rota times are worked out from it).
   sessionsMissingLiftOff: number;
@@ -76,6 +78,12 @@ function scheduleItem(input: SetupChecklistInput): { state: ChecklistState; deta
   const done = `${counted(input.sessionCount, 'session', 'sessions')} on ${counted(platforms, 'platform', 'platforms')}`;
   if (input.flightCount === 0) {
     return { state: 'partial', detail: `${done} — no flights yet` };
+  }
+  if (input.sessionsWithoutFlights > 0) {
+    return {
+      state: 'partial',
+      detail: `${input.sessionsWithoutFlights} of ${counted(input.sessionCount, 'session', 'sessions')} without flights`,
+    };
   }
   if (input.sessionsMissingLiftOff > 0) {
     return {

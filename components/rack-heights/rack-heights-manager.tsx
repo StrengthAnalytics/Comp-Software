@@ -49,6 +49,7 @@ import type { RackHeightsInput } from '@/types/entry';
 import type { TeamLift } from '@/types/team';
 import { buttonClasses } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import type { SessionOption } from '@/lib/sessions/options';
 
 // Rack settings only ever apply to the squat and the bench (the deadlift has none), so this screen
 // shows just those columns — no Simple/Full toggle. It reuses the weigh-in calling order (sex / team
@@ -73,8 +74,6 @@ export type RackEntry = {
   benchSpotting: BenchSpotting | null;
   racksSet: boolean;
 };
-
-export type RackSessionOption = { id: string; name: string };
 
 type ViewMode = 'cards' | 'table';
 
@@ -614,7 +613,7 @@ export function RackHeightsManager({
   compName: string;
   isTeamCompetition: boolean;
   lifts: Lifts;
-  sessions: RackSessionOption[];
+  sessions: SessionOption[];
   entries: RackEntry[];
   unflightedCount: number;
 }) {
@@ -712,7 +711,6 @@ export function RackHeightsManager({
       />
     );
   }
-
 
   return (
     <SaveContext.Provider value={saveContext}>

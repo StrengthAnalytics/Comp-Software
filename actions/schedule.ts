@@ -4,7 +4,6 @@ import * as Sentry from '@sentry/nextjs';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
-import { syncRotaWithSessions } from '@/lib/rota/sync';
 import { compDays, flightRowsFor, orderSessionsChronologically } from '@/lib/sessions/schedule';
 import { buildScheduleSchema, type BuildScheduleInput } from '@/types/schedule';
 import { toFieldErrors } from '@/lib/validation';
@@ -32,8 +31,9 @@ async function undoBuild(supabase: Client, sessionIds: string[], platformIds: st
 // The guided schedule builder's create: every platform, session and flight for a comp that has no
 // sessions yet, in one go. Platform names that already exist on the comp are reused; a one-platform
 // meet on a comp with no platforms keeps the single default platform (no row), as hand-built
-// sessions do. Session order follows the clock (lib/sessions/schedule.ts). Afterwards the staff rota
-// is told about every new session at once, so a rota already built from sessions gains their columns.
+// sessions do. Session order follows the clock (lib/sessions/schedule.ts). The staff rota isn't
+// touched: with no sessions before the build, no rota column can be linked to one, so the organiser
+// builds the rota's columns from these sessions with "Generate from sessions" on the Rota page.
 export async function buildScheduleAction(
   input: BuildScheduleInput,
 ): Promise<ActionResult<{ sessionCount: number; flightCount: number }>> {
@@ -84,7 +84,7 @@ export async function buildScheduleAction(
         .insert(missing.map((name) => ({ competition_id: competitionId, name })))
         .select('id, name');
       if (error || !created) {
-        Sentry.captureException(error);
+        Sentry.captureException(error ?? new Error('Schedule build created no platforms.'));
         return fail(BUILD_FAILED);
       }
       for (const platform of created) {
@@ -136,11 +136,6 @@ export async function buildScheduleAction(
       Sentry.captureException(flightsError);
       await undoBuild(supabase, sessionIds, createdPlatformIds);
       return fail(BUILD_FAILED);
-    }
-
-    const rota = await syncRotaWithSessions(supabase, competitionId, { addColumnFor: sessionIds });
-    if (rota.error) {
-      Sentry.captureException(rota.error);
     }
 
     return ok({ sessionCount: sessionIds.length, flightCount: flights.length });

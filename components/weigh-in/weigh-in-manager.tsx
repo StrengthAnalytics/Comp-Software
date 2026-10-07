@@ -74,6 +74,7 @@ import type { WeighInInput } from '@/types/entry';
 import type { TeamLift } from '@/types/team';
 import { buttonClasses } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import type { SessionOption } from '@/lib/sessions/options';
 
 type EntryStatus = Database['public']['Enums']['entry_status'];
 
@@ -100,8 +101,6 @@ export type WeighInEntry = {
 };
 
 export type WeightClassOption = WeightClassBounds & { gender: Gender };
-
-export type WeighInSessionOption = { id: string; name: string };
 
 type ViewMode = 'cards' | 'table';
 // How much of each lifter to show. 'simple' is bodyweight + openers only; 'full' adds the rack/bench
@@ -1208,7 +1207,7 @@ export function WeighInManager({
   compName: string;
   isTeamCompetition: boolean;
   lifts: Lifts;
-  sessions: WeighInSessionOption[];
+  sessions: SessionOption[];
   weightClasses: WeightClassOption[];
   entries: WeighInEntry[];
   unflightedCount: number;
@@ -1293,7 +1292,6 @@ export function WeighInManager({
       />
     );
   }
-
 
   return (
     <SaveContext.Provider value={saveContext}>
