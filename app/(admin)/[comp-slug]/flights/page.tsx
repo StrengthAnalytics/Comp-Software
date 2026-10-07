@@ -148,6 +148,8 @@ export default async function FlightsPage({ params }: { params: Promise<{ 'comp-
         competitionId={comp.id}
         compSlug={comp.slug}
         isTeamCompetition={comp.is_team_competition}
+        startsOn={comp.starts_on}
+        endsOn={comp.ends_on}
         platforms={platforms ?? []}
         sessions={sessions ?? []}
         flights={flights ?? []}

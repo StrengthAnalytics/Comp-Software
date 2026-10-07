@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
 import { isUniqueViolation } from '@/lib/supabase/errors';
 import { findRotaColumnForSession, retireRotaColumn, syncRotaWithSessions } from '@/lib/rota/sync';
+import { resequenceSessions } from '@/lib/sessions/sequence';
+import { flightNames } from '@/lib/sessions/schedule';
 import { sessionInputSchema, sessionUpdateSchema } from '@/types/flight';
 import { toFieldErrors } from '@/lib/validation';
 import { fail, ok, type ActionResult } from '@/types/action-result';
@@ -51,13 +53,19 @@ async function validatePlatform(
   return null;
 }
 
-// Keeps the staff rota in step with the session schedule (lib/rota/sync.ts). The session save has
-// already succeeded, so a rota hiccup is logged rather than reported as a failed save.
+// Puts the sessions back in time order (lib/sessions/sequence.ts), then keeps the staff rota in step
+// with the schedule (lib/rota/sync.ts), which orders its session columns by that same order. The
+// session save has already succeeded, so a hiccup in either is logged rather than reported as a
+// failed save.
 async function followSessionsInRota(
   supabase: Client,
   competitionId: string,
   options?: { addColumnFor?: readonly string[] },
 ): Promise<void> {
+  const resequenced = await resequenceSessions(supabase, competitionId);
+  if (resequenced.error) {
+    Sentry.captureException(resequenced.error);
+  }
   const { error } = await syncRotaWithSessions(supabase, competitionId, options);
   if (error) {
     Sentry.captureException(error);
@@ -71,7 +79,7 @@ export async function createSessionAction(input: {
   weighInTime: string | null;
   liftOffTime: string | null;
   platformId: string | null;
-  sortOrder?: number;
+  flightCount?: number;
 }): Promise<ActionResult> {
   return Sentry.withServerActionInstrumentation('createSession', async () => {
     const guard = await adminGuard();
@@ -96,7 +104,8 @@ export async function createSessionAction(input: {
         weigh_in_time: parsed.data.weighInTime,
         lift_off_time: parsed.data.liftOffTime,
         platform_id: parsed.data.platformId,
-        sort_order: parsed.data.sortOrder,
+        // Positioned by the re-sequence below, which puts every session in time order.
+        sort_order: 0,
       })
       .select('id')
       .single();
@@ -104,6 +113,23 @@ export async function createSessionAction(input: {
     if (error || !created) {
       Sentry.captureException(error);
       return error ? mapSessionWriteError(error) : fail('Could not save the session. Please try again.');
+    }
+
+    // A session is created with its flights, so the operator never has to name "Flight A" by hand.
+    if (parsed.data.flightCount > 0) {
+      const { error: flightsError } = await supabase.from('flights').insert(
+        flightNames(parsed.data.flightCount).map((flightName, sortOrder) => ({
+          competition_id: parsed.data.competitionId,
+          session_id: created.id,
+          name: flightName,
+          sort_order: sortOrder,
+        })),
+      );
+      if (flightsError) {
+        // The session itself saved; a failed flight insert is logged and the operator can add flights
+        // on the session that is now on screen.
+        Sentry.captureException(flightsError);
+      }
     }
 
     // A rota built from the sessions gets a column for the new one too.
@@ -121,7 +147,6 @@ export async function updateSessionAction(input: {
   weighInTime: string | null;
   liftOffTime: string | null;
   platformId: string | null;
-  sortOrder: number;
 }): Promise<ActionResult> {
   return Sentry.withServerActionInstrumentation('updateSession', async () => {
     const guard = await adminGuard();
@@ -149,7 +174,6 @@ export async function updateSessionAction(input: {
         weigh_in_time: parsed.data.weighInTime,
         lift_off_time: parsed.data.liftOffTime,
         platform_id: parsed.data.platformId,
-        sort_order: parsed.data.sortOrder,
       })
       .eq('id', parsed.data.id);
 

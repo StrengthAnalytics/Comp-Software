@@ -48,7 +48,7 @@ This project is developed online-only against the hosted Supabase dev project an
       /rack-heights             ← squat/bench rack settings by session (warm-up room, mobile-friendly)
       /run                      ← scorekeeper interface
       /refs                     ← ref panel (v2)
-      /flights                  ← sessions & flight management
+      /flights                  ← sessions & flight management (guided schedule builder + autosaving editor)
       /rota                     ← staff rota builder (volunteer sign-up admin)
       /teams                    ← team management (team competitions only)
   /(display)                    ← auth-gated full-screen venue displays, no chrome (sidebar/header)
@@ -165,6 +165,12 @@ The run screen (the source of truth every other screen reads) uses an offline-re
 - Each comp owns its own age categories and weight classes (rule sets change year to year); for an `ipf`-federation comp that set is the locked standard, for `custom` it is operator-edited. ("Age category" is the lifter's IPF age band — U16–M6 — stored in the `age_categories` table; the word "division" means the British Powerlifting region/home nation a lifter competes on behalf of.)
 - A lifter's **division** (BP region) is an informational attribute on the entry (the `entries.division` free-text column, constrained by the app to the fixed `BP_DIVISIONS` list in `lib/constants.ts`). It is set on the entries (registration) screen and shown on the boards, but it is **not** a placement dimension — placement stays weight class × age category × gender × kit type.
 - A comp can be a team competition (`is_team_competition`, full power only) — see Team competitions below.
+
+### Building the schedule
+- A comp's structure (platforms → sessions → flights) is built on `/[comp-slug]/flights`. With no sessions yet the screen opens the **guided schedule builder** (`components/flights/schedule-builder.tsx` → `buildScheduleAction`): platforms, sessions per day (days derived from the comp's own dates), lift-off times, flights per session, then one write that creates everything and tells the rota about all the new sessions at once. The rules are pure functions in `lib/sessions/schedule.ts` (day list, suggested lift-off times, weigh-in = lift-off − `WEIGH_IN_LEAD_MINUTES`, flight/session names, draft rows).
+- Afterwards the same screen is the editor (`components/flights/schedule-editor.tsx`): sessions grouped under each comp day, **every field autosaving** through the station engine (`components/station/use-station-save.ts` + `save-state.tsx`), flights added/renamed/moved/deleted inline. There are no Save buttons and no hand-typed sort orders on this screen.
+- **Order is the server's job.** Sessions are re-sequenced into clock order after every session create/edit/delete (`resequenceSessions`, run before `syncRotaWithSessions` so the rota's session columns follow the same order); flights swap places via `moveFlightAction`.
+- Sessions are numbered per day, so any screen listing several labels a repeated name with its day and, if needed, its platform (`sessionDisplayLabels`; the weigh-in and rack-heights pickers read `loadSessionOptions`).
 
 ### Attempt lifecycle
 - Each entry has up to 9 attempts (3 squats, 3 benches, 3 deadlifts).

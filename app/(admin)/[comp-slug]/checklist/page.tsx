@@ -111,7 +111,7 @@ export default async function ChecklistPage({
   // Head-only count queries — the checklist needs numbers, never rows. Run in parallel; a failed
   // count is reported (Sentry + a banner) rather than silently rendering 0 as if it were true.
   const supabase = await createClient();
-  const countOf = (table: 'age_categories' | 'weight_classes' | 'platforms' | 'sessions' | 'teams') =>
+  const countOf = (table: 'age_categories' | 'weight_classes' | 'platforms' | 'sessions' | 'flights' | 'teams') =>
     supabase.from(table).select('id', { count: 'exact', head: true }).eq('competition_id', comp.id);
 
   const counts = await Promise.all([
@@ -119,6 +119,12 @@ export default async function ChecklistPage({
     countOf('weight_classes'),
     countOf('platforms'),
     countOf('sessions'),
+    countOf('flights'),
+    supabase
+      .from('sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('competition_id', comp.id)
+      .is('lift_off_time', null),
     supabase.from('entries').select('id', { count: 'exact', head: true }).eq('competition_id', comp.id),
     supabase
       .from('entries')
@@ -137,6 +143,8 @@ export default async function ChecklistPage({
     weightClasses,
     platforms,
     sessions,
+    flights,
+    sessionsMissingLiftOff,
     entries,
     entriesInFlights,
     entriesWeighedIn,
@@ -160,6 +168,8 @@ export default async function ChecklistPage({
     weightClassCount: weightClasses.count ?? 0,
     platformCount: platforms.count ?? 0,
     sessionCount: sessions.count ?? 0,
+    flightCount: flights.count ?? 0,
+    sessionsMissingLiftOff: sessionsMissingLiftOff.count ?? 0,
     entryCount: entries.count ?? 0,
     entriesInFlights: entriesInFlights.count ?? 0,
     entriesWeighedIn: entriesWeighedIn.count ?? 0,

@@ -15,6 +15,8 @@ const base: SetupChecklistInput = {
   weightClassCount: 18,
   platformCount: 1,
   sessionCount: 2,
+  flightCount: 4,
+  sessionsMissingLiftOff: 0,
   entryCount: 24,
   entriesInFlights: 24,
   entriesWeighedIn: 24,
@@ -125,11 +127,12 @@ describe('buildSetupChecklist', () => {
       ...base,
       sessionCount: 1,
       platformCount: 1,
+      flightCount: 1,
       entryCount: 1,
       entriesInFlights: 1,
       entriesWeighedIn: 1,
     };
-    expect(item(input, 'sessions').detail).toBe('1 session on 1 platform');
+    expect(item(input, 'sessions').detail).toBe('1 session on 1 platform, 1 flight');
     expect(item(input, 'lifters').detail).toBe('1 lifter registered');
     expect(item(input, 'weigh-in').detail).toBe('All 1 lifter weighed in');
   });
@@ -139,5 +142,32 @@ describe('checklistProgress', () => {
   it('counts only fully done steps', () => {
     const items = buildSetupChecklist({ ...base, entriesWeighedIn: 3, entriesInFlights: 0 });
     expect(checklistProgress(items)).toEqual({ done: 5, total: 7 });
+  });
+});
+
+describe('the schedule step', () => {
+  it('is todo until there are sessions', () => {
+    expect(item({ ...base, sessionCount: 0, flightCount: 0 }, 'sessions')).toMatchObject({
+      state: 'todo',
+      detail: 'No sessions yet',
+    });
+  });
+
+  it('is partial while sessions have no flights', () => {
+    expect(item({ ...base, flightCount: 0 }, 'sessions')).toMatchObject({
+      state: 'partial',
+      detail: '2 sessions on 1 platform — no flights yet',
+    });
+  });
+
+  it('is partial while a session has no start time', () => {
+    expect(item({ ...base, sessionsMissingLiftOff: 1 }, 'sessions')).toMatchObject({
+      state: 'partial',
+      detail: '1 of 2 sessions without a start time',
+    });
+  });
+
+  it('counts a comp with no platform row as one platform', () => {
+    expect(item({ ...base, platformCount: 0 }, 'sessions').detail).toBe('2 sessions on 1 platform, 4 flights');
   });
 });
