@@ -13,6 +13,7 @@ import {
   generateRotaFromSessionsAction,
   moveRotaRoleAction,
   moveRotaSectionAction,
+  rebuildRotaFromSessionsAction,
   setRotaOpenAction,
   setRotaWithdrawalContactAction,
   updateRotaRoleAction,
@@ -34,6 +35,7 @@ import { ROTA_WITHDRAWAL_CONTACT_MAX } from '@/types/rota';
 import { ResetRota } from '@/components/rota/reset-rota';
 import { RotaAdminGrid } from '@/components/rota/rota-admin-grid';
 import { RotaChangeRequests, type RotaChangeRequestSummary } from '@/components/rota/rota-change-requests';
+import { RotaDialog } from '@/components/rota/rota-dialog';
 import { RotaFormatting } from '@/components/rota/rota-formatting';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 import { Button } from '@/components/ui/button';
@@ -931,17 +933,23 @@ function AddSectionForm({ competitionId }: { competitionId: string }) {
 
 // Quick-start: create a column per comp session, pre-filled with the ticked default roles. Linked by
 // session_id so it's idempotent — only sessions without a column are added, and the admin's edits are
-// never overwritten.
+// never overwritten. Once session columns exist, "Rebuild the rota" throws them away and makes fresh
+// ones from the ticked roles — offered only while nobody has signed up (the server refuses too).
 function GenerateFromSessionsCard({
   competitionId,
   slug,
   sessionCount,
   pendingSessionCount,
+  sessionColumnCount,
+  signupCount,
 }: {
   competitionId: string;
   slug: string;
   sessionCount: number;
   pendingSessionCount: number;
+  // How many columns were made from a session — the ones a rebuild replaces.
+  sessionColumnCount: number;
+  signupCount: number;
 }) {
   const router = useRouter();
   const [roles, setRoles] = useState(() =>
@@ -954,7 +962,14 @@ function GenerateFromSessionsCard({
   );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingRebuild, setConfirmingRebuild] = useState(false);
+  const [rebuildError, setRebuildError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  const selected = roles
+    .filter((role) => role.included)
+    .map((role) => ({ title: role.title, capacity: role.capacity, arriveBasis: role.arriveBasis }));
+  const rolesValid = selected.length > 0 && selected.every((role) => isValidCapacity(role.capacity));
 
   function setIncluded(index: number, included: boolean) {
     setRoles((current) => current.map((role, i) => (i === index ? { ...role, included } : role)));
@@ -964,9 +979,6 @@ function GenerateFromSessionsCard({
   }
 
   function generate() {
-    const selected = roles
-      .filter((role) => role.included)
-      .map((role) => ({ title: role.title, capacity: role.capacity, arriveBasis: role.arriveBasis }));
     if (selected.length === 0) {
       setError('Tick at least one role to generate.');
       return;
@@ -985,6 +997,31 @@ function GenerateFromSessionsCard({
           ? 'All your sessions already have a column.'
           : `Added ${created} column${created === 1 ? '' : 's'} — one per session. Tweak the roles below as needed.`,
       );
+      router.refresh();
+    });
+  }
+
+  function closeRebuild() {
+    if (pending) {
+      return;
+    }
+    setConfirmingRebuild(false);
+    setRebuildError(null);
+  }
+
+  function rebuild() {
+    setRebuildError(null);
+    setError(null);
+    setMessage(null);
+    startTransition(async () => {
+      const result = await rebuildRotaFromSessionsAction({ competitionId, roles: selected });
+      if (result.status === 'error') {
+        setRebuildError(result.message);
+        return;
+      }
+      setConfirmingRebuild(false);
+      const created = result.data.created;
+      setMessage(`Rebuilt the rota: ${created} column${created === 1 ? '' : 's'}, one per session.`);
       router.refresh();
     });
   }
@@ -1056,14 +1093,7 @@ function GenerateFromSessionsCard({
       </ul>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button
-          onClick={generate}
-          disabled={
-            pending ||
-            pendingSessionCount === 0 ||
-            roles.some((role) => role.included && !isValidCapacity(role.capacity))
-          }
-        >
+        <Button onClick={generate} disabled={pending || pendingSessionCount === 0 || !rolesValid}>
           {buttonLabel}
         </Button>
         {message ? (
@@ -1077,6 +1107,57 @@ function GenerateFromSessionsCard({
           </p>
         ) : null}
       </div>
+
+      {sessionColumnCount > 0 ? (
+        <div className="mt-6 border-t border-neutral-200 pt-4">
+          <h3 className="text-sm font-semibold text-neutral-900">Start again from these roles</h3>
+          {signupCount > 0 ? (
+            <p className="mt-1 text-sm text-neutral-600">
+              You can&rsquo;t rebuild the rota once anyone has signed up, and {signupCount} volunteer
+              {signupCount === 1 ? ' has' : 's have'}. Remove them on the Rota tab first, or use Reset the
+              rota at the bottom of this page.
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-neutral-600">
+              Replace the {sessionColumnCount} session column{sessionColumnCount === 1 ? '' : 's'} with fresh
+              ones, using the roles and spaces ticked above. Columns you added by hand, like Set-up, are
+              kept.
+            </p>
+          )}
+          <Button
+            variant="secondary"
+            className="mt-3"
+            onClick={() => setConfirmingRebuild(true)}
+            disabled={pending || signupCount > 0 || !rolesValid}
+          >
+            Rebuild the rota
+          </Button>
+        </div>
+      ) : null}
+
+      {confirmingRebuild ? (
+        <RotaDialog title="Rebuild the rota?" onClose={closeRebuild}>
+          <p className="text-sm text-neutral-700">
+            This deletes the {sessionColumnCount} session column{sessionColumnCount === 1 ? '' : 's'} and
+            makes new ones with the {selected.length} role{selected.length === 1 ? '' : 's'} you&rsquo;ve
+            ticked. Any changes you made to those columns, such as renamed jobs, extra jobs or fixed
+            times, will be lost. Columns you added by hand are kept.
+          </p>
+          {rebuildError ? (
+            <p role="alert" className="mt-3 text-sm text-red-600">
+              {rebuildError}
+            </p>
+          ) : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="secondary" onClick={closeRebuild} disabled={pending}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={rebuild} disabled={pending}>
+              {pending ? 'Rebuilding…' : 'Rebuild the rota'}
+            </Button>
+          </div>
+        </RotaDialog>
+      ) : null}
     </Card>
   );
 }
@@ -1251,6 +1332,8 @@ export function RotaBuilder({
         slug={slug}
         sessionCount={sessionCount}
         pendingSessionCount={pendingSessionCount}
+        sessionColumnCount={ordered.filter((section) => section.session_id !== null).length}
+        signupCount={contactRows.length}
       />
 
       {/* Datalist of common role names, shared by every role-title input. */}

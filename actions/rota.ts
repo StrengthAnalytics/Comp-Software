@@ -541,106 +541,165 @@ export async function generateRotaFromSessionsAction(
       return fail('Tick at least one role to generate.', toFieldErrors(parsed.error));
     }
 
+    return generateRotaColumns(await createClient(), parsed.data);
+  });
+}
+
+const ROTA_HAS_SIGNUPS_MESSAGE =
+  'Someone has already signed up, so the rota can’t be rebuilt. Remove them first, or use Reset the rota.';
+
+// Rebuilds the rota from scratch: throws away every column made from a session (with any hand edits
+// to its jobs) and generates fresh ones from the ticked roles and spaces. Hand-made columns (e.g.
+// "Set-up") are kept. Refused while anyone at all is signed up — the database function
+// clear_rota_session_columns does the "nobody's signed up, then clear" check and delete in one
+// transaction, so a volunteer signing up at the same moment can never be wiped.
+export async function rebuildRotaFromSessionsAction(
+  input: GenerateRotaInput,
+): Promise<ActionResult<{ created: number }>> {
+  return Sentry.withServerActionInstrumentation('rebuildRotaFromSessions', async () => {
+    const guard = await adminGuard();
+    if (guard) return guard;
+
+    const parsed = generateRotaSchema.safeParse(input);
+    if (!parsed.success) {
+      return fail('Tick at least one role to rebuild with.', toFieldErrors(parsed.error));
+    }
+
     const supabase = await createClient();
 
-    const [sessionsResult, sectionsResult, platformsResult] = await Promise.all([
-      supabase
-        .from('sessions')
-        .select('id, name, session_date, weigh_in_time, lift_off_time, platform_id, sort_order')
-        .eq('competition_id', parsed.data.competitionId),
-      supabase.from('rota_sections').select('id, session_id').eq('competition_id', parsed.data.competitionId),
-      supabase.from('platforms').select('id, name').eq('competition_id', parsed.data.competitionId),
-    ]);
-    if (sessionsResult.error || sectionsResult.error || platformsResult.error) {
-      Sentry.captureException(sessionsResult.error ?? sectionsResult.error ?? platformsResult.error);
+    // Checked before clearing so a comp with no sessions keeps its rota rather than losing it.
+    const { count, error: countError } = await supabase
+      .from('sessions')
+      .select('id', { count: 'exact', head: true })
+      .eq('competition_id', parsed.data.competitionId);
+    if (countError) {
+      Sentry.captureException(countError);
       return fail(GENERIC_ERROR);
     }
-
-    const sessions = sessionsResult.data ?? [];
-    if (sessions.length === 0) {
-      return fail('Add sessions on the Sessions & flights screen before generating the rota.');
+    if (!count) {
+      return fail('Add sessions on the Sessions & flights screen before rebuilding the rota.');
     }
 
-    const existing = sectionsResult.data ?? [];
-    const linkedSessionIds = new Set(
-      existing.map((section) => section.session_id).filter((id): id is string => id !== null),
-    );
-    const platformNamesById = new Map((platformsResult.data ?? []).map((platform) => [platform.id, platform.name]));
-
-    const planned = planRotaSectionsFromSessions(sessions, linkedSessionIds, platformNamesById);
-    if (planned.length === 0) {
-      // Every session already has a column — reported so the UI can say "already up to date". Still
-      // bring the existing columns in step with the sessions, in case they've drifted.
-      await settleRotaOrder(supabase, parsed.data.competitionId);
-      return ok({ created: 0 });
-    }
-
-    // New columns append after any existing ones.
-    const baseSortOrder = existing.length;
-    const sectionRows = planned.map((section, index) => ({
-      competition_id: parsed.data.competitionId,
-      session_id: section.sessionId,
-      day_label: section.dayLabel,
-      title: section.title,
-      subtitle: section.subtitle,
-      sort_order: baseSortOrder + index,
-    }));
-
-    const { data: createdSections, error: sectionError } = await supabase
-      .from('rota_sections')
-      .insert(sectionRows)
-      .select('id, session_id');
-    if (sectionError || !createdSections) {
-      Sentry.captureException(sectionError);
-      return fail(GENERIC_ERROR);
-    }
-
-    const sectionIdBySession = new Map(createdSections.map((section) => [section.session_id, section.id]));
-    const sessionById = new Map(sessions.map((session) => [session.id, session]));
-    const roleRows = planned.flatMap((section) => {
-      const sectionId = sectionIdBySession.get(section.sessionId);
-      if (!sectionId) {
-        return [];
-      }
-      const session = sessionById.get(section.sessionId);
-      return parsed.data.roles.map((role, index) => ({
-        competition_id: parsed.data.competitionId,
-        section_id: sectionId,
-        title: role.title,
-        // 30 min before lift-off for the platform crew, 10 min before weigh-ins open for the weigh-in
-        // team — and kept in step with the session from then on (lib/rota/sync.ts).
-        arrive_by: session ? arriveByForBasis(role.arriveBasis, session) : null,
-        arrive_basis: role.arriveBasis,
-        capacity: role.capacity,
-        sort_order: index,
-      }));
+    const { error: clearError } = await supabase.rpc('clear_rota_session_columns', {
+      _competition_id: parsed.data.competitionId,
     });
-
-    if (roleRows.length > 0) {
-      const { error: roleError } = await supabase.from('rota_roles').insert(roleRows);
-      if (roleError) {
-        Sentry.captureException(roleError);
-        // Roll back the just-created columns so a retry starts clean — otherwise the session_id link
-        // makes Generate skip these sessions forever as empty columns the admin can't repopulate.
-        const { error: rollbackError } = await supabase
-          .from('rota_sections')
-          .delete()
-          .in(
-            'id',
-            createdSections.map((section) => section.id),
-          );
-        if (rollbackError) {
-          Sentry.captureException(rollbackError);
-        }
-        return fail('Could not generate the rota. Please try again.');
+    if (clearError) {
+      if (clearError.code === 'P0001' && clearError.message.includes('rota_has_signups')) {
+        return fail(ROTA_HAS_SIGNUPS_MESSAGE);
       }
+      Sentry.captureException(clearError);
+      return fail('Could not rebuild the rota. Please try again.');
     }
 
-    // Slot the new columns into session order among any already there.
-    await settleRotaOrder(supabase, parsed.data.competitionId);
-
-    return ok({ created: planned.length });
+    // The old columns are gone, so every session is "missing" one and Generate refills them all. If
+    // this fails the rota is left without session columns, and Generate puts them back.
+    return generateRotaColumns(supabase, parsed.data);
   });
+}
+
+// The shared body of Generate and Rebuild: creates a column per session that doesn't already have
+// one, pre-filled with the given roles. Returns how many columns were created.
+async function generateRotaColumns(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: GenerateRotaInput,
+): Promise<ActionResult<{ created: number }>> {
+  const [sessionsResult, sectionsResult, platformsResult] = await Promise.all([
+    supabase
+      .from('sessions')
+      .select('id, name, session_date, weigh_in_time, lift_off_time, platform_id, sort_order')
+      .eq('competition_id', input.competitionId),
+    supabase.from('rota_sections').select('id, session_id').eq('competition_id', input.competitionId),
+    supabase.from('platforms').select('id, name').eq('competition_id', input.competitionId),
+  ]);
+  if (sessionsResult.error || sectionsResult.error || platformsResult.error) {
+    Sentry.captureException(sessionsResult.error ?? sectionsResult.error ?? platformsResult.error);
+    return fail(GENERIC_ERROR);
+  }
+
+  const sessions = sessionsResult.data ?? [];
+  if (sessions.length === 0) {
+    return fail('Add sessions on the Sessions & flights screen before generating the rota.');
+  }
+
+  const existing = sectionsResult.data ?? [];
+  const linkedSessionIds = new Set(
+    existing.map((section) => section.session_id).filter((id): id is string => id !== null),
+  );
+  const platformNamesById = new Map((platformsResult.data ?? []).map((platform) => [platform.id, platform.name]));
+
+  const planned = planRotaSectionsFromSessions(sessions, linkedSessionIds, platformNamesById);
+  if (planned.length === 0) {
+    // Every session already has a column — reported so the UI can say "already up to date". Still
+    // bring the existing columns in step with the sessions, in case they've drifted.
+    await settleRotaOrder(supabase, input.competitionId);
+    return ok({ created: 0 });
+  }
+
+  // New columns append after any existing ones.
+  const baseSortOrder = existing.length;
+  const sectionRows = planned.map((section, index) => ({
+    competition_id: input.competitionId,
+    session_id: section.sessionId,
+    day_label: section.dayLabel,
+    title: section.title,
+    subtitle: section.subtitle,
+    sort_order: baseSortOrder + index,
+  }));
+
+  const { data: createdSections, error: sectionError } = await supabase
+    .from('rota_sections')
+    .insert(sectionRows)
+    .select('id, session_id');
+  if (sectionError || !createdSections) {
+    Sentry.captureException(sectionError);
+    return fail(GENERIC_ERROR);
+  }
+
+  const sectionIdBySession = new Map(createdSections.map((section) => [section.session_id, section.id]));
+  const sessionById = new Map(sessions.map((session) => [session.id, session]));
+  const roleRows = planned.flatMap((section) => {
+    const sectionId = sectionIdBySession.get(section.sessionId);
+    if (!sectionId) {
+      return [];
+    }
+    const session = sessionById.get(section.sessionId);
+    return input.roles.map((role, index) => ({
+      competition_id: input.competitionId,
+      section_id: sectionId,
+      title: role.title,
+      // 30 min before lift-off for the platform crew, 10 min before weigh-ins open for the weigh-in
+      // team — and kept in step with the session from then on (lib/rota/sync.ts).
+      arrive_by: session ? arriveByForBasis(role.arriveBasis, session) : null,
+      arrive_basis: role.arriveBasis,
+      capacity: role.capacity,
+      sort_order: index,
+    }));
+  });
+
+  if (roleRows.length > 0) {
+    const { error: roleError } = await supabase.from('rota_roles').insert(roleRows);
+    if (roleError) {
+      Sentry.captureException(roleError);
+      // Roll back the just-created columns so a retry starts clean — otherwise the session_id link
+      // makes Generate skip these sessions forever as empty columns the admin can't repopulate.
+      const { error: rollbackError } = await supabase
+        .from('rota_sections')
+        .delete()
+        .in(
+          'id',
+          createdSections.map((section) => section.id),
+        );
+      if (rollbackError) {
+        Sentry.captureException(rollbackError);
+      }
+      return fail('Could not generate the rota. Please try again.');
+    }
+  }
+
+  // Slot the new columns into session order among any already there.
+  await settleRotaOrder(supabase, input.competitionId);
+
+  return ok({ created: planned.length });
 }
 
 // --- Duplicate a column's roles onto another session ----------------------------------------------

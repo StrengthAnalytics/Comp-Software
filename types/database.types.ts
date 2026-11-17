@@ -794,7 +794,12 @@ export type Database = {
         Relationships: [];
       };
     };
-    Functions: Record<string, never>;
+    Functions: {
+      clear_rota_session_columns: {
+        Args: { _competition_id: string };
+        Returns: undefined;
+      };
+    };
     Enums: {
       attempt_result: 'pending' | 'good_lift' | 'no_lift' | 'not_taken' | 'withdrawn';
       bench_spotting: 'self' | 'hand_out';

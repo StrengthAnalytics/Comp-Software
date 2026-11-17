@@ -17,6 +17,7 @@ vi.mock('@/actions/rota', () => ({
   generateRotaFromSessionsAction: vi.fn(),
   moveRotaRoleAction: vi.fn(),
   moveRotaSectionAction: vi.fn(),
+  rebuildRotaFromSessionsAction: vi.fn(),
   moveRotaSignupAction: vi.fn(),
   removeRotaSignupAction: vi.fn(),
   resetRotaAction: vi.fn(),
@@ -45,6 +46,7 @@ import {
   duplicateRotaSectionToSessionAction,
   generateRotaFromSessionsAction,
   moveRotaSignupAction,
+  rebuildRotaFromSessionsAction,
   removeRotaSignupAction,
   resolveRotaChangeRequestAction,
   setRotaOpenAction,
@@ -62,6 +64,7 @@ const deleteRole = vi.mocked(deleteRotaRoleAction);
 const duplicateAction = vi.mocked(duplicateRotaSectionToSessionAction);
 const generateAction = vi.mocked(generateRotaFromSessionsAction);
 const moveSignup = vi.mocked(moveRotaSignupAction);
+const rebuildAction = vi.mocked(rebuildRotaFromSessionsAction);
 const removeSignup = vi.mocked(removeRotaSignupAction);
 const resolveRequest = vi.mocked(resolveRotaChangeRequestAction);
 const setOpen = vi.mocked(setRotaOpenAction);
@@ -392,6 +395,60 @@ describe('RotaBuilder — layout', () => {
     // Each role carries the arrive-by basis the action computes the time from.
     expect(arg.roles.find((role) => role.title === 'MC')?.arriveBasis).toBe('lift_off');
     expect(arg.roles.find((role) => role.title === 'Weigh-in')?.arriveBasis).toBe('weigh_in');
+  });
+
+  it('rebuilds the session columns from the ticked roles after a confirm', async () => {
+    rebuildAction.mockResolvedValue({ status: 'ok', data: { created: 1 } });
+    const emptySessionSection: RotaBuilderSection = {
+      ...sessionSection,
+      roles: sessionSection.roles.map((role) => ({ ...role, signups: [] })),
+    };
+    renderBuilder([emptySessionSection], false, 1, 0);
+    openLayoutTab();
+
+    // Untick one role and lower another's spaces, then rebuild.
+    fireEvent.click(screen.getByLabelText('Refreshments'));
+    fireEvent.change(screen.getByLabelText('Spotters / Loaders spaces'), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild the rota' }));
+    expect(rebuildAction).not.toHaveBeenCalled();
+
+    const dialog = screen.getByRole('dialog', { name: 'Rebuild the rota?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Rebuild the rota' }));
+
+    await waitFor(() => expect(rebuildAction).toHaveBeenCalled());
+    const arg = rebuildAction.mock.calls[0][0];
+    expect(arg.competitionId).toBe(COMP_ID);
+    expect(arg.roles.map((role) => role.title)).not.toContain('Refreshments');
+    expect(arg.roles.find((role) => role.title === 'Spotters / Loaders')?.capacity).toBe(3);
+    expect(await screen.findByText('Rebuilt the rota: 1 column, one per session.')).toBeInTheDocument();
+    expect(refreshMock).toHaveBeenCalled();
+  });
+
+  it('shows why the rota cannot be rebuilt once anyone has signed up', () => {
+    renderBuilder([sessionSection], false, 1, 0);
+    openLayoutTab();
+
+    expect(screen.getByRole('button', { name: 'Rebuild the rota' })).toBeDisabled();
+    expect(screen.getByText(/can.t rebuild the rota once anyone has signed up/)).toBeInTheDocument();
+  });
+
+  it('keeps the dialog open with the reason when the server refuses a rebuild', async () => {
+    rebuildAction.mockResolvedValue({ status: 'error', message: 'Someone has already signed up.' });
+    renderBuilder([{ ...sessionSection, roles: [] }], false, 1, 0);
+    openLayoutTab();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild the rota' }));
+    const dialog = screen.getByRole('dialog', { name: 'Rebuild the rota?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Rebuild the rota' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Someone has already signed up.');
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it('offers no rebuild when there are no session columns', () => {
+    renderBuilder([sectionOpenRole], false, 1, 1);
+    openLayoutTab();
+    expect(screen.queryByRole('button', { name: 'Rebuild the rota' })).toBeNull();
   });
 
   it('points to Sessions & flights when the comp has no sessions', () => {
