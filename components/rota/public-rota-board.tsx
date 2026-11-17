@@ -18,8 +18,10 @@ import {
 import { displayRotaTime } from '@/lib/rota/time';
 import { Button } from '@/components/ui/button';
 import { RotaDialog } from '@/components/rota/rota-dialog';
-import { RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
-import { FILLED_SWATCH, OPEN_SWATCH } from '@/lib/rota/style';
+import { RotaDayLinks } from '@/components/rota/rota-day-links';
+import { RotaGrid, type RotaGridRole, type RotaGridSection } from '@/components/rota/rota-grid';
+import { rotaDayName, splitRotaDays } from '@/lib/rota/grid';
+import { FILLED_SWATCH, OPEN_SWATCH, type RotaGridClasses } from '@/lib/rota/style';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 import { FORM_INPUT_CLASS } from '@/components/ui/form-styles';
 
@@ -429,6 +431,11 @@ type PublicRotaBoardProps = {
 // a coloured slot for each filled place (name only) and a tappable "+ Sign up" for each open one. Volunteers can
 // only add themselves (an anon write); dropping out or swapping goes to the organiser through
 // "Request a change".
+//
+// A rota covering more than one day is laid out twice, and CSS shows one: on a wide screen the whole
+// sheet side by side; on a phone or small tablet (where later days used to sit unseen off the right
+// edge) a grid per day stacked down the page, under a strip naming every day. Both are in the page
+// so the right one shows from the first paint, with no script deciding.
 export function PublicRotaBoard({ competitionId, sections, withdrawalContact, look }: PublicRotaBoardProps) {
   const router = useRouter();
   const [remembered, setRemembered] = useState<RememberedVolunteer | null>(null);
@@ -463,6 +470,31 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact, lo
       filled: role.names.map((volunteerName, index) => ({ key: `${role.id}-${index}`, name: volunteerName })),
     })),
   }));
+
+  const days = splitRotaDays(gridSections);
+  const dayLinks = days.map((day, index) => ({
+    anchorId: `rota-day-${index + 1}`,
+    name: rotaDayName(day),
+    openSlots: day.sections
+      .flatMap((section) => section.roles)
+      .reduce((open, role) => open + Math.max(role.capacity - role.filled.length, 0), 0),
+  }));
+
+  function renderOpenSlot(role: RotaGridRole, _slotIndex: number, classes: RotaGridClasses) {
+    const slot = slotByRole.get(role.id);
+    return (
+      <button
+        type="button"
+        onClick={() => slot && setSignupSlot(slot)}
+        aria-label={`Sign up for ${slot?.label ?? role.title}`}
+        className={`${classes.openSlot} font-medium hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700`}
+      >
+        + Sign up
+      </button>
+    );
+  }
+
+  const wholeRota = <RotaGrid sections={gridSections} look={look} renderOpen={renderOpenSlot} />;
 
   function handleSignedUp(details: RememberedVolunteer, remember: boolean) {
     if (remember) {
@@ -533,23 +565,28 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact, lo
         </p>
       ) : null}
 
-      <RotaGrid
-        sections={gridSections}
-        look={look}
-        renderOpen={(role, _slotIndex, classes) => {
-          const slot = slotByRole.get(role.id);
-          return (
-            <button
-              type="button"
-              onClick={() => slot && setSignupSlot(slot)}
-              aria-label={`Sign up for ${slot?.label ?? role.title}`}
-              className={`${classes.openSlot} font-medium hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700`}
-            >
-              + Sign up
-            </button>
-          );
-        }}
-      />
+      {days.length > 1 ? (
+        <>
+          <div data-rota-layout="by-day" className="space-y-4 lg:hidden">
+            <RotaDayLinks days={dayLinks} allDated={days.every((day) => day.label !== null)} />
+            {days.map((day, index) => (
+              <section
+                key={dayLinks[index].anchorId}
+                id={dayLinks[index].anchorId}
+                aria-label={dayLinks[index].name}
+                className="scroll-mt-4"
+              >
+                <RotaGrid sections={day.sections} look={look} renderOpen={renderOpenSlot} />
+              </section>
+            ))}
+          </div>
+          <div data-rota-layout="whole" className="hidden lg:block">
+            {wholeRota}
+          </div>
+        </>
+      ) : (
+        wholeRota
+      )}
 
       {signupSlot ? (
         <SignupDialog
