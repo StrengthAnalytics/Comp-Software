@@ -170,7 +170,7 @@ function FlightChip({
           value={name}
           onChange={(event) => setName(event.target.value)}
           onBlur={save.flushSave}
-          className="w-28 rounded border border-transparent px-1 py-0.5 text-sm font-medium hover:border-neutral-200 focus:border-neutral-400 focus:outline-none"
+          className="w-28 rounded border border-transparent px-1 py-0.5 text-sm font-medium hover:border-neutral-200 focus:border-neutral-400 focus:outline-none pointer-coarse:text-base"
         />
         <span className="text-xs tabular-nums text-neutral-500">{lifterCount}</span>
         <button

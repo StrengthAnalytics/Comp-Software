@@ -4,9 +4,8 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { resetRotaAction } from '@/actions/rota';
 import { buttonClasses } from '@/components/ui/button';
+import { INPUT_CLASS } from '@/components/ui/form-styles';
 
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const GHOST_BUTTON = buttonClasses('secondary');
 const DANGER_BUTTON = buttonClasses('danger');
 

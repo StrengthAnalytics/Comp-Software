@@ -21,9 +21,8 @@ import {
 import type { RecordView } from '@/lib/records/record-view';
 import type { FieldErrors } from '@/types/action-result';
 import { buttonClasses } from '@/components/ui/button';
+import { FORM_INPUT_CLASS } from '@/components/ui/form-styles';
 
-const INPUT_CLASS =
-  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const LABEL_CLASS = 'text-sm font-medium text-neutral-700';
 const PRIMARY_BUTTON = buttonClasses('primary');
 const GHOST_BUTTON = buttonClasses('secondary');
@@ -121,7 +120,7 @@ export function RecordForm({
             list="record-region-options"
             value={region}
             onChange={(event) => setRegion(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
             placeholder="e.g. British, England, London"
           />
           <datalist id="record-region-options">
@@ -140,7 +139,7 @@ export function RecordForm({
             id="record-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors.name} />
         </div>
@@ -161,7 +160,7 @@ export function RecordForm({
                 RECORD_WEIGHT_CLASSES[nextGender].includes(normalizeRecordWeightClass(current)) ? current : '',
               );
             }}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           >
             {RECORD_GENDERS.map((option) => (
               <option key={option} value={option}>
@@ -181,7 +180,7 @@ export function RecordForm({
             list="record-weight-class-options"
             value={weightClass}
             onChange={(event) => setWeightClass(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
             placeholder="e.g. -83 kg (or 83kg)"
           />
           <datalist id="record-weight-class-options">
@@ -201,7 +200,7 @@ export function RecordForm({
             list="record-age-options"
             value={ageCategory}
             onChange={(event) => setAgeCategory(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <datalist id="record-age-options">
             {RECORD_AGE_CATEGORIES.map((option) => (
@@ -219,7 +218,7 @@ export function RecordForm({
             id="record-lift"
             value={lift}
             onChange={(event) => setLift(event.target.value as RecordLift)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           >
             {RECORD_LIFTS.map((option) => (
               <option key={option} value={option}>
@@ -238,7 +237,7 @@ export function RecordForm({
             id="record-equipment"
             value={equipment}
             onChange={(event) => setEquipment(event.target.value as RecordEquipment)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           >
             {RECORD_EQUIPMENTS.map((option) => (
               <option key={option} value={option}>
@@ -258,7 +257,7 @@ export function RecordForm({
             inputMode="decimal"
             value={weight}
             onChange={(event) => setWeight(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors.weightKg} />
         </div>
@@ -272,7 +271,7 @@ export function RecordForm({
             type="date"
             value={dateSet}
             onChange={(event) => setDateSet(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors.dateSet} />
         </div>
@@ -285,7 +284,7 @@ export function RecordForm({
             id="record-notes"
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors.notes} />
         </div>

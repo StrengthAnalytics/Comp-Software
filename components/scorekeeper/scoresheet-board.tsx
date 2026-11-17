@@ -48,6 +48,7 @@ import { parseOptionalNumber } from '@/lib/number-input';
 import { usePersistentToggle } from '@/lib/use-persistent-toggle';
 import { useOnline } from '@/lib/use-online';
 import type { ActionResult } from '@/types/action-result';
+import { INPUT_TEXT_CLASS } from '@/components/ui/form-styles';
 
 type LiftType = Database['public']['Enums']['lift_type'];
 type AttemptResult = Database['public']['Enums']['attempt_result'];
@@ -1415,9 +1416,8 @@ function AttemptCell({
   );
 }
 
-const RACK_FIELD_INPUT =
-  'w-full rounded border border-neutral-400 px-1 py-1 text-sm tabular-nums text-neutral-900 focus:outline-none';
-const RACK_FIELD_SELECT = 'w-full rounded border border-neutral-400 px-1 py-1 text-sm text-neutral-900 focus:outline-none';
+const RACK_FIELD_INPUT = `w-full rounded border border-neutral-400 px-1 py-1 ${INPUT_TEXT_CLASS} tabular-nums text-neutral-900 focus:outline-none`;
+const RACK_FIELD_SELECT = `w-full rounded border border-neutral-400 px-1 py-1 ${INPUT_TEXT_CLASS} text-neutral-900 focus:outline-none`;
 const RACK_FIELD_LABEL = 'text-[10px] font-medium uppercase tracking-wide text-neutral-500';
 
 // The rack column for squat and bench: shows the current settings and is click-to-edit so the head

@@ -22,6 +22,7 @@ import {
 } from '@/lib/constants';
 import type { Database } from '@/types/database.types';
 import { Button } from '@/components/ui/button';
+import { FORM_INPUT_CLASS } from '@/components/ui/form-styles';
 
 type CompRow = Database['public']['Tables']['competitions']['Row'];
 
@@ -38,8 +39,6 @@ export type CompFormInitial = {
   is_team_competition: boolean;
 };
 
-const INPUT_CLASS =
-  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const LABEL_CLASS = 'text-sm font-medium text-neutral-700';
 
 function FieldError({ messages }: { messages?: string[] }) {
@@ -111,7 +110,7 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
               setSlug(slugify(event.target.value));
             }
           }}
-          className={INPUT_CLASS}
+          className={FORM_INPUT_CLASS}
         />
         <FieldError messages={fieldErrors?.name} />
       </div>
@@ -129,7 +128,7 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
             setSlug(event.target.value);
             setSlugEdited(true);
           }}
-          className={INPUT_CLASS}
+          className={FORM_INPUT_CLASS}
         />
         <p className="mt-1 text-xs text-neutral-500">Used in URLs. Lowercase letters, numbers and hyphens.</p>
         <FieldError messages={fieldErrors?.slug} />
@@ -153,7 +152,7 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
             value={federation}
             // The select only renders FEDERATIONS values plus the placeholder, so this narrowing is exact.
             onChange={(event) => setFederation(event.target.value as Federation | '')}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           >
             <option value="" disabled>
               Select a federation…
@@ -177,7 +176,7 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
           <label htmlFor="kit_type" className={LABEL_CLASS}>
             Kit
           </label>
-          <select id="kit_type" name="kit_type" defaultValue={initial?.kit_type ?? 'classic'} className={INPUT_CLASS}>
+          <select id="kit_type" name="kit_type" defaultValue={initial?.kit_type ?? 'classic'} className={FORM_INPUT_CLASS}>
             {KIT_TYPES.map((value) => (
               <option key={value} value={value}>
                 {KIT_TYPE_LABELS[value]}
@@ -197,7 +196,7 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
             value={eventType}
             // The select only renders EVENT_TYPES values, so this narrowing is exact.
             onChange={(event) => setEventType(event.target.value as CompRow['event_type'])}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           >
             {EVENT_TYPES.map((value) => (
               <option key={value} value={value}>
@@ -212,7 +211,7 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
           <label htmlFor="status" className={LABEL_CLASS}>
             Status
           </label>
-          <select id="status" name="status" defaultValue={initial?.status ?? 'draft'} className={INPUT_CLASS}>
+          <select id="status" name="status" defaultValue={initial?.status ?? 'draft'} className={FORM_INPUT_CLASS}>
             {COMP_STATUSES.map((value) => (
               <option key={value} value={value}>
                 {COMP_STATUS_LABELS[value]}
@@ -266,7 +265,7 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
                 setEndsOn(next);
               }
             }}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.starts_on} />
         </div>
@@ -282,7 +281,7 @@ export function CompForm({ initial }: { initial?: CompFormInitial }) {
             value={endsOn}
             min={startsOn === '' ? undefined : startsOn}
             onChange={(event) => setEndsOn(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.ends_on} />
         </div>

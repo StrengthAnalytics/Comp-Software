@@ -12,14 +12,13 @@ import { GENDER_LABELS, GENDERS, type Gender } from '@/lib/constants';
 import type { Database } from '@/types/database.types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { INPUT_CLASS } from '@/components/ui/form-styles';
 
 type WeightClass = Pick<
   Database['public']['Tables']['weight_classes']['Row'],
   'id' | 'name' | 'gender' | 'lower_kg' | 'upper_kg' | 'sort_order'
 >;
 
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 
 // Empty upper-bound input means "unlimited" (e.g. 120kg+), stored as null.
 function parseUpper(value: string): number | null {

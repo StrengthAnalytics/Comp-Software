@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { bulkAddTeamsAction, type BulkTeamSummary } from '@/actions/teams';
 import { parseTeamNames } from '@/lib/teams/bulk-add';
 import { buttonClasses } from '@/components/ui/button';
+import { INPUT_CLASS } from '@/components/ui/form-styles';
 
 const GHOST_BUTTON = buttonClasses('secondary');
 const PRIMARY_BUTTON = buttonClasses('primary');
@@ -96,7 +97,7 @@ export function BulkAddTeams({ competitionId }: { competitionId: string }) {
         onChange={(event) => setText(event.target.value)}
         rows={8}
         placeholder={'City Barbell A\nCity Barbell B\nIron Temple'}
-        className="mt-2 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none"
+        className={`mt-2 w-full ${INPUT_CLASS}`}
       />
 
       {names.length > 0 ? (

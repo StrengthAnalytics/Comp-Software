@@ -51,6 +51,7 @@ import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Tabs } from '@/components/ui/tabs';
 import type { Database } from '@/types/database.types';
+import { INPUT_CLASS } from '@/components/ui/form-styles';
 
 type CompStatus = Database['public']['Enums']['comp_status'];
 
@@ -90,8 +91,6 @@ export type RotaBuilderSection = {
 // A comp session that has no rota column yet — a possible target for "duplicate this column to…".
 export type RotaAvailableSession = { id: string; name: string };
 
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 
 const COPY_RESET_MS = 2000;
 

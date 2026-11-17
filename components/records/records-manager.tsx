@@ -17,11 +17,11 @@ import { RecordForm } from '@/components/records/record-form';
 import { RecordsBulkImport } from '@/components/records/records-bulk-import';
 import { buttonClasses } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { INPUT_TEXT_CLASS } from '@/components/ui/form-styles';
 
 const GHOST_BUTTON = buttonClasses('secondary');
 const PRIMARY_BUTTON = buttonClasses('primary');
-const FILTER_CLASS =
-  'rounded-md border border-neutral-300 px-2 py-1.5 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+const FILTER_CLASS = `rounded-md border border-neutral-300 px-2 py-1.5 ${INPUT_TEXT_CLASS} text-neutral-900 focus:border-neutral-500 focus:outline-none`;
 const COPY_RESET_MS = 2000;
 const ALL = ALL_FILTER;
 

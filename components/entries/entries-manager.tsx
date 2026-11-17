@@ -47,6 +47,7 @@ import { IconChevronDown } from '@/components/shell/icons';
 import { usePersistentIdSet } from '@/lib/use-persistent-id-set';
 import type { ActionResult } from '@/types/action-result';
 import type { Database } from '@/types/database.types';
+import { INPUT_CLASS as SHARED_INPUT_CLASS } from '@/components/ui/form-styles';
 
 type EntryStatus = Database['public']['Enums']['entry_status'];
 
@@ -83,8 +84,7 @@ export type EntryWithLifter = {
 export type AgeCategoryOption = { id: string; name: string };
 export type WeightClassOption = { id: string; name: string; gender: string };
 
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+const INPUT_CLASS = `${SHARED_INPUT_CLASS} bg-white`;
 const LABEL_CLASS = 'text-xs font-medium text-neutral-500';
 const GHOST_BUTTON = buttonClasses('secondary');
 const PRIMARY_BUTTON = buttonClasses('primary');

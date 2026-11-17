@@ -15,6 +15,7 @@ import { DISCLAIMER_MAX_LENGTH, type EntryFormConfig } from '@/types/entry-form'
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import type { Database } from '@/types/database.types';
+import { FORM_INPUT_CLASS } from '@/components/ui/form-styles';
 
 type CompStatus = Database['public']['Enums']['comp_status'];
 
@@ -262,7 +263,7 @@ export function EntryFormDesigner({
             setSaved(false);
             setDisclaimer(event.target.value);
           }}
-          className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none"
+          className={FORM_INPUT_CLASS}
         />
         <p className="mt-1 text-xs text-neutral-500">
           Shown at the bottom of the form with a tick-box lifters must accept before submitting.
