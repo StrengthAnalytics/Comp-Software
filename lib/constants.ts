@@ -446,3 +446,6 @@ export const DEFAULT_ROTA_ROLE_TEMPLATE: readonly RotaRoleTemplate[] = [
 
 // The longest email address the app accepts (the SMTP limit), for the organiser email field.
 export const EMAIL_ADDRESS_MAX = 254;
+
+// Matches a phone or tablet (a finger, not a mouse, is the main pointer).
+export const TOUCH_SCREEN_MEDIA_QUERY = '(pointer: coarse)';

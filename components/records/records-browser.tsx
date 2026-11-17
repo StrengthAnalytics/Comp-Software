@@ -18,8 +18,9 @@ import {
   RECORD_LIFTS,
 } from '@/lib/constants';
 
+// 16px on a touch screen so iPhone Safari doesn't zoom the page in when a filter gets focus.
 const FILTER_CLASS =
-  'rounded-md border border-neutral-300 px-2 py-1.5 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+  'rounded-md border border-neutral-300 px-2 py-1.5 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none pointer-coarse:text-base';
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].toSorted((a, b) => a.localeCompare(b));
