@@ -76,7 +76,6 @@ describe('RotaFormatting', () => {
         style: { ...DEFAULT_ROTA_STYLE, roleLines: 'thick', filledColour: 'blue' },
       }),
     );
-    expect(await screen.findByText('Saved ✓')).toBeInTheDocument();
   });
 
   it('saves the default look as null', async () => {

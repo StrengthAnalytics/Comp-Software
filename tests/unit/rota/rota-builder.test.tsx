@@ -331,8 +331,10 @@ describe('RotaBuilder — layout', () => {
 
     const row = screen.getByLabelText('Role title').closest('div') as HTMLElement;
     expect(within(row).queryByRole('button', { name: 'Save' })).toBeNull();
-    // No blur: the autosave fires once typing settles.
+    // No blur: the autosave fires once typing settles. Meanwhile the page's save card says so, and
+    // the row itself shows nothing.
     fireEvent.change(within(row).getByLabelText('Spaces'), { target: { value: '3' } });
+    expect(screen.getByText('Saving…')).toBeInTheDocument();
 
     await waitFor(() =>
       expect(updateRole).toHaveBeenCalledWith({
@@ -344,7 +346,9 @@ describe('RotaBuilder — layout', () => {
       }),
     );
     await waitFor(() => expect(refreshMock).toHaveBeenCalled());
-    expect(await within(row).findByText('Saved ✓')).toBeInTheDocument();
+    // The row stays quiet; the page's one save card reports it.
+    expect(within(row).queryByText(/Sav(ing|ed)/)).toBeNull();
+    expect(await screen.findByText('Online — all changes saved')).toBeInTheDocument();
   });
 
   it("shows the server's message when the spaces would drop below the people signed up", async () => {

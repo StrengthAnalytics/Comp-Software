@@ -37,7 +37,7 @@ import { RotaAdminGrid } from '@/components/rota/rota-admin-grid';
 import { RotaChangeRequests, type RotaChangeRequestSummary } from '@/components/rota/rota-change-requests';
 import { RotaDialog } from '@/components/rota/rota-dialog';
 import { RotaFormatting } from '@/components/rota/rota-formatting';
-import { SaveContext, SaveIndicatorPill, SaveStatus, useSaveReporting } from '@/components/station/save-state';
+import { SaveContext, SaveIndicatorPill, useSaveReporting } from '@/components/station/save-state';
 import { useStationSave } from '@/components/station/use-station-save';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 import { fail } from '@/types/action-result';
@@ -298,7 +298,6 @@ function RotaShareCard({
             onBlur={contactSave.flushSave}
             className={`${INPUT_CLASS} min-w-0 flex-1`}
           />
-          <SaveStatus state={contactSave.saveState} savedTick={contactSave.savedTick} />
         </div>
         <p className="mt-1 text-xs text-neutral-500">
           Volunteers can&rsquo;t change the rota themselves — they use the &ldquo;Request a change&rdquo;
@@ -518,7 +517,6 @@ function RoleRow({
       <Button variant="secondary" onClick={remove} disabled={pending}>
         {confirming ? 'Confirm delete' : 'Delete'}
       </Button>
-      <SaveStatus state={save.saveState} savedTick={save.savedTick} />
       {save.error || error ? (
         <p role="alert" className="w-full text-sm text-red-600">
           {save.error ?? error}
@@ -802,7 +800,6 @@ function SectionBlock({
             />
           </div>
         )}
-        {linked ? null : <SaveStatus state={save.saveState} savedTick={save.savedTick} />}
         <Button variant="danger" onClick={remove} disabled={pending}>
           {confirming ? 'Confirm delete' : 'Delete'}
         </Button>
@@ -1390,7 +1387,10 @@ export function RotaBuilder({
   return (
     <SaveContext.Provider value={saveContext}>
       <div className="space-y-6">
-        <div className="flex justify-end">
+        {/* One save card for the whole page, pinned to the corner so it's in view wherever the
+            admin has scrolled. Rows stay quiet unless a save is refused (then a message shows under
+            that row). */}
+        <div className="fixed right-4 bottom-4 z-40 rounded-full shadow-lg">
           <SaveIndicatorPill indicator={indicator} />
         </div>
 

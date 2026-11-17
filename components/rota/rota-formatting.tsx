@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { setRotaStyleAction } from '@/actions/rota';
-import { SaveStatus } from '@/components/station/save-state';
 import { useStationSave } from '@/components/station/use-station-save';
 import {
   BANNER_SWATCH,
@@ -255,7 +254,6 @@ export function RotaFormatting({
         <p className="text-sm text-neutral-600">
           Changes save as you pick them, and volunteers see the new look on the sign-up page.
         </p>
-        <SaveStatus state={save.saveState} savedTick={save.savedTick} />
       </div>
       {save.error ? (
         <p role="alert" className="text-sm text-red-600">
