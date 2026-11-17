@@ -9,9 +9,8 @@ import { RotaDialog } from '@/components/rota/rota-dialog';
 import { RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
 import type { RotaStyle } from '@/types/rota-style';
 import type { RotaBuilderRole, RotaBuilderSection, RotaSignupSummary } from '@/components/rota/rota-builder';
+import { FORM_INPUT_CLASS } from '@/components/ui/form-styles';
 
-const INPUT_CLASS =
-  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const LABEL_CLASS = 'text-sm font-medium text-neutral-700';
 const NETWORK_ERROR = 'Could not reach the server — please try again.';
 
@@ -126,7 +125,7 @@ function VolunteerDialog({
               id="rota-move-target"
               value={targetRoleId}
               onChange={(event) => setTargetRoleId(event.target.value)}
-              className={`${INPUT_CLASS} mt-0 min-w-0 flex-1`}
+              className={`${FORM_INPUT_CLASS} mt-0 min-w-0 flex-1`}
             >
               <option value="">Choose a slot…</option>
               {moveTargets.map((target) => (
@@ -213,7 +212,7 @@ function AddVolunteerDialog({
             required
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.name} />
         </div>
@@ -226,7 +225,7 @@ function AddVolunteerDialog({
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.email} />
         </div>
@@ -239,7 +238,7 @@ function AddVolunteerDialog({
             type="tel"
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.phone} />
         </div>

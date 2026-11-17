@@ -13,11 +13,8 @@ import { parseOptionalNumber } from '@/lib/number-input';
 import type { EntryFormConfig } from '@/types/entry-form';
 import type { FieldErrors } from '@/types/action-result';
 import { Button } from '@/components/ui/button';
+import { FORM_INPUT_CLASS } from '@/components/ui/form-styles';
 
-// 16px text on phones (text-base), 14px from the sm breakpoint up: iPhone Safari zooms the whole page
-// in when a field under 16px gets focus. Pinch-zoom is left alone.
-const INPUT_CLASS =
-  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-base text-neutral-900 focus:border-neutral-500 focus:outline-none sm:text-sm';
 const LABEL_CLASS = 'text-sm font-medium text-neutral-700';
 
 export type PublicWeightClass = { name: string; gender: string };
@@ -182,7 +179,7 @@ export function PublicEntryForm({
             autoComplete="given-name"
             value={firstName}
             onChange={(event) => setFirstName(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.firstName} />
         </div>
@@ -195,7 +192,7 @@ export function PublicEntryForm({
             autoComplete="family-name"
             value={surname}
             onChange={(event) => setSurname(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.surname} />
         </div>
@@ -212,7 +209,7 @@ export function PublicEntryForm({
             required
             value={gender}
             onChange={(event) => chooseGender(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           >
             <option value="" disabled>
               Select…
@@ -234,7 +231,7 @@ export function PublicEntryForm({
             autoComplete="bday"
             value={dateOfBirth}
             onChange={(event) => setDateOfBirth(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.dateOfBirth} />
         </div>
@@ -251,7 +248,7 @@ export function PublicEntryForm({
             required={f.club === 'required'}
             value={club}
             onChange={(event) => setClub(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.club} />
         </div>
@@ -268,7 +265,7 @@ export function PublicEntryForm({
             required={f.ipf_member_id === 'required'}
             value={ipfMemberId}
             onChange={(event) => setIpfMemberId(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.ipfMemberId} />
         </div>
@@ -285,7 +282,7 @@ export function PublicEntryForm({
             required={f.division === 'required'}
             value={division}
             onChange={(event) => setDivision(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           >
             <option value="">{f.division === 'required' ? 'Select…' : 'Select (optional)…'}</option>
             {BP_DIVISIONS.map((value) => (
@@ -311,7 +308,7 @@ export function PublicEntryForm({
             value={weightClass}
             disabled={gender === ''}
             onChange={(event) => setWeightClass(event.target.value)}
-            className={`${INPUT_CLASS} disabled:bg-neutral-100 disabled:text-neutral-400`}
+            className={`${FORM_INPUT_CLASS} disabled:bg-neutral-100 disabled:text-neutral-400`}
           >
             <option value="">{weightClassPlaceholder}</option>
             {classOptions.map((option) => (
@@ -391,7 +388,7 @@ export function PublicEntryForm({
             required={f.predicted_total === 'required'}
             value={predictedTotal}
             onChange={(event) => setPredictedTotal(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.predictedTotalKg} />
         </div>
@@ -412,7 +409,7 @@ export function PublicEntryForm({
             required={f.recent_best_total === 'required'}
             value={recentBestTotal}
             onChange={(event) => setRecentBestTotal(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <p className="mt-1 text-xs text-neutral-500">
             Your best total from a competition in the last 12 months
@@ -436,7 +433,7 @@ export function PublicEntryForm({
             required={f.instagram === 'required'}
             value={instagram}
             onChange={(event) => setInstagram(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.instagram} />
         </div>
@@ -456,7 +453,7 @@ export function PublicEntryForm({
               required={f.email === 'required'}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className={INPUT_CLASS}
+              className={FORM_INPUT_CLASS}
             />
             <FieldError messages={fieldErrors?.email} />
           </div>
@@ -474,7 +471,7 @@ export function PublicEntryForm({
               required={f.phone === 'required'}
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
-              className={INPUT_CLASS}
+              className={FORM_INPUT_CLASS}
             />
             <FieldError messages={fieldErrors?.phone} />
           </div>

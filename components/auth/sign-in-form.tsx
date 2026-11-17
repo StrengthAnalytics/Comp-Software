@@ -4,9 +4,7 @@ import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { signInAction, type SignInState } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
-
-const INPUT_CLASS =
-  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+import { FORM_INPUT_CLASS } from '@/components/ui/form-styles';
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -45,7 +43,7 @@ export function SignInForm() {
           type="email"
           autoComplete="email"
           required
-          className={INPUT_CLASS}
+          className={FORM_INPUT_CLASS}
         />
         <FieldError messages={fieldErrors?.email} />
       </div>
@@ -59,7 +57,7 @@ export function SignInForm() {
           type="password"
           autoComplete="current-password"
           required
-          className={INPUT_CLASS}
+          className={FORM_INPUT_CLASS}
         />
         <FieldError messages={fieldErrors?.password} />
       </div>

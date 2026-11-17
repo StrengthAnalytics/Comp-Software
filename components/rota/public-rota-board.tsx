@@ -21,12 +21,8 @@ import { RotaDialog } from '@/components/rota/rota-dialog';
 import { RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
 import { FILLED_SWATCH, OPEN_SWATCH } from '@/lib/rota/style';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
+import { FORM_INPUT_CLASS } from '@/components/ui/form-styles';
 
-// 16px text on phones (text-base), 14px from the sm breakpoint up. iPhone Safari zooms the whole page
-// in when a field under 16px gets focus — and the sign-up and "Request a change" pop-ups focus their
-// first field as they open — which left most of the form off-screen. Pinch-zoom is left alone.
-const INPUT_CLASS =
-  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-base text-neutral-900 focus:border-neutral-500 focus:outline-none sm:text-sm';
 const LABEL_CLASS = 'text-sm font-medium text-neutral-700';
 const NETWORK_ERROR = 'Could not reach the server — please try again.';
 
@@ -166,7 +162,7 @@ function SignupDialog({
                 autoComplete="name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className={INPUT_CLASS}
+                className={FORM_INPUT_CLASS}
               />
               <FieldError messages={fieldErrors?.name} />
             </div>
@@ -181,7 +177,7 @@ function SignupDialog({
                 autoComplete="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className={INPUT_CLASS}
+                className={FORM_INPUT_CLASS}
               />
               <FieldError messages={fieldErrors?.email} />
             </div>
@@ -196,7 +192,7 @@ function SignupDialog({
                 autoComplete="tel"
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
-                className={INPUT_CLASS}
+                className={FORM_INPUT_CLASS}
               />
               <FieldError messages={fieldErrors?.phone} />
             </div>
@@ -330,7 +326,7 @@ function ChangeRequestDialog({
             autoComplete="name"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.name} />
         </div>
@@ -344,7 +340,7 @@ function ChangeRequestDialog({
             required
             value={contact}
             onChange={(event) => setContact(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.contact} />
         </div>
@@ -357,7 +353,7 @@ function ChangeRequestDialog({
             id="rota-change-slot"
             value={roleId}
             onChange={(event) => setRoleId(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           >
             <option value="">Several slots / not sure</option>
             {slots.map((slot) => (
@@ -395,7 +391,7 @@ function ChangeRequestDialog({
             rows={3}
             value={message}
             onChange={(event) => setMessage(event.target.value)}
-            className={INPUT_CLASS}
+            className={FORM_INPUT_CLASS}
           />
           <FieldError messages={fieldErrors?.message} />
         </div>

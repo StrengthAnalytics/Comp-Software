@@ -39,9 +39,7 @@ export function RotaDialog({ title, description, onClose, children }: RotaDialog
       panel?.querySelector<HTMLElement>('[data-autofocus]') ??
       panel?.querySelector<HTMLElement>('input:not([tabindex="-1"]):not([type="hidden"]), select, textarea') ??
       panel?.querySelector<HTMLElement>('button');
-    const opensKeyboard =
-      firstField instanceof HTMLTextAreaElement ||
-      (firstField instanceof HTMLInputElement && !['checkbox', 'radio'].includes(firstField.type));
+    const opensKeyboard = firstField?.matches('textarea, input:not([type="checkbox"]):not([type="radio"])') ?? false;
     // matchMedia is missing in some test environments; treat that as a desktop browser.
     const isTouchScreen = globalThis.matchMedia?.(TOUCH_SCREEN_MEDIA_QUERY).matches ?? false;
     if (opensKeyboard && isTouchScreen) {

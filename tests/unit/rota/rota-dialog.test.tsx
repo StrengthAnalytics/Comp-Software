@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { RotaDialog } from '@/components/rota/rota-dialog';
+import { TOUCH_SCREEN_MEDIA_QUERY } from '@/lib/constants';
 
 function stubTouchScreen(isTouch: boolean) {
   vi.stubGlobal(
     'matchMedia',
-    vi.fn((query: string) => ({ matches: isTouch && query === '(pointer: coarse)', media: query })),
+    vi.fn((query: string) => ({ matches: isTouch && query === TOUCH_SCREEN_MEDIA_QUERY, media: query })),
   );
 }
 
