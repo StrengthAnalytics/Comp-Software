@@ -9,7 +9,7 @@ import { requestOrigin } from '@/lib/email/request-origin';
 import { buildChangeRequestEmail, isEmailAddress } from '@/lib/rota/change-request-email';
 import { createClient } from '@/lib/supabase/server';
 import { adminGuard } from '@/lib/auth/guard';
-import { isUniqueViolation } from '@/lib/supabase/errors';
+import { isForeignKeyViolation, isUniqueViolation } from '@/lib/supabase/errors';
 import { toFieldErrors } from '@/lib/validation';
 import { MAX_ROTA_SLOT_CAPACITY, type RotaArriveBasis } from '@/lib/constants';
 import { planRotaSectionsFromSessions } from '@/lib/rota/generate';
@@ -580,8 +580,15 @@ export async function rebuildRotaFromSessionsAction(
     }
 
     // The old columns are gone, so every session is "missing" one and Generate refills them all. If
-    // this fails the rota is left without session columns, and Generate puts them back.
-    return generateRotaColumns(supabase, parsed.data);
+    // this fails the rota is left without session columns (nobody was signed up, so no one is lost),
+    // and Generate puts them back — say so, since the clear has already happened.
+    const result = await generateRotaColumns(supabase, parsed.data);
+    if (result.status === 'error') {
+      return fail(
+        'The old session columns were cleared, but the new ones could not be made. Click Generate to make them again.',
+      );
+    }
+    return result;
   });
 }
 
@@ -892,7 +899,12 @@ export async function submitRotaSignupAction(input: RotaSignupInput): Promise<Ac
       if (error.code === 'P0001' && error.message.includes('rota_slot_full')) {
         return fail(SLOT_FULL_MESSAGE);
       }
-      if (error.code === 'P0001' && error.message.includes('rota_role_missing')) {
+      // A missing role: deleted before the insert (the capacity trigger), or while it ran — e.g. a
+      // rebuild of the rota (the foreign-key check).
+      if (
+        (error.code === 'P0001' && error.message.includes('rota_role_missing')) ||
+        isForeignKeyViolation(error)
+      ) {
         return fail(SLOT_GONE_MESSAGE);
       }
       // 23505 = the (role_id, lower(email)) unique index: same person, same slot, twice.

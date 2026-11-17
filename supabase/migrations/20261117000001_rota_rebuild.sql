@@ -9,12 +9,15 @@
 -- This function closes it by doing both in one transaction:
 --
 --   1. Lock every one of the comp's rota roles (FOR UPDATE). A sign-up's foreign-key check takes a
---      share lock on its role row, so a sign-up already in flight finishes first (and is then seen
---      by step 2), and one that starts later waits — then fails, because its role is gone — rather
---      than being silently deleted.
+--      share lock on its role row. A sign-up whose check has already run holds that lock, so this
+--      waits for it to commit and step 2 then sees it. One whose check runs after this lock waits
+--      for the rebuild to commit and then fails (its role is gone, a foreign-key violation the
+--      sign-up action reports as "slot no longer available"). Either way a sign-up is never
+--      silently deleted.
 --   2. Refuse (rota_has_signups) if the comp has any sign-up at all, in any column.
---   3. Delete the columns that were made from a session (session_id set). Columns the admin added
---      by hand (e.g. "Set-up") are kept; the rebuild cannot recreate them.
+--   3. Delete the columns linked to a session (session_id set: generated, duplicated onto a session,
+--      or added when the session was created). Columns not linked to a session (e.g. "Set-up") are
+--      kept; the rebuild cannot recreate them.
 --
 -- The server action (rebuildRotaFromSessionsAction) then generates the new columns. SECURITY
 -- INVOKER (the default), so it runs under the caller's own RLS — only a signed-in admin can delete

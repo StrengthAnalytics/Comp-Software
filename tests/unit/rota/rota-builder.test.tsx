@@ -442,7 +442,8 @@ describe('RotaBuilder — layout', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Rebuild the rota' }));
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Someone has already signed up.');
-    expect(refreshMock).not.toHaveBeenCalled();
+    // The server may have cleared the old columns before failing, so the page re-reads the rota.
+    expect(refreshMock).toHaveBeenCalled();
   });
 
   it('offers no rebuild when there are no session columns', () => {

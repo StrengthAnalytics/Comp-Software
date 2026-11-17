@@ -1026,6 +1026,8 @@ function GenerateFromSessionsCard({
       const result = await rebuildRotaFromSessionsAction({ competitionId, roles: selected });
       if (result.status === 'error') {
         setRebuildError(result.message);
+        // The server may have cleared the old columns before failing; show the rota as it now is.
+        router.refresh();
         return;
       }
       setConfirmingRebuild(false);
@@ -1129,8 +1131,8 @@ function GenerateFromSessionsCard({
           ) : (
             <p className="mt-1 text-sm text-neutral-600">
               Replace the {sessionColumnCount} session column{sessionColumnCount === 1 ? '' : 's'} with fresh
-              ones, using the roles and spaces ticked above. Columns you added by hand, like Set-up, are
-              kept.
+              ones, using the roles and spaces ticked above. Columns not linked to a session, like Set-up,
+              are kept.
             </p>
           )}
           <Button
@@ -1150,7 +1152,7 @@ function GenerateFromSessionsCard({
             This deletes the {sessionColumnCount} session column{sessionColumnCount === 1 ? '' : 's'} and
             makes new ones with the {selected.length} role{selected.length === 1 ? '' : 's'} you&rsquo;ve
             ticked. Any changes you made to those columns, such as renamed jobs, extra jobs or fixed
-            times, will be lost. Columns you added by hand are kept.
+            times, will be lost. Columns not linked to a session, like Set-up, are kept.
           </p>
           {rebuildError ? (
             <p role="alert" className="mt-3 text-sm text-red-600">
@@ -1161,7 +1163,7 @@ function GenerateFromSessionsCard({
             <Button variant="secondary" onClick={closeRebuild} disabled={pending}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={rebuild} disabled={pending}>
+            <Button variant="danger" onClick={rebuild} disabled={pending || signupCount > 0 || !capacitiesValid}>
               {pending ? 'Rebuilding…' : 'Rebuild the rota'}
             </Button>
           </div>
