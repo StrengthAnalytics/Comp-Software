@@ -67,16 +67,15 @@ describe('RotaFormatting', () => {
 
     expect(previewCell('Beth')).toHaveClass('border-b-4');
     expect(within(screen.getByRole('region', { name: 'Preview' })).getByText('Beth')).toHaveClass('bg-sky-400');
-    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Save/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save formatting' }));
+    // The picks save themselves once they settle.
     await waitFor(() =>
       expect(setStyle).toHaveBeenCalledWith({
         competitionId: COMP_ID,
         style: { ...DEFAULT_ROTA_STYLE, roleLines: 'thick', filledColour: 'blue' },
       }),
     );
-    expect(await screen.findByRole('status')).toHaveTextContent('Saved');
   });
 
   it('saves the default look as null', async () => {
@@ -90,7 +89,6 @@ describe('RotaFormatting', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to the default look' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save formatting' }));
 
     await waitFor(() => expect(setStyle).toHaveBeenCalledWith({ competitionId: COMP_ID, style: null }));
   });

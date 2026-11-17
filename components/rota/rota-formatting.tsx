@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { setRotaStyleAction } from '@/actions/rota';
+import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
+import { useStationSave } from '@/components/station/use-station-save';
 import {
   BANNER_SWATCH,
   FILLED_SWATCH,
@@ -21,13 +22,15 @@ import {
   ROTA_OPEN_COLOURS,
   rotaStyleSchema,
   type RotaStyle,
+  type SetRotaStyleInput,
 } from '@/types/rota-style';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
 
 // The staff rota's Formatting tab: the organiser picks line weights and colours and sees the grid
-// change as they go; Save applies the look to the admin grid and the public sign-up board.
+// change as they go. Each pick saves itself (the station autosave engine) and applies the look to the
+// admin grid and the public sign-up board.
 
 const WEIGHT_LABELS: Record<string, string> = {
   thin: 'Thin',
@@ -145,43 +148,28 @@ export function RotaFormatting({
   sections: RotaGridSection[];
   initialStyle: RotaStyle;
 }) {
-  const router = useRouter();
+  const scheduleRefresh = useDebouncedRefresh();
   const [style, setStyle] = useState<RotaStyle>(initialStyle);
-  const [saved, setSaved] = useState<RotaStyle>(initialStyle);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
 
   function update<K extends keyof RotaStyle>(key: K, value: RotaStyle[K]) {
-    setMessage(null);
     setStyle((current) => ({ ...current, [key]: value }));
   }
 
-  function save() {
-    setError(null);
-    setMessage(null);
-    const next = style;
-    startTransition(async () => {
-      try {
-        // The default look is stored as null, so a comp on the defaults picks up future default tweaks.
-        const result = await setRotaStyleAction({
-          competitionId,
-          style: sameStyle(next, DEFAULT_ROTA_STYLE) ? null : next,
-        });
-        if (result.status === 'error') {
-          setError(result.message);
-          return;
-        }
-        setSaved(next);
-        setMessage('Saved. Volunteers see the new look on the sign-up page.');
-        router.refresh();
-      } catch {
-        setError('Could not reach the server — please try again.');
+  const save = useStationSave<null, SetRotaStyleInput>({
+    entryId: 'rota-formatting',
+    initialFlag: null,
+    serialized: JSON.stringify(style),
+    // The default look is stored as null, so a comp on the defaults picks up future default tweaks.
+    buildPayload: () => ({ competitionId, style: sameStyle(style, DEFAULT_ROTA_STYLE) ? null : style }),
+    save: async (payload) => {
+      const result = await setRotaStyleAction(payload);
+      // Re-read the page so the Rota tab's grid takes the new look (debounced across quick picks).
+      if (result.status === 'ok') {
+        scheduleRefresh();
       }
-    });
-  }
-
-  const dirty = !sameStyle(style, saved);
+      return result;
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -258,29 +246,20 @@ export function RotaFormatting({
       </Card>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={save} disabled={pending || !dirty}>
-          Save formatting
-        </Button>
         <Button
           variant="secondary"
-          onClick={() => {
-            setMessage(null);
-            setStyle(DEFAULT_ROTA_STYLE);
-          }}
-          disabled={pending || sameStyle(style, DEFAULT_ROTA_STYLE)}
+          onClick={() => setStyle(DEFAULT_ROTA_STYLE)}
+          disabled={sameStyle(style, DEFAULT_ROTA_STYLE)}
         >
           Back to the default look
         </Button>
-        {dirty ? <span className="text-sm text-amber-700">Unsaved changes</span> : null}
-        {message ? (
-          <span role="status" className="text-sm text-emerald-700">
-            {message}
-          </span>
-        ) : null}
+        <p className="text-sm text-neutral-600">
+          Changes save as you pick them, and volunteers see the new look on the sign-up page.
+        </p>
       </div>
-      {error ? (
+      {save.error ? (
         <p role="alert" className="text-sm text-red-600">
-          {error}
+          {save.error}
         </p>
       ) : null}
 

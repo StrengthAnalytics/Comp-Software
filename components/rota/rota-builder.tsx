@@ -31,13 +31,21 @@ import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { useRotaChangeRequestsSubscription } from '@/lib/realtime/use-rota-change-requests-subscription';
 import { useRotaSignupsSubscription } from '@/lib/realtime/use-rota-signups-subscription';
 import { buildRotaContactsCsv } from '@/lib/rota/export-csv';
-import { ROTA_WITHDRAWAL_CONTACT_MAX } from '@/types/rota';
+import {
+  ROTA_WITHDRAWAL_CONTACT_MAX,
+  type RotaRoleUpdateInput,
+  type RotaSectionUpdateInput,
+  type RotaWithdrawalContactInput,
+} from '@/types/rota';
 import { ResetRota } from '@/components/rota/reset-rota';
 import { RotaAdminGrid } from '@/components/rota/rota-admin-grid';
 import { RotaChangeRequests, type RotaChangeRequestSummary } from '@/components/rota/rota-change-requests';
 import { RotaDialog } from '@/components/rota/rota-dialog';
 import { RotaFormatting } from '@/components/rota/rota-formatting';
+import { SaveContext, SaveIndicatorPill, useSaveReporting } from '@/components/station/save-state';
+import { useStationSave } from '@/components/station/use-station-save';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
+import { fail } from '@/types/action-result';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -156,14 +164,17 @@ function RotaShareCard({
   const [openError, setOpenError] = useState<string | null>(null);
 
   const [contact, setContact] = useState(initialWithdrawalContact ?? '');
-  const [contactSaving, setContactSaving] = useState(false);
-  const [contactSaved, setContactSaved] = useState(false);
-  const [contactError, setContactError] = useState<string | null>(null);
+  // The contact line saves itself as it's typed (and when the box is left).
+  const contactSave = useStationSave<null, RotaWithdrawalContactInput>({
+    entryId: 'rota-withdrawal-contact',
+    initialFlag: null,
+    serialized: contact,
+    buildPayload: () => ({ competitionId, withdrawalContact: contact.trim() === '' ? null : contact }),
+    save: setRotaWithdrawalContactAction,
+  });
 
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
-
-  const contactDirty = contact !== (initialWithdrawalContact ?? '');
 
   async function toggleOpen() {
     const next = !open;
@@ -185,28 +196,6 @@ function RotaShareCard({
       setOpenError('Could not reach the server — please try again.');
     } finally {
       setOpenPending(false);
-    }
-  }
-
-  async function saveContact() {
-    setContactSaving(true);
-    setContactSaved(false);
-    setContactError(null);
-    try {
-      const result = await setRotaWithdrawalContactAction({
-        competitionId,
-        withdrawalContact: contact.trim() === '' ? null : contact,
-      });
-      if (result.status === 'error') {
-        setContactError(result.message);
-        return;
-      }
-      setContactSaved(true);
-      router.refresh();
-    } catch {
-      setContactError('Could not reach the server — please try again.');
-    } finally {
-      setContactSaving(false);
     }
   }
 
@@ -310,29 +299,19 @@ function RotaShareCard({
             value={contact}
             maxLength={ROTA_WITHDRAWAL_CONTACT_MAX}
             placeholder="e.g. email rota@yourclub.org to withdraw or change a slot"
-            onChange={(event) => {
-              setContactSaved(false);
-              setContact(event.target.value);
-            }}
+            onChange={(event) => setContact(event.target.value)}
+            onBlur={contactSave.flushSave}
             className={`${INPUT_CLASS} min-w-0 flex-1`}
           />
-          <Button variant="secondary" onClick={saveContact} disabled={contactSaving || !contactDirty}>
-            {contactSaving ? 'Saving…' : 'Save'}
-          </Button>
-          {contactSaved ? (
-            <p role="status" className="text-sm text-green-700">
-              Saved.
-            </p>
-          ) : null}
         </div>
         <p className="mt-1 text-xs text-neutral-500">
           Volunteers can&rsquo;t change the rota themselves — they use the &ldquo;Request a change&rdquo;
           button, which lands in the Rota tab. This line is shown under that button if you&rsquo;d
           also like to give a direct contact. Leave blank to hide it.
         </p>
-        {contactError ? (
+        {contactSave.error ? (
           <p role="alert" className="mt-1 text-sm text-red-600">
-            {contactError}
+            {contactSave.error}
           </p>
         ) : null}
       </div>
@@ -365,6 +344,7 @@ function ArriveByControl({
   onChoice,
   typed,
   onTyped,
+  onBlur,
   currentTime,
   textLabel,
   selectLabel,
@@ -374,8 +354,10 @@ function ArriveByControl({
   onChoice: (choice: ArriveChoice) => void;
   typed: string;
   onTyped: (value: string) => void;
+  // Leaving the time box or the choice saves straight away (the autosave also fires as they settle).
+  onBlur?: () => void;
   // The time the server worked out for the saved choice, shown next to a following job. Undefined
-  // while an unsaved choice is picked (the time is worked out on save).
+  // while a just-picked choice is saving (the server works the time out).
   currentTime: string | null | undefined;
   textLabel: string;
   selectLabel: string;
@@ -386,6 +368,7 @@ function ArriveByControl({
       value={typed}
       placeholder="Arrive by"
       onChange={(event) => onTyped(event.target.value)}
+      onBlur={onBlur}
       className={`${INPUT_CLASS} w-28`}
     />
   );
@@ -398,6 +381,7 @@ function ArriveByControl({
         aria-label={selectLabel}
         value={choice}
         onChange={(event) => onChoice(toArriveChoice(event.target.value))}
+        onBlur={onBlur}
         className={`${INPUT_CLASS} w-44`}
       >
         {ARRIVE_CHOICES.map((value) => (
@@ -410,7 +394,7 @@ function ArriveByControl({
         textInput
       ) : (
         <span className="w-24 text-sm text-neutral-700">
-          {currentTime === undefined ? 'Set on save' : (currentTime ?? 'No session time')}
+          {currentTime === undefined ? 'Working it out…' : (currentTime ?? 'No session time')}
         </span>
       )}
     </div>
@@ -445,29 +429,37 @@ function RoleRow({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const dirty =
-    title !== role.title ||
-    arriveChoice !== savedChoice ||
-    (arriveChoice === 'manual' && arriveBy !== (role.arrive_by ?? '')) ||
-    capacity !== role.capacity;
   const full = role.signups.length >= role.capacity;
+  const scheduleRefresh = useDebouncedRefresh();
+  const arriveBasis = linked && arriveChoice !== 'manual' ? arriveChoice : null;
 
-  function save() {
-    setError(null);
-    startTransition(async () => {
-      const result = await updateRotaRoleAction({
-        id: role.id,
-        title,
-        arriveBy,
-        arriveBasis: linked && arriveChoice !== 'manual' ? arriveChoice : null,
-        capacity,
-      });
-      if (result.status === 'error') {
-        setError(result.message);
-        return;
+  // Every field saves itself as it settles and when it's left. A typed time only matters (and only
+  // counts as a change) while the job isn't following its session's clock.
+  const save = useStationSave<null, RotaRoleUpdateInput>({
+    entryId: `rota-role-${role.id}`,
+    initialFlag: null,
+    serialized: JSON.stringify({ title, arriveBasis, arriveBy: arriveBasis === null ? arriveBy : '', capacity }),
+    buildPayload: () => ({ id: role.id, title, arriveBy, arriveBasis, capacity }),
+    save: async (payload) => {
+      // A cleared or part-typed number would only be refused by the server; say why here instead.
+      if (!isValidCapacity(payload.capacity)) {
+        return fail(`Spaces must be a whole number from 1 to ${MAX_ROTA_SLOT_CAPACITY}.`);
       }
-      router.refresh();
-    });
+      const result = await updateRotaRoleAction(payload);
+      // Re-read the rota so the grid, the filled count and any worked-out arrive-by time follow
+      // (debounced, so tabbing through a row's boxes re-reads it once).
+      if (result.status === 'ok') {
+        scheduleRefresh();
+      }
+      return result;
+    },
+  });
+  const shownError = save.error ?? error;
+  // The worked-out time for the saved choice; while a new choice saves it's "Working it out…", and if
+  // that save was refused (e.g. invalid spaces in the same row) the row says it isn't saved.
+  let currentTime: string | null | undefined = role.arrive_by;
+  if (arriveChoice !== savedChoice) {
+    currentTime = save.saveState === 'error' || save.saveState === 'failed' ? 'Not saved' : undefined;
   }
 
   function remove() {
@@ -506,6 +498,7 @@ function RoleRow({
         aria-label="Role title"
         value={title}
         onChange={(event) => setTitle(event.target.value)}
+        onBlur={save.flushSave}
         className={`${INPUT_CLASS} min-w-0 flex-1`}
       />
       <ArriveByControl
@@ -514,7 +507,8 @@ function RoleRow({
         onChoice={setArriveChoice}
         typed={arriveBy}
         onTyped={setArriveBy}
-        currentTime={arriveChoice === savedChoice ? role.arrive_by : undefined}
+        onBlur={save.flushSave}
+        currentTime={currentTime}
         textLabel="Arrive by"
         selectLabel="Arrive-by time"
       />
@@ -525,6 +519,7 @@ function RoleRow({
         max={MAX_ROTA_SLOT_CAPACITY}
         value={capacity}
         onChange={(event) => setCapacity(Number(event.target.value))}
+        onBlur={save.flushSave}
         className={`${INPUT_CLASS} w-20`}
       />
       <span
@@ -533,15 +528,12 @@ function RoleRow({
       >
         {role.signups.length} / {role.capacity} filled
       </span>
-      <Button variant="secondary" onClick={save} disabled={pending || !dirty || !isValidCapacity(capacity)}>
-        Save
-      </Button>
       <Button variant="secondary" onClick={remove} disabled={pending}>
         {confirming ? 'Confirm delete' : 'Delete'}
       </Button>
-      {error ? (
+      {shownError ? (
         <p role="alert" className="w-full text-sm text-red-600">
-          {error}
+          {shownError}
         </p>
       ) : null}
     </div>
@@ -722,24 +714,27 @@ function SectionBlock({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const dirty =
-    dayLabel !== (section.day_label ?? '') || title !== section.title || subtitle !== (section.subtitle ?? '');
+  const scheduleRefresh = useDebouncedRefresh();
+  // A hand-made column's heading saves itself as it's typed; a session's column has no editable
+  // heading, so its values never change and it never saves.
+  const save = useStationSave<null, RotaSectionUpdateInput>({
+    entryId: `rota-section-${section.id}`,
+    initialFlag: null,
+    serialized: JSON.stringify({ dayLabel, title, subtitle }),
+    buildPayload: () => ({ id: section.id, dayLabel, title, subtitle }),
+    save: async (payload) => {
+      const result = await updateRotaSectionAction(payload);
+      if (result.status === 'ok') {
+        scheduleRefresh();
+      }
+      return result;
+    },
+  });
+  const shownError = save.error ?? error;
   const hasSignups = section.roles.some((role) => role.signups.length > 0);
   // A session's column takes its heading and times from the session, so they're edited there.
   const linked = section.session_id !== null;
   const roles = section.roles.toSorted((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
-
-  function save() {
-    setError(null);
-    startTransition(async () => {
-      const result = await updateRotaSectionAction({ id: section.id, dayLabel, title, subtitle });
-      if (result.status === 'error') {
-        setError(result.message);
-        return;
-      }
-      router.refresh();
-    });
-  }
 
   function remove() {
     if (!confirming) {
@@ -800,6 +795,7 @@ function SectionBlock({
               value={dayLabel}
               placeholder="Day (e.g. Sat)"
               onChange={(event) => setDayLabel(event.target.value)}
+              onBlur={save.flushSave}
               className={`${INPUT_CLASS} w-28`}
             />
             <input
@@ -807,6 +803,7 @@ function SectionBlock({
               value={title}
               placeholder="Heading (e.g. AM)"
               onChange={(event) => setTitle(event.target.value)}
+              onBlur={save.flushSave}
               className={`${INPUT_CLASS} w-40`}
             />
             <input
@@ -814,14 +811,10 @@ function SectionBlock({
               value={subtitle}
               placeholder="Subtitle (e.g. Weigh-in 8–9:30 · Lift-off 10:00)"
               onChange={(event) => setSubtitle(event.target.value)}
+              onBlur={save.flushSave}
               className={`${INPUT_CLASS} min-w-0 flex-1`}
             />
           </div>
-        )}
-        {linked ? null : (
-          <Button variant="secondary" onClick={save} disabled={pending || !dirty}>
-            Save
-          </Button>
         )}
         <Button variant="danger" onClick={remove} disabled={pending}>
           {confirming ? 'Confirm delete' : 'Delete'}
@@ -871,9 +864,9 @@ function SectionBlock({
         availableSessions={availableSessions}
       />
 
-      {error ? (
+      {shownError ? (
         <p role="alert" className="mt-2 text-sm text-red-600">
-          {error}
+          {shownError}
         </p>
       ) : null}
     </div>
@@ -1291,6 +1284,8 @@ export function RotaBuilder({
   // moves or resolves one). Admin-only in practice — anon has no read on either table, so it never
   // receives these events.
   const scheduleRefresh = useDebouncedRefresh();
+  // Every edit box on this screen saves itself; each reports its state here for the header pill.
+  const { saveContext, indicator } = useSaveReporting();
   useRotaSignupsSubscription(competitionId, scheduleRefresh);
   useRotaChangeRequestsSubscription(competitionId, scheduleRefresh);
 
@@ -1406,35 +1401,45 @@ export function RotaBuilder({
   );
 
   return (
-    <div className="space-y-6">
-      {contactRows.length > 0 ? (
-        <div className="flex items-center justify-between gap-3 rounded-md bg-neutral-100 px-4 py-2">
-          <p className="text-sm text-neutral-700">
-            {contactRows.length} volunteer{contactRows.length === 1 ? '' : 's'} signed up.
-          </p>
-          <Button variant="secondary" onClick={exportContacts}>
-            Export contacts (CSV)
-          </Button>
+    <SaveContext.Provider value={saveContext}>
+      {/* Bottom padding so the last controls can scroll clear of the floating save card. */}
+      <div className="space-y-6 pb-16">
+        {/* One save card for the whole page, pinned to the corner so it's in view wherever the
+            admin has scrolled. Rows stay quiet unless a save is refused (then a message shows under
+            that row). */}
+        <div className="fixed right-4 bottom-4 z-40 rounded-full shadow-lg">
+          <SaveIndicatorPill indicator={indicator} />
         </div>
-      ) : null}
 
-      <RotaShareCard
-        competitionId={competitionId}
-        slug={slug}
-        competitionStatus={competitionStatus}
-        initialOpen={initialOpen}
-        initialWithdrawalContact={initialWithdrawalContact}
-      />
+        {contactRows.length > 0 ? (
+          <div className="flex items-center justify-between gap-3 rounded-md bg-neutral-100 px-4 py-2">
+            <p className="text-sm text-neutral-700">
+              {contactRows.length} volunteer{contactRows.length === 1 ? '' : 's'} signed up.
+            </p>
+            <Button variant="secondary" onClick={exportContacts}>
+              Export contacts (CSV)
+            </Button>
+          </div>
+        ) : null}
 
-      <Tabs
-        tabs={[
-          { id: 'rota', label: 'Rota', badge: changeRequests.length },
-          { id: 'layout', label: 'Edit layout' },
-          { id: 'formatting', label: 'Formatting' },
-        ]}
-        initialTabId={ordered.length === 0 ? 'layout' : 'rota'}
-        panels={{ rota: rotaPanel, layout: layoutPanel, formatting: formattingPanel }}
-      />
-    </div>
+        <RotaShareCard
+          competitionId={competitionId}
+          slug={slug}
+          competitionStatus={competitionStatus}
+          initialOpen={initialOpen}
+          initialWithdrawalContact={initialWithdrawalContact}
+        />
+
+        <Tabs
+          tabs={[
+            { id: 'rota', label: 'Rota', badge: changeRequests.length },
+            { id: 'layout', label: 'Edit layout' },
+            { id: 'formatting', label: 'Formatting' },
+          ]}
+          initialTabId={ordered.length === 0 ? 'layout' : 'rota'}
+          panels={{ rota: rotaPanel, layout: layoutPanel, formatting: formattingPanel }}
+        />
+      </div>
+    </SaveContext.Provider>
   );
 }
