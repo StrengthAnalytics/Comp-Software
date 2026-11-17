@@ -50,7 +50,9 @@ import {
   removeRotaSignupAction,
   resolveRotaChangeRequestAction,
   setRotaOpenAction,
+  setRotaWithdrawalContactAction,
   updateRotaRoleAction,
+  updateRotaSectionAction,
 } from '@/actions/rota';
 import { DEFAULT_ROTA_ROLE_TEMPLATE } from '@/lib/constants';
 import { RotaBuilder, type RotaBuilderSection } from '@/components/rota/rota-builder';
@@ -69,6 +71,8 @@ const removeSignup = vi.mocked(removeRotaSignupAction);
 const resolveRequest = vi.mocked(resolveRotaChangeRequestAction);
 const setOpen = vi.mocked(setRotaOpenAction);
 const updateRole = vi.mocked(updateRotaRoleAction);
+const updateSection = vi.mocked(updateRotaSectionAction);
+const setContact = vi.mocked(setRotaWithdrawalContactAction);
 
 const COMP_ID = '7b5036f4-43c5-4b1c-8c1a-9d59a2f3b111';
 
@@ -265,8 +269,9 @@ describe('RotaBuilder — layout', () => {
     expect(within(mcRow).getByText('8:30am')).toBeInTheDocument();
 
     fireEvent.change(select, { target: { value: 'weigh_in' } });
-    expect(within(mcRow).getByText('Set on save')).toBeInTheDocument();
-    fireEvent.click(within(mcRow).getByRole('button', { name: 'Save' }));
+    expect(within(mcRow).getByText('Working it out…')).toBeInTheDocument();
+    // Leaving the choice saves it straight away — there is no Save button.
+    fireEvent.blur(select);
 
     await waitFor(() =>
       expect(updateRole).toHaveBeenCalledWith(expect.objectContaining({ id: 'role-1', arriveBasis: 'weigh_in' })),
@@ -281,7 +286,7 @@ describe('RotaBuilder — layout', () => {
     const [mcRow] = screen.getAllByLabelText('Role title').map((input) => input.closest('div') as HTMLElement);
     fireEvent.change(within(mcRow).getByLabelText('Arrive-by time'), { target: { value: 'manual' } });
     fireEvent.change(within(mcRow).getByLabelText('Arrive by'), { target: { value: '8:00am' } });
-    fireEvent.click(within(mcRow).getByRole('button', { name: 'Save' }));
+    fireEvent.blur(within(mcRow).getByLabelText('Arrive by'));
 
     await waitFor(() =>
       expect(updateRole).toHaveBeenCalledWith(
@@ -319,14 +324,15 @@ describe('RotaBuilder — layout', () => {
     expect(await screen.findByText('Added to 2 columns.')).toBeInTheDocument();
   });
 
-  it('saves an edited number of spaces', async () => {
+  it('saves an edited number of spaces by itself, with no Save button', async () => {
     updateRole.mockResolvedValue({ status: 'ok', data: undefined });
     renderBuilder([sectionWithRole]);
     openLayoutTab();
 
     const row = screen.getByLabelText('Role title').closest('div') as HTMLElement;
+    expect(within(row).queryByRole('button', { name: 'Save' })).toBeNull();
+    // No blur: the autosave fires once typing settles.
     fireEvent.change(within(row).getByLabelText('Spaces'), { target: { value: '3' } });
-    fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>
       expect(updateRole).toHaveBeenCalledWith({
@@ -337,6 +343,8 @@ describe('RotaBuilder — layout', () => {
         capacity: 3,
       }),
     );
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    expect(await within(row).findByText('Saved ✓')).toBeInTheDocument();
   });
 
   it("shows the server's message when the spaces would drop below the people signed up", async () => {
@@ -349,17 +357,46 @@ describe('RotaBuilder — layout', () => {
 
     const row = screen.getByLabelText('Role title').closest('div') as HTMLElement;
     fireEvent.change(within(row).getByLabelText('Role title'), { target: { value: 'MC (main)' } });
-    fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+    fireEvent.blur(within(row).getByLabelText('Role title'));
 
     expect(await screen.findByText(/before lowering the spaces/)).toBeInTheDocument();
   });
 
-  it('disables Save when the number of spaces is cleared to an invalid value', () => {
+  it('does not save spaces cleared to an invalid value, and says why', async () => {
     renderBuilder([sectionWithRole]);
     openLayoutTab();
     const row = screen.getByLabelText('Role title').closest('div') as HTMLElement;
     fireEvent.change(within(row).getByLabelText('Spaces'), { target: { value: '' } });
-    expect(within(row).getByRole('button', { name: 'Save' })).toBeDisabled();
+    fireEvent.blur(within(row).getByLabelText('Spaces'));
+
+    expect(await within(row).findByRole('alert')).toHaveTextContent(/Spaces must be a whole number/);
+    expect(updateRole).not.toHaveBeenCalled();
+  });
+
+  it("saves a hand-made column's heading as it is typed", async () => {
+    updateSection.mockResolvedValue({ status: 'ok', data: undefined });
+    renderBuilder([sectionWithRole]);
+    openLayoutTab();
+
+    fireEvent.change(screen.getByLabelText('Column heading'), { target: { value: 'Set-up' } });
+    fireEvent.blur(screen.getByLabelText('Column heading'));
+
+    await waitFor(() =>
+      expect(updateSection).toHaveBeenCalledWith({ id: 'sec-1', dayLabel: 'Sat', title: 'Set-up', subtitle: '' }),
+    );
+  });
+
+  it('saves the extra contact line as it is typed', async () => {
+    setContact.mockResolvedValue({ status: 'ok', data: undefined });
+    renderBuilder([sectionWithRole]);
+
+    const input = screen.getByLabelText(/Extra contact line/);
+    fireEvent.change(input, { target: { value: 'Email rota@club.org' } });
+    fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect(setContact).toHaveBeenCalledWith({ competitionId: COMP_ID, withdrawalContact: 'Email rota@club.org' }),
+    );
   });
 
   it('requires a second click to delete a role that has sign-ups', async () => {
