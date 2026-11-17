@@ -345,7 +345,7 @@ describe('RotaBuilder — layout', () => {
         capacity: 3,
       }),
     );
-    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled(), { timeout: 3000 });
     // The row stays quiet; the page's one save card reports it.
     expect(within(row).queryByText(/Sav(ing|ed)/)).toBeNull();
     expect(await screen.findByText('Online — all changes saved')).toBeInTheDocument();

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { setRotaStyleAction } from '@/actions/rota';
+import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { useStationSave } from '@/components/station/use-station-save';
 import {
   BANNER_SWATCH,
@@ -22,6 +22,7 @@ import {
   ROTA_OPEN_COLOURS,
   rotaStyleSchema,
   type RotaStyle,
+  type SetRotaStyleInput,
 } from '@/types/rota-style';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -147,14 +148,14 @@ export function RotaFormatting({
   sections: RotaGridSection[];
   initialStyle: RotaStyle;
 }) {
-  const router = useRouter();
+  const scheduleRefresh = useDebouncedRefresh();
   const [style, setStyle] = useState<RotaStyle>(initialStyle);
 
   function update<K extends keyof RotaStyle>(key: K, value: RotaStyle[K]) {
     setStyle((current) => ({ ...current, [key]: value }));
   }
 
-  const save = useStationSave<null, { competitionId: string; style: RotaStyle | null }>({
+  const save = useStationSave<null, SetRotaStyleInput>({
     entryId: 'rota-formatting',
     initialFlag: null,
     serialized: JSON.stringify(style),
@@ -162,8 +163,9 @@ export function RotaFormatting({
     buildPayload: () => ({ competitionId, style: sameStyle(style, DEFAULT_ROTA_STYLE) ? null : style }),
     save: async (payload) => {
       const result = await setRotaStyleAction(payload);
+      // Re-read the page so the Rota tab's grid takes the new look (debounced across quick picks).
       if (result.status === 'ok') {
-        router.refresh();
+        scheduleRefresh();
       }
       return result;
     },

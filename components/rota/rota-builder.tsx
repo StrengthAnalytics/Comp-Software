@@ -31,7 +31,12 @@ import { useDebouncedRefresh } from '@/lib/realtime/use-debounced-refresh';
 import { useRotaChangeRequestsSubscription } from '@/lib/realtime/use-rota-change-requests-subscription';
 import { useRotaSignupsSubscription } from '@/lib/realtime/use-rota-signups-subscription';
 import { buildRotaContactsCsv } from '@/lib/rota/export-csv';
-import { ROTA_WITHDRAWAL_CONTACT_MAX } from '@/types/rota';
+import {
+  ROTA_WITHDRAWAL_CONTACT_MAX,
+  type RotaRoleUpdateInput,
+  type RotaSectionUpdateInput,
+  type RotaWithdrawalContactInput,
+} from '@/types/rota';
 import { ResetRota } from '@/components/rota/reset-rota';
 import { RotaAdminGrid } from '@/components/rota/rota-admin-grid';
 import { RotaChangeRequests, type RotaChangeRequestSummary } from '@/components/rota/rota-change-requests';
@@ -160,7 +165,7 @@ function RotaShareCard({
 
   const [contact, setContact] = useState(initialWithdrawalContact ?? '');
   // The contact line saves itself as it's typed (and when the box is left).
-  const contactSave = useStationSave<null, { competitionId: string; withdrawalContact: string | null }>({
+  const contactSave = useStationSave<null, RotaWithdrawalContactInput>({
     entryId: 'rota-withdrawal-contact',
     initialFlag: null,
     serialized: contact,
@@ -425,11 +430,12 @@ function RoleRow({
   const [pending, startTransition] = useTransition();
 
   const full = role.signups.length >= role.capacity;
+  const scheduleRefresh = useDebouncedRefresh();
   const arriveBasis = linked && arriveChoice !== 'manual' ? arriveChoice : null;
 
   // Every field saves itself as it settles and when it's left. A typed time only matters (and only
   // counts as a change) while the job isn't following its session's clock.
-  const save = useStationSave<null, Parameters<typeof updateRotaRoleAction>[0]>({
+  const save = useStationSave<null, RotaRoleUpdateInput>({
     entryId: `rota-role-${role.id}`,
     initialFlag: null,
     serialized: JSON.stringify({ title, arriveBasis, arriveBy: arriveBasis === null ? arriveBy : '', capacity }),
@@ -440,13 +446,15 @@ function RoleRow({
         return fail(`Spaces must be a whole number from 1 to ${MAX_ROTA_SLOT_CAPACITY}.`);
       }
       const result = await updateRotaRoleAction(payload);
-      // Re-read the rota so the grid, the filled count and any worked-out arrive-by time follow.
+      // Re-read the rota so the grid, the filled count and any worked-out arrive-by time follow
+      // (debounced, so tabbing through a row's boxes re-reads it once).
       if (result.status === 'ok') {
-        router.refresh();
+        scheduleRefresh();
       }
       return result;
     },
   });
+  const shownError = save.error ?? error;
 
   function remove() {
     if (role.signups.length > 0 && !confirming) {
@@ -517,9 +525,9 @@ function RoleRow({
       <Button variant="secondary" onClick={remove} disabled={pending}>
         {confirming ? 'Confirm delete' : 'Delete'}
       </Button>
-      {save.error || error ? (
+      {shownError ? (
         <p role="alert" className="w-full text-sm text-red-600">
-          {save.error ?? error}
+          {shownError}
         </p>
       ) : null}
     </div>
@@ -700,9 +708,10 @@ function SectionBlock({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  const scheduleRefresh = useDebouncedRefresh();
   // A hand-made column's heading saves itself as it's typed; a session's column has no editable
   // heading, so its values never change and it never saves.
-  const save = useStationSave<null, { id: string; dayLabel: string; title: string; subtitle: string }>({
+  const save = useStationSave<null, RotaSectionUpdateInput>({
     entryId: `rota-section-${section.id}`,
     initialFlag: null,
     serialized: JSON.stringify({ dayLabel, title, subtitle }),
@@ -710,11 +719,12 @@ function SectionBlock({
     save: async (payload) => {
       const result = await updateRotaSectionAction(payload);
       if (result.status === 'ok') {
-        router.refresh();
+        scheduleRefresh();
       }
       return result;
     },
   });
+  const shownError = save.error ?? error;
   const hasSignups = section.roles.some((role) => role.signups.length > 0);
   // A session's column takes its heading and times from the session, so they're edited there.
   const linked = section.session_id !== null;
@@ -848,9 +858,9 @@ function SectionBlock({
         availableSessions={availableSessions}
       />
 
-      {save.error || error ? (
+      {shownError ? (
         <p role="alert" className="mt-2 text-sm text-red-600">
-          {save.error ?? error}
+          {shownError}
         </p>
       ) : null}
     </div>
@@ -1386,7 +1396,8 @@ export function RotaBuilder({
 
   return (
     <SaveContext.Provider value={saveContext}>
-      <div className="space-y-6">
+      {/* Bottom padding so the last controls can scroll clear of the floating save card. */}
+      <div className="space-y-6 pb-16">
         {/* One save card for the whole page, pinned to the corner so it's in view wherever the
             admin has scrolled. Rows stay quiet unless a save is refused (then a message shows under
             that row). */}
