@@ -1,6 +1,7 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ROTA_SCROLL_END_TOLERANCE_PX, ROTA_SCROLL_STEP_FRACTION } from '@/lib/constants';
 import {
   buildRotaGrid,
   cellArriveBy,
@@ -12,10 +13,12 @@ import { humaniseRotaTimes } from '@/lib/rota/time';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 
 // The spreadsheet-style rota both the public board and the admin screen render: sessions as columns
-// under day banners, jobs as rows, a green slot per volunteer and a grey one per open place. On a
-// phone the table scrolls sideways with the job names pinned on the left. What a slot *does* when
-// tapped is the caller's (sign up, add, show contact details) — this component only lays it out.
-// Its colours and line weights come from the organiser's Formatting choices (`look`).
+// under day banners, jobs as rows, a green slot per volunteer and a grey one per open place. A grid
+// wider than its screen scrolls sideways with the job names pinned on the left. What a slot *does*
+// when tapped is the caller's (sign up, add, show contact details) — this component only lays it
+// out. Its colours and line weights come from the organiser's Formatting choices (`look`). While
+// there are columns out of sight to the right, the edge fades and a "More" button slides the grid
+// along, because phones hide the scroll bar and nothing else says the grid carries on.
 
 export type RotaGridRole = RotaGridRoleBase & {
   capacity: number;
@@ -51,7 +54,39 @@ function columnFill(roles: RotaGridRole[]): { filled: number; total: number } {
   return { filled, total };
 }
 
+// Whether the grid has columns out of sight to the right of what its scroller is showing. Stays
+// false where the browser can't say (the server render, test environments).
+function useMoreToTheRight(scrollerRef: React.RefObject<HTMLDivElement | null>): boolean {
+  const [more, setMore] = useState(false);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) {
+      return;
+    }
+    const measure = () => {
+      setMore(scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - ROTA_SCROLL_END_TOLERANCE_PX);
+    };
+    measure();
+    scroller.addEventListener('scroll', measure, { passive: true });
+    // The grid's own width changes when sign-ups arrive or the screen turns.
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(scroller);
+    if (scroller.firstElementChild) {
+      observer?.observe(scroller.firstElementChild);
+    }
+    return () => {
+      scroller.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  }, [scrollerRef]);
+
+  return more;
+}
+
 export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, renderOpen }: RotaGridProps) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const moreToTheRight = useMoreToTheRight(scrollerRef);
   const grid = buildRotaGrid<RotaGridRole, RotaGridSection>(sections);
   const hasDayLabels = grid.dayGroups.some((group) => group.label !== null);
   const classes = rotaGridClasses(look);
@@ -72,130 +107,163 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
     return dayEndIndexes.has(columnIndex) ? classes.dayLine : classes.sessionLine;
   }
 
+  function showMore() {
+    const scroller = scrollerRef.current;
+    scroller?.scrollBy({ left: scroller.clientWidth * ROTA_SCROLL_STEP_FRACTION, behavior: 'smooth' });
+  }
+
+  // Narrower columns on a phone or small tablet (under lg), so two sessions and the job names fit
+  // the screen side by side. There the job-name column asks for its minimum, so spare width goes to
+  // the sessions.
+  const roleColumnSize = 'w-24 min-w-24 px-1.5 lg:w-auto lg:min-w-28 lg:px-2';
+  const sessionColumnSize = 'min-w-28 px-1 lg:min-w-36 lg:px-2';
+
   return (
-    <div className={`overflow-x-auto rounded-lg border-2 bg-white shadow-sm ${classes.lineColour}`}>
-      <table className="w-full border-separate border-spacing-0 text-sm">
-        <thead>
-          {hasDayLabels ? (
+    <div className="relative">
+      <div
+        ref={scrollerRef}
+        className={`overflow-x-auto rounded-lg border-2 bg-white shadow-sm ${classes.lineColour}`}
+      >
+        <table className="w-full border-separate border-spacing-0 text-sm">
+          <thead>
+            {hasDayLabels ? (
+              <tr>
+                <th className={`sticky left-0 z-20 ${classes.banner} ${classes.dayLine} ${classes.lineColour}`} />
+                {grid.dayGroups.map((group, index) => (
+                  <th
+                    // Day groups are positional runs of columns; the index is their identity.
+                    key={index}
+                    colSpan={group.span}
+                    scope="colgroup"
+                    className={`px-2 py-1.5 text-center text-xs font-semibold uppercase tracking-wider ${classes.banner} ${
+                      index === grid.dayGroups.length - 1 ? '' : classes.dayLine
+                    } ${classes.lineColour}`}
+                  >
+                    {/* Pinned to the part of the day's banner that is on screen, so the day stays named
+                        however far the grid is scrolled — and clear of the "More" button. */}
+                    <span className="sticky left-2 right-20 z-30 inline-block">{group.label ?? ''}</span>
+                  </th>
+                ))}
+              </tr>
+            ) : null}
             <tr>
-              <th className={`sticky left-0 z-20 ${classes.banner} ${classes.dayLine} ${classes.lineColour}`} />
-              {grid.dayGroups.map((group, index) => (
-                <th
-                  // Day groups are positional runs of columns; the index is their identity.
-                  key={index}
-                  colSpan={group.span}
-                  scope="colgroup"
-                  className={`px-2 py-1.5 text-center text-xs font-semibold uppercase tracking-wider ${classes.banner} ${
-                    index === grid.dayGroups.length - 1 ? '' : classes.dayLine
-                  } ${classes.lineColour}`}
-                >
-                  {group.label ?? ''}
-                </th>
-              ))}
-            </tr>
-          ) : null}
-          <tr>
-            <th
-              scope="col"
-              className={`sticky left-0 z-20 min-w-28 px-2 py-2 text-left align-bottom text-xs font-semibold uppercase tracking-wide text-neutral-500 ${classes.header} ${classes.roleLine} ${classes.dayLine} ${classes.lineColour}`}
-            >
-              Role
-            </th>
-            {grid.columns.map(({ section, crewArriveBy }, columnIndex) => {
-              const fill = columnFill(section.roles);
-              const complete = fill.total > 0 && fill.filled === fill.total;
-              return (
-                <th
-                  key={section.id}
-                  scope="col"
-                  className={`min-w-36 px-2 py-2 text-center align-top font-normal ${classes.header} ${classes.roleLine} ${rightLine(columnIndex)} ${classes.lineColour}`}
-                >
-                  <p className="font-semibold text-neutral-900">{section.title}</p>
-                  {/* "Weigh-in 7:00am · Lift-off 9:00am" reads as two lines, as on the sheet. */}
-                  {(humaniseRotaTimes(section.subtitle) ?? '')
-                    .split(' · ')
-                    .filter((line) => line.trim() !== '')
-                    .map((line, lineIndex) => (
-                      <p key={`${lineIndex}-${line}`} className="mt-0.5 text-xs text-neutral-600">
-                        {line}
+              <th
+                scope="col"
+                className={`sticky left-0 z-20 py-2 text-left align-bottom text-xs font-semibold uppercase tracking-wide text-neutral-500 ${roleColumnSize} ${classes.header} ${classes.roleLine} ${classes.dayLine} ${classes.lineColour}`}
+              >
+                Role
+              </th>
+              {grid.columns.map(({ section, crewArriveBy }, columnIndex) => {
+                const fill = columnFill(section.roles);
+                const complete = fill.total > 0 && fill.filled === fill.total;
+                return (
+                  <th
+                    key={section.id}
+                    scope="col"
+                    className={`py-2 text-center align-top font-normal ${sessionColumnSize} ${classes.header} ${classes.roleLine} ${rightLine(columnIndex)} ${classes.lineColour}`}
+                  >
+                    <p className="font-semibold text-neutral-900">{section.title}</p>
+                    {/* "Weigh-in 7:00am · Lift-off 9:00am" reads as two lines, as on the sheet. */}
+                    {(humaniseRotaTimes(section.subtitle) ?? '')
+                      .split(' · ')
+                      .filter((line) => line.trim() !== '')
+                      .map((line, lineIndex) => (
+                        <p key={`${lineIndex}-${line}`} className="mt-0.5 text-xs text-neutral-600">
+                          {line}
+                        </p>
+                      ))}
+                    {crewArriveBy ? (
+                      <p className="mt-0.5 text-xs font-medium text-neutral-800">Arrive by {crewArriveBy}</p>
+                    ) : null}
+                    {fill.total > 0 ? (
+                      <p
+                        className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                          complete ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {fill.filled} / {fill.total} filled
                       </p>
-                    ))}
-                  {crewArriveBy ? (
-                    <p className="mt-0.5 text-xs font-medium text-neutral-800">Arrive by {crewArriveBy}</p>
-                  ) : null}
-                  {fill.total > 0 ? (
-                    <p
-                      className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                        complete ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                      }`}
-                    >
-                      {fill.filled} / {fill.total} filled
-                    </p>
-                  ) : null}
-                </th>
+                    ) : null}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {grid.rows.map((row, rowIndex) => {
+              const last = rowIndex === grid.rows.length - 1;
+              const rowLine = last ? '' : classes.roleLine;
+              const stripe = rowIndex % 2 === 1 ? classes.stripe : '';
+              return (
+                <tr key={row.key}>
+                  <th
+                    scope="row"
+                    className={`sticky left-0 z-10 px-1.5 py-2 text-left align-top text-xs font-semibold text-neutral-800 lg:px-2 lg:text-sm ${classes.header} ${rowLine} ${classes.dayLine} ${classes.lineColour}`}
+                  >
+                    {row.title}
+                  </th>
+                  {row.cells.map((role, columnIndex) => {
+                    const column = grid.columns[columnIndex];
+                    const cellLines = `${rowLine} ${rightLine(columnIndex)} ${classes.lineColour}`;
+                    if (role === null) {
+                      return (
+                        <td
+                          key={column.section.id}
+                          className={`bg-neutral-100/60 ${cellLines}`}
+                          aria-label="Not needed this session"
+                        />
+                      );
+                    }
+                    const ownTime = cellArriveBy(role, column.crewArriveBy);
+                    return (
+                      <td key={column.section.id} className={`p-1 align-top lg:p-1.5 ${stripe} ${cellLines}`}>
+                        {ownTime ? (
+                          <p className="mb-1 text-center text-xs font-medium text-amber-700">Arrive by {ownTime}</p>
+                        ) : null}
+                        <ul className="space-y-1">
+                          {role.filled.map((volunteer) => (
+                            <li key={volunteer.key}>
+                              {renderFilled ? (
+                                renderFilled(role, volunteer, classes)
+                              ) : (
+                                <span className={classes.filledSlot}>{volunteer.name}</span>
+                              )}
+                            </li>
+                          ))}
+                          {Array.from({ length: openSlotCount(role) }, (_, slotIndex) => (
+                            <li key={`open-${slotIndex}`}>
+                              {renderOpen ? (
+                                renderOpen(role, slotIndex, classes)
+                              ) : (
+                                <span className={classes.openSlot}>Open</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                    );
+                  })}
+                </tr>
               );
             })}
-          </tr>
-        </thead>
-        <tbody>
-          {grid.rows.map((row, rowIndex) => {
-            const last = rowIndex === grid.rows.length - 1;
-            const rowLine = last ? '' : classes.roleLine;
-            const stripe = rowIndex % 2 === 1 ? classes.stripe : '';
-            return (
-              <tr key={row.key}>
-                <th
-                  scope="row"
-                  className={`sticky left-0 z-10 px-2 py-2 text-left align-top text-sm font-semibold text-neutral-800 ${classes.header} ${rowLine} ${classes.dayLine} ${classes.lineColour}`}
-                >
-                  {row.title}
-                </th>
-                {row.cells.map((role, columnIndex) => {
-                  const column = grid.columns[columnIndex];
-                  const cellLines = `${rowLine} ${rightLine(columnIndex)} ${classes.lineColour}`;
-                  if (role === null) {
-                    return (
-                      <td
-                        key={column.section.id}
-                        className={`bg-neutral-100/60 ${cellLines}`}
-                        aria-label="Not needed this session"
-                      />
-                    );
-                  }
-                  const ownTime = cellArriveBy(role, column.crewArriveBy);
-                  return (
-                    <td key={column.section.id} className={`p-1.5 align-top ${stripe} ${cellLines}`}>
-                      {ownTime ? (
-                        <p className="mb-1 text-center text-xs font-medium text-amber-700">Arrive by {ownTime}</p>
-                      ) : null}
-                      <ul className="space-y-1">
-                        {role.filled.map((volunteer) => (
-                          <li key={volunteer.key}>
-                            {renderFilled ? (
-                              renderFilled(role, volunteer, classes)
-                            ) : (
-                              <span className={classes.filledSlot}>{volunteer.name}</span>
-                            )}
-                          </li>
-                        ))}
-                        {Array.from({ length: openSlotCount(role) }, (_, slotIndex) => (
-                          <li key={`open-${slotIndex}`}>
-                            {renderOpen ? (
-                              renderOpen(role, slotIndex, classes)
-                            ) : (
-                              <span className={classes.openSlot}>Open</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
+      {moreToTheRight ? (
+        <>
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 z-30 w-10 rounded-r-lg bg-linear-to-l from-neutral-900/25 to-transparent"
+          />
+          <button
+            type="button"
+            onClick={showMore}
+            className="absolute right-1.5 top-1.5 z-30 rounded-full border border-neutral-300 bg-white px-2.5 py-0.5 text-xs font-semibold text-neutral-900 shadow-md hover:bg-neutral-50"
+          >
+            More <span aria-hidden="true">&rarr;</span>
+          </button>
+        </>
+      ) : null}
     </div>
   );
 }

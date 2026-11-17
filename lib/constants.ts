@@ -449,3 +449,9 @@ export const EMAIL_ADDRESS_MAX = 254;
 
 // Matches a phone or tablet (a finger, not a mouse, is the main pointer).
 export const TOUCH_SCREEN_MEDIA_QUERY = '(pointer: coarse)';
+
+// The rota grid's "More" button: how far one tap slides the grid, as a share of the width on show,
+// and how close to the right-hand end (in pixels) counts as "nothing more to see" (browsers report
+// scroll positions in fractions of a pixel).
+export const ROTA_SCROLL_STEP_FRACTION = 0.6;
+export const ROTA_SCROLL_END_TOLERANCE_PX = 2;
