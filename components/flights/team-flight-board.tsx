@@ -6,7 +6,7 @@ import { assignTeamFlightAction } from '@/actions/flights';
 import { LIFT_LABELS, MAX_FLIGHT_SIZE } from '@/lib/constants';
 import type { TeamLift } from '@/types/team';
 import type { ActionResult } from '@/types/action-result';
-import type { FlightRow, SessionRow } from '@/components/flights/flights-manager';
+import type { FlightRow, SessionRow } from '@/components/flights/flights-types';
 import { buttonClasses } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 

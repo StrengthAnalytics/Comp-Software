@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_FLIGHTS_PER_SESSION } from '@/lib/constants';
 
 // Blank string → null so optional date/time fields clear cleanly when the operator empties them.
 const optionalDate = z.preprocess(
@@ -10,7 +11,7 @@ const optionalDate = z.preprocess(
 );
 
 // Accepts HH:MM or HH:MM:SS — an <input type="time"> emits the former; Postgres `time` takes both.
-const optionalTime = z.preprocess(
+export const optionalTime = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? null : value),
   z
     .string()
@@ -32,6 +33,8 @@ export const platformUpdateSchema = z.object({
   name: name(60),
 });
 
+// No sort order: the server keeps sessions in time order (lib/sessions/sequence.ts). `flightCount`
+// creates that many lettered flights with the session, so adding a session is one step.
 export const sessionInputSchema = z.object({
   competitionId: z.uuid(),
   name: name(80),
@@ -39,9 +42,10 @@ export const sessionInputSchema = z.object({
   weighInTime: optionalTime,
   liftOffTime: optionalTime,
   platformId: optionalUuid,
-  sortOrder: sortOrder.default(0),
+  flightCount: z.number().int().min(0).max(MAX_FLIGHTS_PER_SESSION).default(0),
 });
 
+// No sort order: sessions are kept in time order by the server (lib/sessions/sequence.ts).
 export const sessionUpdateSchema = z.object({
   id: z.uuid(),
   name: name(80),
@@ -49,7 +53,6 @@ export const sessionUpdateSchema = z.object({
   weighInTime: optionalTime,
   liftOffTime: optionalTime,
   platformId: optionalUuid,
-  sortOrder,
 });
 
 export const flightInputSchema = z.object({
@@ -62,7 +65,13 @@ export const flightInputSchema = z.object({
 export const flightUpdateSchema = z.object({
   id: z.uuid(),
   name: name(60),
-  sortOrder,
+});
+
+// Moves a flight one place earlier or later within its session (swapping with its neighbour).
+export const moveFlightSchema = z.object({
+  id: z.uuid(),
+  sessionId: z.uuid(),
+  direction: z.enum(['up', 'down']),
 });
 
 // flightId null = move the lifter back to Unassigned.

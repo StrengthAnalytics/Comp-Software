@@ -108,8 +108,9 @@ export default async function ChecklistPage({
     notFound();
   }
 
-  // Head-only count queries — the checklist needs numbers, never rows. Run in parallel; a failed
-  // count is reported (Sentry + a banner) rather than silently rendering 0 as if it were true.
+  // Head-only count queries — the checklist needs numbers, never rows (except each flight's session,
+  // to spot a session with no flights). Run in parallel; a failed query is reported (Sentry + a
+  // banner) rather than silently rendering 0 as if it were true.
   const supabase = await createClient();
   const countOf = (table: 'age_categories' | 'weight_classes' | 'platforms' | 'sessions' | 'teams') =>
     supabase.from(table).select('id', { count: 'exact', head: true }).eq('competition_id', comp.id);
@@ -119,6 +120,8 @@ export default async function ChecklistPage({
     countOf('weight_classes'),
     countOf('platforms'),
     countOf('sessions'),
+    supabase.from('flights').select('session_id').eq('competition_id', comp.id),
+    countOf('sessions').is('lift_off_time', null),
     supabase.from('entries').select('id', { count: 'exact', head: true }).eq('competition_id', comp.id),
     supabase
       .from('entries')
@@ -137,6 +140,8 @@ export default async function ChecklistPage({
     weightClasses,
     platforms,
     sessions,
+    flights,
+    sessionsMissingLiftOff,
     entries,
     entriesInFlights,
     entriesWeighedIn,
@@ -150,6 +155,9 @@ export default async function ChecklistPage({
     Sentry.captureException(result.error);
   }
 
+  const sessionCount = sessions.count ?? 0;
+  const sessionsWithFlights = new Set((flights.data ?? []).map((flight) => flight.session_id)).size;
+
   const items = buildSetupChecklist({
     compId: comp.id,
     slug: comp.slug,
@@ -159,7 +167,10 @@ export default async function ChecklistPage({
     ageCategoryCount: ageCategories.count ?? 0,
     weightClassCount: weightClasses.count ?? 0,
     platformCount: platforms.count ?? 0,
-    sessionCount: sessions.count ?? 0,
+    sessionCount,
+    flightCount: flights.data?.length ?? 0,
+    sessionsWithoutFlights: Math.max(0, sessionCount - sessionsWithFlights),
+    sessionsMissingLiftOff: sessionsMissingLiftOff.count ?? 0,
     entryCount: entries.count ?? 0,
     entriesInFlights: entriesInFlights.count ?? 0,
     entriesWeighedIn: entriesWeighedIn.count ?? 0,

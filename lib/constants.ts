@@ -133,6 +133,28 @@ export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
 // to run smoothly, so the flights screen warns the operator to rebalance.
 export const MAX_FLIGHT_SIZE = 14;
 
+// Guided schedule builder (Sessions & flights). Weigh-in opens two hours before lift-off (the IPF
+// rule), so a session's weigh-in time defaults to its lift-off minus this.
+export const WEIGH_IN_LEAD_MINUTES = 120;
+export const DEFAULT_FLIGHTS_PER_SESSION = 2;
+export const DEFAULT_SESSIONS_PER_DAY = 2;
+export const MAX_FLIGHTS_PER_SESSION = 6;
+export const MAX_SESSIONS_PER_DAY = 6;
+export const MAX_SCHEDULE_PLATFORMS = 3;
+// The builder offers one row per comp day; a longer date range is almost certainly a typo, so the
+// builder stops at this many days rather than drawing hundreds of rows.
+export const MAX_SCHEDULE_DAYS = 7;
+// Suggested lift-off times by how many sessions a platform runs that day. Beyond the table, sessions
+// start at FALLBACK_FIRST_LIFT_OFF and follow every FALLBACK_SESSION_GAP_MINUTES.
+export const DEFAULT_LIFT_OFF_TIMES: Readonly<Record<number, readonly string[]>> = {
+  1: ['10:00'],
+  2: ['09:30', '14:30'],
+  3: ['09:00', '13:00', '17:00'],
+  4: ['08:30', '12:00', '15:30', '19:00'],
+};
+export const FALLBACK_FIRST_LIFT_OFF = '08:00';
+export const FALLBACK_SESSION_GAP_MINUTES = 150;
+
 // Which of the three lifts a competition contests, by event type. Drives which opener and rack
 // fields a registration screen shows. Bench-only and deadlift-only meets omit the others.
 export type Lifts = { squat: boolean; bench: boolean; deadlift: boolean };

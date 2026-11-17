@@ -32,3 +32,25 @@ export function isRealIsoDate(value: string): boolean {
     date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
   );
 }
+
+// "2026-07-11" → "Sat"; null for anything that isn't a real date. UTC, so the day doesn't shift with
+// the viewer's timezone: a session date is a calendar date, not an instant.
+export function shortDayLabel(date: string | null): string | null {
+  if (!date || !isRealIsoDate(date)) {
+    return null;
+  }
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
+}
+
+// "2026-07-11" → "Saturday 11 July"; null for anything that isn't a real date.
+export function longDayLabel(date: string | null): string | null {
+  if (!date || !isRealIsoDate(date)) {
+    return null;
+  }
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  });
+}
