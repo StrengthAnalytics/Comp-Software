@@ -969,7 +969,7 @@ function GenerateFromSessionsCard({
   const selected = roles
     .filter((role) => role.included)
     .map((role) => ({ title: role.title, capacity: role.capacity, arriveBasis: role.arriveBasis }));
-  const rolesValid = selected.length > 0 && selected.every((role) => isValidCapacity(role.capacity));
+  const capacitiesValid = selected.every((role) => isValidCapacity(role.capacity));
 
   function setIncluded(index: number, included: boolean) {
     setRoles((current) => current.map((role, i) => (i === index ? { ...role, included } : role)));
@@ -999,6 +999,15 @@ function GenerateFromSessionsCard({
       );
       router.refresh();
     });
+  }
+
+  function openRebuild() {
+    if (selected.length === 0) {
+      setError('Tick at least one role to rebuild with.');
+      return;
+    }
+    setError(null);
+    setConfirmingRebuild(true);
   }
 
   function closeRebuild() {
@@ -1093,7 +1102,7 @@ function GenerateFromSessionsCard({
       </ul>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button onClick={generate} disabled={pending || pendingSessionCount === 0 || !rolesValid}>
+        <Button onClick={generate} disabled={pending || pendingSessionCount === 0 || !capacitiesValid}>
           {buttonLabel}
         </Button>
         {message ? (
@@ -1127,8 +1136,8 @@ function GenerateFromSessionsCard({
           <Button
             variant="secondary"
             className="mt-3"
-            onClick={() => setConfirmingRebuild(true)}
-            disabled={pending || signupCount > 0 || !rolesValid}
+            onClick={openRebuild}
+            disabled={pending || signupCount > 0 || !capacitiesValid}
           >
             Rebuild the rota
           </Button>

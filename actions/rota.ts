@@ -545,9 +545,6 @@ export async function generateRotaFromSessionsAction(
   });
 }
 
-const ROTA_HAS_SIGNUPS_MESSAGE =
-  'Someone has already signed up, so the rota can’t be rebuilt. Remove them first, or use Reset the rota.';
-
 // Rebuilds the rota from scratch: throws away every column made from a session (with any hand edits
 // to its jobs) and generates fresh ones from the ticked roles and spaces. Hand-made columns (e.g.
 // "Set-up") are kept. Refused while anyone at all is signed up — the database function
@@ -567,25 +564,16 @@ export async function rebuildRotaFromSessionsAction(
 
     const supabase = await createClient();
 
-    // Checked before clearing so a comp with no sessions keeps its rota rather than losing it.
-    const { count, error: countError } = await supabase
-      .from('sessions')
-      .select('id', { count: 'exact', head: true })
-      .eq('competition_id', parsed.data.competitionId);
-    if (countError) {
-      Sentry.captureException(countError);
-      return fail(GENERIC_ERROR);
-    }
-    if (!count) {
-      return fail('Add sessions on the Sessions & flights screen before rebuilding the rota.');
-    }
-
+    // Only columns still linked to a session are cleared, and a deleted session unlinks its column
+    // (on delete set null), so a comp with no sessions loses nothing here — Generate then says so.
     const { error: clearError } = await supabase.rpc('clear_rota_session_columns', {
       _competition_id: parsed.data.competitionId,
     });
     if (clearError) {
       if (clearError.code === 'P0001' && clearError.message.includes('rota_has_signups')) {
-        return fail(ROTA_HAS_SIGNUPS_MESSAGE);
+        return fail(
+          'Someone has already signed up, so the rota can’t be rebuilt. Remove them first, or use Reset the rota.',
+        );
       }
       Sentry.captureException(clearError);
       return fail('Could not rebuild the rota. Please try again.');
