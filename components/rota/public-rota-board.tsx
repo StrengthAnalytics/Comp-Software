@@ -22,8 +22,11 @@ import { RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
 import { FILLED_SWATCH, OPEN_SWATCH } from '@/lib/rota/style';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 
+// 16px text on phones (text-base), 14px from the sm breakpoint up. iPhone Safari zooms the whole page
+// in when a field under 16px gets focus — and the sign-up and "Request a change" pop-ups focus their
+// first field as they open — which left most of the form off-screen. Pinch-zoom is left alone.
 const INPUT_CLASS =
-  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-base text-neutral-900 focus:border-neutral-500 focus:outline-none sm:text-sm';
 const LABEL_CLASS = 'text-sm font-medium text-neutral-700';
 const NETWORK_ERROR = 'Could not reach the server — please try again.';
 
