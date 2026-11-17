@@ -4,6 +4,10 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 
 import { TOUCH_SCREEN_MEDIA_QUERY } from '@/lib/constants';
 
+// The fields that bring up the on-screen keyboard when focused (not checkboxes, pickers or buttons).
+const KEYBOARD_FIELD_SELECTOR =
+  'textarea, input:not([type]), input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="search"], input[type="url"], input[type="password"]';
+
 type RotaDialogProps = {
   title: string;
   // A line under the title, e.g. the slot being signed up for.
@@ -39,10 +43,9 @@ export function RotaDialog({ title, description, onClose, children }: RotaDialog
       panel?.querySelector<HTMLElement>('[data-autofocus]') ??
       panel?.querySelector<HTMLElement>('input:not([tabindex="-1"]):not([type="hidden"]), select, textarea') ??
       panel?.querySelector<HTMLElement>('button');
-    const opensKeyboard = firstField?.matches('textarea, input:not([type="checkbox"]):not([type="radio"])') ?? false;
+    const opensKeyboard = firstField?.matches(KEYBOARD_FIELD_SELECTOR) ?? false;
     // matchMedia is missing in some test environments; treat that as a desktop browser.
-    const isTouchScreen = globalThis.matchMedia?.(TOUCH_SCREEN_MEDIA_QUERY).matches ?? false;
-    if (opensKeyboard && isTouchScreen) {
+    if (opensKeyboard && (globalThis.matchMedia?.(TOUCH_SCREEN_MEDIA_QUERY).matches ?? false)) {
       panel?.focus();
     } else {
       firstField?.focus();
@@ -72,7 +75,7 @@ export function RotaDialog({ title, description, onClose, children }: RotaDialog
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative max-h-[90dvh] w-full overflow-y-auto rounded-t-xl bg-white p-5 shadow-xl focus:outline-none sm:max-w-md sm:rounded-xl"
+        className="relative max-h-[90vh] w-full supports-[height:100dvh]:max-h-[90dvh] overflow-y-auto rounded-t-xl bg-white p-5 shadow-xl focus:outline-none sm:max-w-md sm:rounded-xl"
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>

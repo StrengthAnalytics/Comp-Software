@@ -37,6 +37,32 @@ describe('RotaDialog focus on open', () => {
     expect(screen.getByRole('dialog', { name: 'Request a change' })).toHaveFocus();
   });
 
+  it('does not focus a data-autofocus message box on a touch screen either', () => {
+    stubTouchScreen(true);
+    render(
+      <RotaDialog title="Note" onClose={() => {}}>
+        <button type="button">Clear</button>
+        <textarea aria-label="Message" data-autofocus />
+      </RotaDialog>,
+    );
+    expect(screen.getByRole('dialog', { name: 'Note' })).toHaveFocus();
+  });
+
+  it('keeps a date picker focused on a touch screen, since it opens no keyboard', () => {
+    stubTouchScreen(true);
+    render(
+      <RotaDialog title="Pick a day" onClose={() => {}}>
+        <input type="date" aria-label="Day" />
+      </RotaDialog>,
+    );
+    expect(screen.getByLabelText('Day')).toHaveFocus();
+  });
+
+  it('treats a browser without matchMedia (like this jsdom test environment) as a desktop', () => {
+    renderForm();
+    expect(screen.getByLabelText('Your name')).toHaveFocus();
+  });
+
   it('still focuses a button on a touch screen, since a button opens no keyboard', () => {
     stubTouchScreen(true);
     render(
