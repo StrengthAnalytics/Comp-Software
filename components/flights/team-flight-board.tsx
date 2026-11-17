@@ -9,6 +9,7 @@ import type { ActionResult } from '@/types/action-result';
 import type { FlightRow, SessionRow } from '@/components/flights/flights-types';
 import { buttonClasses } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { INPUT_CLASS } from '@/components/ui/form-styles';
 
 export type BoardTeamMember = { lift: TeamLift; lifter_name: string };
 export type BoardTeam = {
@@ -21,8 +22,6 @@ export type BoardTeam = {
 
 const UNASSIGNED = 'unassigned';
 
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 
 function readError(result: ActionResult<unknown>): string {
   if (result.status !== 'error') {

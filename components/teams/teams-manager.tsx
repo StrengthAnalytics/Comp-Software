@@ -13,6 +13,7 @@ import { LIFT_LABELS } from '@/lib/constants';
 import { TEAM_LIFTS, type TeamLift } from '@/types/team';
 import type { ActionResult } from '@/types/action-result';
 import { buttonClasses } from '@/components/ui/button';
+import { INPUT_CLASS } from '@/components/ui/form-styles';
 
 export type TeamRow = { id: string; name: string; sort_order: number };
 export type TeamMemberEntry = {
@@ -24,8 +25,6 @@ export type TeamMemberEntry = {
 
 type Assignment = { teamId: string | null; teamLift: TeamLift | null };
 
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 const GHOST_BUTTON = buttonClasses('secondary');
 const PRIMARY_BUTTON = buttonClasses('primary');
 

@@ -135,7 +135,7 @@ export function BulkImport({ competitionId, lifts }: { competitionId: string; li
           onChange={(event) => setText(event.target.value)}
           rows={8}
           placeholder="Paste rows from Google Sheets…"
-          className="w-full rounded-md border border-neutral-300 px-3 py-2 font-mono text-xs text-neutral-900 focus:border-neutral-500 focus:outline-none"
+          className="w-full rounded-md border border-neutral-300 px-3 py-2 font-mono text-xs text-neutral-900 pointer-coarse:text-base focus:border-neutral-500 focus:outline-none"
         />
       </div>
 

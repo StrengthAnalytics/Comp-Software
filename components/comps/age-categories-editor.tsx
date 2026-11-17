@@ -11,11 +11,10 @@ import {
 import type { Database } from '@/types/database.types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { INPUT_CLASS } from '@/components/ui/form-styles';
 
 type AgeCategory = Pick<Database['public']['Tables']['age_categories']['Row'], 'id' | 'name' | 'sort_order'>;
 
-const INPUT_CLASS =
-  'rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 
 function AgeCategoryRow({ competitionId, ageCategory }: { competitionId: string; ageCategory: AgeCategory }) {
   const router = useRouter();

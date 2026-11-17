@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { setOrganiserEmailAction } from '@/actions/competitions';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { INPUT_CLASS } from '@/components/ui/form-styles';
 
 type OrganiserEmailCardProps = {
   competitionId: string;
@@ -13,8 +14,6 @@ type OrganiserEmailCardProps = {
   myEmail: string | null;
 };
 
-const INPUT_CLASS =
-  'block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
 
 // The comp's organiser email: where its volunteer rota change requests are sent, and where lifters'
 // replies to their entry emails land. Set to the creating admin's email when a comp is created.
@@ -66,7 +65,7 @@ export function OrganiserEmailCard({ competitionId, initialEmail, myEmail }: Org
             setSaved(false);
           }}
           placeholder={myEmail ?? 'organiser@example.com'}
-          className={`${INPUT_CLASS} min-w-0 flex-1`}
+          className={`${INPUT_CLASS} block w-full min-w-0 flex-1`}
         />
         <Button onClick={save} disabled={saving || !dirty}>
           {saving ? 'Saving…' : 'Save'}
