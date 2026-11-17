@@ -14,8 +14,10 @@ import type { EntryFormConfig } from '@/types/entry-form';
 import type { FieldErrors } from '@/types/action-result';
 import { Button } from '@/components/ui/button';
 
+// 16px text on phones (text-base), 14px from the sm breakpoint up: iPhone Safari zooms the whole page
+// in when a field under 16px gets focus. Pinch-zoom is left alone.
 const INPUT_CLASS =
-  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none';
+  'mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2 text-base text-neutral-900 focus:border-neutral-500 focus:outline-none sm:text-sm';
 const LABEL_CLASS = 'text-sm font-medium text-neutral-700';
 
 export type PublicWeightClass = { name: string; gender: string };
