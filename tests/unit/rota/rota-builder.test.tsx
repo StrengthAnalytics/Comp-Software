@@ -278,6 +278,20 @@ describe('RotaBuilder — layout', () => {
     );
   });
 
+  it('says a new arrive-by choice is not saved when the save is refused', async () => {
+    updateRole.mockResolvedValue({ status: 'error', message: 'Could not save the rota. Please try again.' });
+    renderBuilder([sessionSection]);
+    openLayoutTab();
+
+    const [mcRow] = screen.getAllByLabelText('Role title').map((input) => input.closest('div') as HTMLElement);
+    const select = within(mcRow).getByLabelText('Arrive-by time');
+    fireEvent.change(select, { target: { value: 'weigh_in' } });
+    fireEvent.blur(select);
+
+    expect(await within(mcRow).findByText('Not saved')).toBeInTheDocument();
+    expect(within(mcRow).queryByText('Working it out…')).toBeNull();
+  });
+
   it('lets a job in a session column switch to a typed time', async () => {
     updateRole.mockResolvedValue({ status: 'ok', data: undefined });
     renderBuilder([sessionSection]);

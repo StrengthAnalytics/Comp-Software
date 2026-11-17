@@ -455,6 +455,12 @@ function RoleRow({
     },
   });
   const shownError = save.error ?? error;
+  // The worked-out time for the saved choice; while a new choice saves it's "Working it out…", and if
+  // that save was refused (e.g. invalid spaces in the same row) the row says it isn't saved.
+  let currentTime: string | null | undefined = role.arrive_by;
+  if (arriveChoice !== savedChoice) {
+    currentTime = save.saveState === 'error' || save.saveState === 'failed' ? 'Not saved' : undefined;
+  }
 
   function remove() {
     if (role.signups.length > 0 && !confirming) {
@@ -502,7 +508,7 @@ function RoleRow({
         typed={arriveBy}
         onTyped={setArriveBy}
         onBlur={save.flushSave}
-        currentTime={arriveChoice === savedChoice ? role.arrive_by : undefined}
+        currentTime={currentTime}
         textLabel="Arrive by"
         selectLabel="Arrive-by time"
       />
