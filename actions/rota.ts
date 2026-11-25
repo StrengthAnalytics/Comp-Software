@@ -841,7 +841,7 @@ export async function duplicateRotaSectionToSessionAction(input: {
 const ROTA_CLOSED_MESSAGE = 'This rota is not open for sign-ups right now.';
 const SLOT_FULL_MESSAGE = 'Sorry — that slot was just filled. Please pick another.';
 const SLOT_GONE_MESSAGE = 'That slot is no longer available. Please refresh the page and try again.';
-const ALREADY_SIGNED_MESSAGE = 'You have already signed up for this slot with that email address.';
+const ALREADY_SIGNED_MESSAGE = 'You are already signed up for this slot.';
 
 // A volunteer claiming a rota slot. Like submitEntryFormAction (ARCHITECTURE.md §3/§7) it runs on the
 // visitor's own anon session with NO adminGuard, so RLS is the real gate — the INSERT is only allowed
@@ -907,7 +907,8 @@ export async function submitRotaSignupAction(input: RotaSignupInput): Promise<Ac
       ) {
         return fail(SLOT_GONE_MESSAGE);
       }
-      // 23505 = the (role_id, lower(email)) unique index: same person, same slot, twice.
+      // 23505 = a one-sign-up-per-person-per-slot index (same email, or same name and mobile):
+      // the same person in the same slot twice, usually a double tap.
       if (isUniqueViolation(error)) {
         return fail(ALREADY_SIGNED_MESSAGE);
       }
@@ -985,7 +986,7 @@ export async function addRotaSignupAction(input: RotaAdminSignupInput): Promise<
         return fail('That slot is full — raise its position count to add more.');
       }
       if (isUniqueViolation(error)) {
-        return fail('That email is already signed up for this slot.');
+        return fail('That person is already signed up for this slot.');
       }
       Sentry.captureException(error);
       return fail('Could not add that volunteer. Please try again.');

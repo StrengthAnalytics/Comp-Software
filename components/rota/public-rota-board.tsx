@@ -171,21 +171,6 @@ function SignupDialog({
               <FieldError messages={fieldErrors?.name} />
             </div>
             <div>
-              <label htmlFor="rota-email" className={LABEL_CLASS}>
-                Email
-              </label>
-              <input
-                id="rota-email"
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className={FORM_INPUT_CLASS}
-              />
-              <FieldError messages={fieldErrors?.email} />
-            </div>
-            <div>
               <label htmlFor="rota-phone" className={LABEL_CLASS}>
                 Mobile number
               </label>
@@ -200,20 +185,37 @@ function SignupDialog({
               />
               <FieldError messages={fieldErrors?.phone} />
             </div>
+            <div>
+              <label htmlFor="rota-email" className={LABEL_CLASS}>
+                Email <span className="font-normal text-neutral-500">(optional)</span>
+              </label>
+              <input
+                id="rota-email"
+                type="email"
+                autoComplete="email"
+                aria-describedby="rota-email-hint"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className={FORM_INPUT_CLASS}
+              />
+              <p id="rota-email-hint" className="mt-1 text-xs text-neutral-500">
+                Leave it blank if you&rsquo;d rather not give one.
+              </p>
+              <FieldError messages={fieldErrors?.email} />
+            </div>
             <label className="flex items-center gap-2 text-sm text-neutral-700">
               <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
               Remember my details on this device
             </label>
             <p className="text-xs text-neutral-500">
-              Only your name shows on the rota. Your email and mobile go only to the organisers.
+              Only your name shows on the rota. Your mobile, and your email if you add one, go only to the
+              organisers.
             </p>
           </>
         ) : (
           <div className="rounded-md bg-neutral-50 p-3 text-sm">
             <p className="font-semibold text-neutral-900">Sign up as {name}?</p>
-            <p className="mt-0.5 text-neutral-600">
-              {email} · {phone}
-            </p>
+            <p className="mt-0.5 text-neutral-600">{[phone, email].filter((detail) => detail !== '').join(' · ')}</p>
             <button
               type="button"
               onClick={() => setEditing(true)}
@@ -257,7 +259,8 @@ function ChangeRequestDialog({
   onClose: () => void;
 }) {
   const [name, setName] = useState(remembered?.name ?? '');
-  const [contact, setContact] = useState(remembered?.email ?? '');
+  // Reply to their email when they gave one, else their mobile.
+  const [contact, setContact] = useState(remembered?.email || remembered?.phone || '');
   const [roleId, setRoleId] = useState('');
   const [kind, setKind] = useState<RotaChangeKind>('drop_out');
   const [message, setMessage] = useState('');

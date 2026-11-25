@@ -22,6 +22,11 @@ describe('remembered volunteer details', () => {
     expect(loadRememberedVolunteer()).toBeNull();
   });
 
+  it('remembers someone who signed up without an email', () => {
+    saveRememberedVolunteer({ ...details, email: '' });
+    expect(loadRememberedVolunteer()).toEqual({ ...details, email: '' });
+  });
+
   it('ignores a corrupt or incomplete stored value', () => {
     globalThis.localStorage.setItem(STORAGE_KEY, '{not json');
     expect(loadRememberedVolunteer()).toBeNull();

@@ -127,10 +127,21 @@ describe('rotaSignupSchema', () => {
     }
   });
 
-  it('requires a name, a valid email and a mobile number', () => {
+  it('requires a name and a mobile number', () => {
     expect(rotaSignupSchema.safeParse({ ...base, name: '  ' }).success).toBe(false);
-    expect(rotaSignupSchema.safeParse({ ...base, email: 'not-an-email' }).success).toBe(false);
     expect(rotaSignupSchema.safeParse({ ...base, phone: '' }).success).toBe(false);
+    expect(rotaSignupSchema.safeParse({ ...base, phone: undefined }).success).toBe(false);
+  });
+
+  it('makes the email optional, but checks one that is given', () => {
+    for (const email of ['', '   ', undefined]) {
+      const result = rotaSignupSchema.safeParse({ ...base, email });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.email).toBeNull();
+      }
+    }
+    expect(rotaSignupSchema.safeParse({ ...base, email: 'not-an-email' }).success).toBe(false);
   });
 
   it('rejects a mobile number with letters but accepts common phone punctuation', () => {

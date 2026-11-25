@@ -214,8 +214,9 @@ function RotaShareCard({
   return (
     <Card title="Volunteer sign-up">
       <p className="-mt-3 mb-4 text-sm text-neutral-600">
-        Share this link and volunteers tap an open slot to sign up. They give their name, email and
-        mobile — only their name shows on the public rota; you alone see their contact details.
+        Share this link and volunteers tap an open slot to sign up. They give their name and mobile
+        (email is optional) — only their name shows on the public rota; you alone see their contact
+        details.
       </p>
 
       <div className="space-y-3 rounded-md border border-neutral-200 px-4 py-3">

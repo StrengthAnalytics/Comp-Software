@@ -8,7 +8,8 @@ const STORAGE_KEY = 'rota-volunteer-details';
 
 const rememberedSchema = z.object({
   name: z.string().min(1),
-  email: z.string().min(1),
+  // Empty when they signed up without one (the email is optional).
+  email: z.string(),
   phone: z.string().min(1),
 });
 

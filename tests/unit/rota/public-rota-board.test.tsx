@@ -72,7 +72,7 @@ const rotaByDay = () => rotaLayout('by-day');
 
 function fillSignupForm() {
   fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Dana' } });
-  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'dana@example.com' } });
+  fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'dana@example.com' } });
   fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '07700900000' } });
 }
 
@@ -215,9 +215,35 @@ describe('PublicRotaBoard — signing up', () => {
     fireEvent.click(wholeRota().getByRole('button', { name: 'Sign up for Sat AM · Weigh-in' }));
     const dialog = screen.getByRole('dialog', { name: 'Sign up: Sat AM · Weigh-in' });
     expect(within(dialog).getByText('Please arrive by 6:50am.')).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Your name')).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Email')).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Mobile number')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Your name')).toBeRequired();
+    expect(within(dialog).getByLabelText('Mobile number')).toBeRequired();
+    // The email is marked optional, and the form doesn't insist on it.
+    const email = within(dialog).getByLabelText('Email (optional)');
+    expect(email).not.toBeRequired();
+    expect(email).toHaveAccessibleDescription("Leave it blank if you’d rather not give one.");
+    // Name and mobile come first.
+    const fields = within(dialog).getAllByRole('textbox').map((field) => field.id);
+    expect(fields.slice(0, 3)).toEqual(['rota-name', 'rota-phone', 'rota-email']);
+  });
+
+  it('signs up without an email, and remembers that for the next slot', async () => {
+    submitAction.mockResolvedValue({ status: 'ok', data: undefined });
+    renderBoard(sections);
+
+    fireEvent.click(wholeRota().getByRole('button', { name: 'Sign up for Sat AM · Weigh-in' }));
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: 'Dana' } });
+    fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '07700900000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up' }));
+
+    await waitFor(() =>
+      expect(submitAction).toHaveBeenCalledWith(expect.objectContaining({ name: 'Dana', email: '', phone: '07700900000' })),
+    );
+    await screen.findByText(/signed up for Sat AM · Weigh-in/);
+
+    fireEvent.click(wholeRota().getByRole('button', { name: 'Sign up for Sun AM · MC' }));
+    expect(screen.getByText('Sign up as Dana?')).toBeInTheDocument();
+    // Only the mobile, with no stray separator for the missing email.
+    expect(screen.getByText('07700900000')).toBeInTheDocument();
   });
 
   it('closes the pop-up on Escape', () => {
@@ -389,6 +415,14 @@ describe('PublicRotaBoard — request a change', () => {
 
     expect(await screen.findByText('Tell us which slot you would like instead.')).toBeInTheDocument();
     expect(changeAction.mock.calls[0][0]).toMatchObject({ kind: 'swap', roleId: null });
+  });
+
+  it('prefills the reply-to with the remembered mobile when there is no email', async () => {
+    globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify({ name: 'Sam', email: '', phone: '07700900002' }));
+    renderBoard(sections);
+    await screen.findByRole('button', { name: 'Forget my details' });
+    fireEvent.click(screen.getByRole('button', { name: 'Request a change' }));
+    expect(screen.getByLabelText('Your email or mobile')).toHaveValue('07700900002');
   });
 
   it('prefills the name and email from remembered details', async () => {
