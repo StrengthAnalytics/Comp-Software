@@ -3,8 +3,8 @@ import { MAX_ROTA_SLOT_CAPACITY } from '@/lib/constants';
 
 // Schemas for the volunteer staff rota: the admin-built structure (sections + roles), the per-comp
 // rota settings (the open toggle + the withdrawal-contact line), and the public sign-up. The sign-up
-// always asks for exactly name + email + mobile — unlike the entry form, whose fields are
-// comp-configurable — so its schema is static rather than built from a design.
+// always asks for the same fields (name and mobile, email optional) — unlike the entry form, whose
+// fields are comp-configurable — so its schema is static rather than built from a design.
 
 // Field caps — kept inline here as in types/entry-form.ts; these are validation guards, not business
 // rules, so they live with the schema rather than in lib/constants.ts.
@@ -129,8 +129,30 @@ export type RotaRoleUpdateInput = z.infer<typeof rotaRoleUpdateSchema>;
 
 // --- Public sign-up (rota_signups) ----------------------------------------------------------------
 
-// A volunteer claims a slot. All three contact fields are required — the organiser must be able to
-// reach every volunteer — and the name shows publicly while email + phone stay admin-only.
+// A phone number: digits with the usual punctuation, and at least ROTA_SIGNUP_PHONE_MIN digits (the
+// anon insert policy on rota_signups asks for the same, migration 20261125000001).
+function phoneNumber(missingMessage?: string) {
+  return z
+    .string(missingMessage === undefined ? undefined : { message: missingMessage })
+    .trim()
+    .max(ROTA_SIGNUP_PHONE_MAX, 'That mobile number is too long.')
+    .regex(/^[+()\d\s-]+$/, 'Enter a valid mobile number.')
+    .refine(
+      (value) => value.replaceAll(/\D/g, '').length >= ROTA_SIGNUP_PHONE_MIN,
+      'Enter a valid mobile number.',
+    );
+}
+
+// A blank email reads as null; otherwise it must be a valid address. Optional on the public sign-up
+// and on the admin's "+ Add".
+const optionalEmail = z.preprocess(
+  blankToNull,
+  z.email({ message: 'Enter a valid email address.' }).max(ROTA_SIGNUP_EMAIL_MAX, 'That email address is too long.').nullable(),
+);
+
+// A volunteer claims a slot. Name and mobile are required — the organiser must be able to reach
+// every volunteer, and does so by text or call — while the email is optional, to keep the form
+// short. The name shows publicly; the mobile and email stay admin-only.
 export const rotaSignupSchema = z.object({
   competitionId,
   roleId: z.uuid(),
@@ -139,15 +161,8 @@ export const rotaSignupSchema = z.object({
     .trim()
     .min(1, 'Enter your name.')
     .max(ROTA_SIGNUP_NAME_MAX, 'That name is too long.'),
-  email: z
-    .email({ message: 'Enter a valid email address.' })
-    .max(ROTA_SIGNUP_EMAIL_MAX, 'That email address is too long.'),
-  phone: z
-    .string({ message: 'Enter your mobile number.' })
-    .trim()
-    .min(ROTA_SIGNUP_PHONE_MIN, 'Enter a valid mobile number.')
-    .max(ROTA_SIGNUP_PHONE_MAX, 'That mobile number is too long.')
-    .regex(/^[+()\d\s-]+$/, 'Enter a valid mobile number.'),
+  email: optionalEmail,
+  phone: phoneNumber('Enter your mobile number.'),
   // Honeypot: a hidden field real volunteers leave blank. The submit action treats any value as a
   // bot and reports success without storing anything (mirrors the entry form's `website` trap).
   website: z.string().trim().optional(),
@@ -156,23 +171,8 @@ export type RotaSignupInput = z.infer<typeof rotaSignupSchema>;
 
 // --- Admin add (the rota grid's "+ Add" on an open slot) ------------------------------------------
 
-// Blank optional email/mobile read as null, otherwise they must be valid — the same rules as the
-// public sign-up, just not required.
-const optionalEmail = z.preprocess(
-  blankToNull,
-  z.email({ message: 'Enter a valid email address.' }).max(ROTA_SIGNUP_EMAIL_MAX, 'That email address is too long.').nullable(),
-);
-
-const optionalPhone = z.preprocess(
-  blankToNull,
-  z
-    .string()
-    .trim()
-    .min(ROTA_SIGNUP_PHONE_MIN, 'Enter a valid mobile number.')
-    .max(ROTA_SIGNUP_PHONE_MAX, 'That mobile number is too long.')
-    .regex(/^[+()\d\s-]+$/, 'Enter a valid mobile number.')
-    .nullable(),
-);
+// A blank mobile reads as null; otherwise it must be valid, by the public sign-up's rules.
+const optionalPhone = z.preprocess(blankToNull, phoneNumber().nullable());
 
 // The admin putting someone in a slot themselves: a name is enough (a regular helper who won't fill
 // in a form); email and mobile are optional.

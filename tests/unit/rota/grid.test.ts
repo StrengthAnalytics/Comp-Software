@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildRotaGrid, cellArriveBy, mostCommonArriveBy, type RotaGridRoleBase } from '@/lib/rota/grid';
+import {
+  buildRotaGrid,
+  cellArriveBy,
+  mostCommonArriveBy,
+  rotaDayName,
+  splitRotaDays,
+  type RotaGridRoleBase,
+} from '@/lib/rota/grid';
 
 type Role = RotaGridRoleBase;
 type Section = {
@@ -118,5 +125,39 @@ describe('buildRotaGrid — row placement for new jobs', () => {
       section('b', null, 1, [role('b1', 'Doors', 0), role('b2', 'Refs', 1)]),
     ]);
     expect(grid.rows.map((row) => row.title)).toEqual(['MC', 'Doors', 'Refs']);
+  });
+});
+
+describe('splitRotaDays', () => {
+  it('groups consecutive columns sharing a day label, in sort order', () => {
+    const days = splitRotaDays([
+      section('sun-am', 'Sun', 3, []),
+      section('sat-am', 'Sat', 0, []),
+      section('sat-pm', ' Sat ', 1, []),
+      section('setup', null, 4, []),
+    ]);
+    expect(days.map((day) => [day.label, day.sections.map((column) => column.id)])).toEqual([
+      ['Sat', ['sat-am', 'sat-pm']],
+      ['Sun', ['sun-am']],
+      [null, ['setup']],
+    ]);
+  });
+
+  it('starts a new day when a label comes back after another', () => {
+    const days = splitRotaDays([section('a', 'Sat', 0, []), section('b', null, 1, []), section('c', 'Sat', 2, [])]);
+    expect(days.map((day) => day.label)).toEqual(['Sat', null, 'Sat']);
+  });
+
+  it('gives nothing for an empty rota', () => {
+    expect(splitRotaDays([])).toEqual([]);
+  });
+});
+
+describe('rotaDayName', () => {
+  it("uses the day label, or the columns' own titles when there is none", () => {
+    expect(rotaDayName({ label: 'Sat 11 Jul', sections: [{ title: 'Session 1' }] })).toBe('Sat 11 Jul');
+    expect(rotaDayName({ label: null, sections: [{ title: ' Set-up ' }, { title: 'Pack-down' }] })).toBe(
+      'Set-up / Pack-down',
+    );
   });
 });

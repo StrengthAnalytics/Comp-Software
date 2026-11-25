@@ -18,8 +18,10 @@ import {
 import { displayRotaTime } from '@/lib/rota/time';
 import { Button } from '@/components/ui/button';
 import { RotaDialog } from '@/components/rota/rota-dialog';
-import { RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
-import { FILLED_SWATCH, OPEN_SWATCH } from '@/lib/rota/style';
+import { RotaDayLinks } from '@/components/rota/rota-day-links';
+import { openSlotCount, RotaGrid, type RotaGridRole } from '@/components/rota/rota-grid';
+import { rotaDayName, splitRotaDays } from '@/lib/rota/grid';
+import { FILLED_SWATCH, OPEN_SWATCH, type RotaGridClasses } from '@/lib/rota/style';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 import { FORM_INPUT_CLASS } from '@/components/ui/form-styles';
 
@@ -50,6 +52,8 @@ export type PublicRotaSection = {
   title: string;
   subtitle: string | null;
   sort_order: number;
+  // Whether this column was generated from a session (false for one the organiser made by hand).
+  fromSession: boolean;
   roles: PublicRotaRole[];
 };
 
@@ -167,21 +171,6 @@ function SignupDialog({
               <FieldError messages={fieldErrors?.name} />
             </div>
             <div>
-              <label htmlFor="rota-email" className={LABEL_CLASS}>
-                Email
-              </label>
-              <input
-                id="rota-email"
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className={FORM_INPUT_CLASS}
-              />
-              <FieldError messages={fieldErrors?.email} />
-            </div>
-            <div>
               <label htmlFor="rota-phone" className={LABEL_CLASS}>
                 Mobile number
               </label>
@@ -196,20 +185,37 @@ function SignupDialog({
               />
               <FieldError messages={fieldErrors?.phone} />
             </div>
+            <div>
+              <label htmlFor="rota-email" className={LABEL_CLASS}>
+                Email <span className="font-normal text-neutral-500">(optional)</span>
+              </label>
+              <input
+                id="rota-email"
+                type="email"
+                autoComplete="email"
+                aria-describedby="rota-email-hint"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className={FORM_INPUT_CLASS}
+              />
+              <p id="rota-email-hint" className="mt-1 text-xs text-neutral-500">
+                Leave it blank if you&rsquo;d rather not give one.
+              </p>
+              <FieldError messages={fieldErrors?.email} />
+            </div>
             <label className="flex items-center gap-2 text-sm text-neutral-700">
               <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
               Remember my details on this device
             </label>
             <p className="text-xs text-neutral-500">
-              Only your name shows on the rota. Your email and mobile go only to the organisers.
+              Only your name shows on the rota. Your mobile, and your email if you add one, go only to the
+              organisers.
             </p>
           </>
         ) : (
           <div className="rounded-md bg-neutral-50 p-3 text-sm">
             <p className="font-semibold text-neutral-900">Sign up as {name}?</p>
-            <p className="mt-0.5 text-neutral-600">
-              {email} · {phone}
-            </p>
+            <p className="mt-0.5 text-neutral-600">{[phone, email].filter((detail) => detail !== '').join(' · ')}</p>
             <button
               type="button"
               onClick={() => setEditing(true)}
@@ -253,7 +259,8 @@ function ChangeRequestDialog({
   onClose: () => void;
 }) {
   const [name, setName] = useState(remembered?.name ?? '');
-  const [contact, setContact] = useState(remembered?.email ?? '');
+  // Reply to their email when they gave one, else their mobile.
+  const [contact, setContact] = useState(remembered?.email || remembered?.phone || '');
   const [roleId, setRoleId] = useState('');
   const [kind, setKind] = useState<RotaChangeKind>('drop_out');
   const [message, setMessage] = useState('');
@@ -429,6 +436,11 @@ type PublicRotaBoardProps = {
 // a coloured slot for each filled place (name only) and a tappable "+ Sign up" for each open one. Volunteers can
 // only add themselves (an anon write); dropping out or swapping goes to the organiser through
 // "Request a change".
+//
+// A rota covering more than one day is laid out twice, and CSS shows one: on a wide screen the whole
+// sheet side by side; on a phone or small tablet (where later days used to sit unseen off the right
+// edge) a grid per day stacked down the page, under a strip naming every day. Both are in the page
+// so the right one shows from the first paint, with no script deciding.
 export function PublicRotaBoard({ competitionId, sections, withdrawalContact, look }: PublicRotaBoardProps) {
   const router = useRouter();
   const [remembered, setRemembered] = useState<RememberedVolunteer | null>(null);
@@ -456,13 +468,41 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact, lo
   );
   const slotByRole = new Map(slots.map((slot) => [slot.roleId, slot]));
 
-  const gridSections: RotaGridSection[] = ordered.map((section) => ({
+  const gridSections = ordered.map((section) => ({
     ...section,
     roles: section.roles.map((role) => ({
       ...role,
       filled: role.names.map((volunteerName, index) => ({ key: `${role.id}-${index}`, name: volunteerName })),
     })),
   }));
+
+  // Each day's grid, with what its button in the day strip says.
+  const days = splitRotaDays(gridSections).map((day, index) => ({
+    dated: day.label !== null,
+    sections: day.sections,
+    anchorId: `rota-day-${index + 1}`,
+    name: rotaDayName(day),
+    sessions: day.sections.every((section) => section.fromSession) ? day.sections.length : null,
+    openSlots: day.sections
+      .flatMap((section) => section.roles)
+      .reduce((open, role) => open + openSlotCount(role), 0),
+  }));
+
+  function renderOpenSlot(role: RotaGridRole, _slotIndex: number, classes: RotaGridClasses) {
+    const slot = slotByRole.get(role.id);
+    return (
+      <button
+        type="button"
+        onClick={() => slot && setSignupSlot(slot)}
+        aria-label={`Sign up for ${slot?.label ?? role.title}`}
+        className={`${classes.openSlot} font-medium hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700`}
+      >
+        + Sign up
+      </button>
+    );
+  }
+
+  const wholeRota = <RotaGrid sections={gridSections} look={look} renderOpen={renderOpenSlot} />;
 
   function handleSignedUp(details: RememberedVolunteer, remember: boolean) {
     if (remember) {
@@ -533,23 +573,23 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact, lo
         </p>
       ) : null}
 
-      <RotaGrid
-        sections={gridSections}
-        look={look}
-        renderOpen={(role, _slotIndex, classes) => {
-          const slot = slotByRole.get(role.id);
-          return (
-            <button
-              type="button"
-              onClick={() => slot && setSignupSlot(slot)}
-              aria-label={`Sign up for ${slot?.label ?? role.title}`}
-              className={`${classes.openSlot} font-medium hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700`}
-            >
-              + Sign up
-            </button>
-          );
-        }}
-      />
+      {days.length > 1 ? (
+        <>
+          <div data-rota-layout="by-day" className="space-y-4 lg:hidden">
+            <RotaDayLinks days={days} allDated={days.every((day) => day.dated)} />
+            {days.map((day) => (
+              <section key={day.anchorId} id={day.anchorId} aria-label={day.name} className="scroll-mt-4">
+                <RotaGrid sections={day.sections} look={look} renderOpen={renderOpenSlot} />
+              </section>
+            ))}
+          </div>
+          <div data-rota-layout="whole" className="hidden lg:block">
+            {wholeRota}
+          </div>
+        </>
+      ) : (
+        wholeRota
+      )}
 
       {signupSlot ? (
         <SignupDialog

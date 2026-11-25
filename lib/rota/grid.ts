@@ -34,6 +34,13 @@ export type RotaGridDayGroup = {
   span: number;
 };
 
+// One day of the rota: a run of consecutive columns sharing a day label (null for unlabelled columns,
+// such as a hand-made "Set-up").
+export type RotaDay<S> = {
+  label: string | null;
+  sections: S[];
+};
+
 export type RotaGridRow<R> = {
   // Stable row identity: the role title, case-insensitively, plus an occurrence number when one
   // column has two roles with the same title ("Weigh-in", "Weigh-in").
@@ -52,6 +59,30 @@ export type RotaGrid<R, S> = {
 
 function bySortOrder<T extends { sort_order: number; id: string }>(a: T, b: T): number {
   return a.sort_order - b.sort_order || a.id.localeCompare(b.id);
+}
+
+// Splits the columns, in display order, into days. A day's columns sit together under one banner in
+// the wide grid; on a phone the public board gives each day a grid of its own.
+export function splitRotaDays<S extends { id: string; day_label: string | null; sort_order: number }>(
+  sections: S[],
+): RotaDay<S>[] {
+  const days: RotaDay<S>[] = [];
+  for (const section of sections.toSorted(bySortOrder)) {
+    const label = section.day_label?.trim() || null;
+    const last = days.at(-1);
+    if (last && last.label === label) {
+      last.sections.push(section);
+    } else {
+      days.push({ label, sections: [section] });
+    }
+  }
+  return days;
+}
+
+// What to call a day when pointing at it: its label, or for unlabelled columns their own titles
+// ("Set-up").
+export function rotaDayName(day: RotaDay<{ title: string }>): string {
+  return day.label ?? day.sections.map((section) => section.title.trim()).join(' / ');
 }
 
 // The most common arrive-by among a column's roles, ties going to the one listed first. Null when
@@ -134,16 +165,7 @@ export function buildRotaGrid<R extends RotaGridRoleBase, S extends RotaGridSect
 
   const columns = ordered.map((section) => ({ section, crewArriveBy: mostCommonArriveBy(section.roles) }));
 
-  const dayGroups: RotaGridDayGroup[] = [];
-  for (const section of ordered) {
-    const label = section.day_label?.trim() || null;
-    const last = dayGroups.at(-1);
-    if (last && last.label === label) {
-      last.span += 1;
-    } else {
-      dayGroups.push({ label, span: 1 });
-    }
-  }
+  const dayGroups = splitRotaDays(ordered).map((day) => ({ label: day.label, span: day.sections.length }));
 
   const rows = rowKeys.map((key) => {
     const cells = cellsByKey.get(key);

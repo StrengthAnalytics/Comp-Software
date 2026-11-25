@@ -1,14 +1,16 @@
 import { z } from 'zod';
 
-// The public rota remembers a volunteer's name, email and mobile on their own device after they sign
-// up once, so each further slot is a single tap ("Sign up as Sam?"). Stored only in this browser's
-// localStorage — never sent anywhere until they sign up again — and forgettable from the board.
+// The public rota remembers a volunteer's name, mobile and (if given) email on their own device
+// after they sign up once, so each further slot is a single tap ("Sign up as Sam?"). Stored only in
+// this browser's localStorage — never sent anywhere until they sign up again — and forgettable from
+// the board.
 
 const STORAGE_KEY = 'rota-volunteer-details';
 
 const rememberedSchema = z.object({
   name: z.string().min(1),
-  email: z.string().min(1),
+  // Empty when they signed up without one (the email is optional).
+  email: z.string(),
   phone: z.string().min(1),
 });
 

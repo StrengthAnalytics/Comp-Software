@@ -45,7 +45,7 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
   const [{ data: sectionRows }, { data: roleRows }, { data: signupRows }, { data: styleRow }] = await Promise.all([
     supabase
       .from('rota_sections')
-      .select('id, day_label, title, subtitle, sort_order')
+      .select('id, day_label, title, subtitle, sort_order, session_id')
       .eq('competition_id', compId)
       .order('sort_order', { ascending: true }),
     supabase
@@ -98,13 +98,14 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
     title: section.title,
     subtitle: section.subtitle,
     sort_order: section.sort_order,
+    fromSession: section.session_id !== null,
     roles: rolesBySection.get(section.id) ?? [],
   }));
 
   return (
     <main className="min-h-screen bg-neutral-100 px-4 py-8">
-      {/* Wide, like the spreadsheet it replaces: every session side by side on a desktop; the grid
-          scrolls sideways on a phone. */}
+      {/* Wide, like the spreadsheet it replaces: every session side by side on a desktop; on a
+          phone the board gives each day its own grid, one under the other. */}
       <div className="mx-auto max-w-screen-2xl">
         <header className="mb-6 text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{comp.name}</h1>
@@ -112,7 +113,7 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
             {comp.starts_on ? `${formatDate(comp.starts_on)} · ` : ''}Volunteer rota
           </p>
           <p className="mx-auto mt-2 max-w-xl text-sm text-neutral-600">
-            Tap an open slot to sign up. Only your name shows here — your email and mobile go only to
+            Tap an open slot to sign up. Only your name shows here — your contact details go only to
             the organisers.
           </p>
         </header>

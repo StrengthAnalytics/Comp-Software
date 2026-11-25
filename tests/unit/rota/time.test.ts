@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { displayRotaTime, humaniseRotaTimes, toTwelveHourClock } from '@/lib/rota/time';
+import { displayRotaTime, humaniseRotaTimes, splitLabelledTime, toTwelveHourClock } from '@/lib/rota/time';
 
 describe('toTwelveHourClock', () => {
   it('converts 24-hour times to the rota style', () => {
@@ -51,5 +51,21 @@ describe('humaniseRotaTimes', () => {
 
   it('passes null through', () => {
     expect(humaniseRotaTimes(null)).toBeNull();
+  });
+});
+
+describe('splitLabelledTime', () => {
+  it('splits a line ending in a time of day into its label and its time', () => {
+    expect(splitLabelledTime('Weigh-in 7:00am')).toEqual({ label: 'Weigh-in', time: '7:00am' });
+    expect(splitLabelledTime('Arrive by 12:30pm')).toEqual({ label: 'Arrive by', time: '12:30pm' });
+    expect(splitLabelledTime('Lift-off 9am')).toEqual({ label: 'Lift-off', time: '9am' });
+    expect(splitLabelledTime('Lift-off 13:30')).toEqual({ label: 'Lift-off', time: '13:30' });
+  });
+
+  it('is null for a line that is not a label then a time', () => {
+    expect(splitLabelledTime('Bring gloves')).toBeNull();
+    expect(splitLabelledTime('7:00am')).toBeNull();
+    expect(splitLabelledTime('Doors 7:00am sharp')).toBeNull();
+    expect(splitLabelledTime('')).toBeNull();
   });
 });
