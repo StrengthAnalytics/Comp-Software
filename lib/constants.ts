@@ -455,3 +455,8 @@ export const TOUCH_SCREEN_MEDIA_QUERY = '(pointer: coarse)';
 // scroll positions in fractions of a pixel).
 export const ROTA_SCROLL_STEP_FRACTION = 0.6;
 export const ROTA_SCROLL_END_TOLERANCE_PX = 2;
+
+// A phone shows two rota sessions beside the job names at the usual column size. A grid of exactly
+// this many is squeezed so they all fit instead (narrower columns, each time under its label), so no
+// session sits off the edge of the screen; a grid of more keeps the usual size and scrolls sideways.
+export const ROTA_PHONE_SQUEEZE_COLUMNS = 3;

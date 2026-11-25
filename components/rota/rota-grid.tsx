@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ROTA_SCROLL_END_TOLERANCE_PX, ROTA_SCROLL_STEP_FRACTION } from '@/lib/constants';
+import { ROTA_PHONE_SQUEEZE_COLUMNS, ROTA_SCROLL_END_TOLERANCE_PX, ROTA_SCROLL_STEP_FRACTION } from '@/lib/constants';
 import {
   buildRotaGrid,
   cellArriveBy,
@@ -9,7 +9,7 @@ import {
   type RotaGridSectionBase,
 } from '@/lib/rota/grid';
 import { rotaGridClasses, type RotaGridClasses } from '@/lib/rota/style';
-import { humaniseRotaTimes } from '@/lib/rota/time';
+import { humaniseRotaTimes, splitLabelledTime } from '@/lib/rota/time';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 
 // The spreadsheet-style rota both the public board and the admin screen render: sessions as columns
@@ -18,7 +18,8 @@ import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 // when tapped is the caller's (sign up, add, show contact details) — this component only lays it
 // out. Its colours and line weights come from the organiser's Formatting choices (`look`). While
 // there are columns out of sight to the right, the edge fades and a "More" button slides the grid
-// along, because phones hide the scroll bar and nothing else says the grid carries on.
+// along, because phones hide the scroll bar and nothing else says the grid carries on. A grid of
+// exactly three sessions is squeezed on a phone so all three show at once.
 
 export type RotaGridRole = RotaGridRoleBase & {
   capacity: number;
@@ -52,6 +53,21 @@ function columnFill(roles: RotaGridRole[]): { filled: number; total: number } {
     filled += Math.min(role.filled.length, role.capacity);
   }
   return { filled, total };
+}
+
+// One line of a column header: "Weigh-in 7:00am", "Arrive by 8:30am". In a squeezed grid on a phone
+// the time sits under its label, so a narrow column never breaks the line somewhere odd.
+function HeaderLine({ text, squeezed, className }: { text: string; squeezed: boolean; className: string }) {
+  const parts = squeezed ? splitLabelledTime(text) : null;
+  if (!parts) {
+    return <p className={className}>{text}</p>;
+  }
+  return (
+    <p className={`max-sm:mt-1 ${className}`}>
+      <span className="block max-sm:text-[11px] max-sm:leading-tight sm:inline">{parts.label}</span>{' '}
+      <span className="block max-sm:font-medium max-sm:text-neutral-900 sm:inline">{parts.time}</span>
+    </p>
+  );
 }
 
 // Whether the grid has columns out of sight to the right of what its scroller is showing. Stays
@@ -89,7 +105,10 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
   const moreToTheRight = useMoreToTheRight(scrollerRef);
   const grid = buildRotaGrid<RotaGridRole, RotaGridSection>(sections);
   const hasDayLabels = grid.dayGroups.some((group) => group.label !== null);
-  const classes = rotaGridClasses(look);
+  // Three sessions don't fit a phone at the usual column size, and one more than fits is the case
+  // worth squeezing: everything stays on screen. Four or more scroll sideways as before.
+  const squeezed = grid.columns.length === ROTA_PHONE_SQUEEZE_COLUMNS;
+  const classes = rotaGridClasses(look, { squeezed });
 
   // The columns that end a day get the day line on their right; the others the session line. The
   // last column needs none — the table's own border closes it.
@@ -116,7 +135,10 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
   // the screen side by side. There the job-name column asks for its minimum, so spare width goes to
   // the sessions.
   const roleColumnSize = 'w-24 min-w-24 px-1.5 lg:w-auto lg:min-w-28 lg:px-2';
-  const sessionColumnSize = 'min-w-28 px-1 lg:min-w-36 lg:px-2';
+  const sessionColumnSize = squeezed
+    ? 'min-w-18 px-0.5 sm:min-w-28 sm:px-1 lg:min-w-36 lg:px-2'
+    : 'min-w-28 px-1 lg:min-w-36 lg:px-2';
+  const cellPadding = squeezed ? 'px-px py-1 sm:p-1 lg:p-1.5' : 'p-1 lg:p-1.5';
 
   return (
     <div className="relative">
@@ -168,20 +190,35 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
                       .split(' · ')
                       .filter((line) => line.trim() !== '')
                       .map((line, lineIndex) => (
-                        <p key={`${lineIndex}-${line}`} className="mt-0.5 text-xs text-neutral-600">
-                          {line}
-                        </p>
+                        <HeaderLine
+                          key={`${lineIndex}-${line}`}
+                          text={line}
+                          squeezed={squeezed}
+                          className="mt-0.5 text-xs text-neutral-600"
+                        />
                       ))}
                     {crewArriveBy ? (
-                      <p className="mt-0.5 text-xs font-medium text-neutral-800">Arrive by {crewArriveBy}</p>
+                      <HeaderLine
+                        text={`Arrive by ${crewArriveBy}`}
+                        squeezed={squeezed}
+                        className="mt-0.5 text-xs font-medium text-neutral-800"
+                      />
                     ) : null}
                     {fill.total > 0 ? (
                       <p
-                        className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                          complete ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                        }`}
+                        className={`mt-1 inline-block rounded-full py-0.5 text-xs font-medium ${
+                          squeezed ? 'px-1.5 sm:px-2' : 'px-2'
+                        } ${complete ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
                       >
-                        {fill.filled} / {fill.total} filled
+                        {squeezed ? (
+                          <>
+                            {fill.filled} / {fill.total}
+                            {/* No room for the word on a phone; a screen reader still gets it. */}
+                            <span className="sr-only sm:not-sr-only"> filled</span>
+                          </>
+                        ) : (
+                          `${fill.filled} / ${fill.total} filled`
+                        )}
                       </p>
                     ) : null}
                   </th>
@@ -216,7 +253,7 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
                     }
                     const ownTime = cellArriveBy(role, column.crewArriveBy);
                     return (
-                      <td key={column.section.id} className={`p-1 align-top lg:p-1.5 ${stripe} ${cellLines}`}>
+                      <td key={column.section.id} className={`align-top ${cellPadding} ${stripe} ${cellLines}`}>
                         {ownTime ? (
                           <p className="mb-1 text-center text-xs font-medium text-amber-700">Arrive by {ownTime}</p>
                         ) : null}

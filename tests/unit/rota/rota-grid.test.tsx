@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { RotaGrid, type RotaGridSection } from '@/components/rota/rota-grid';
 
 const sections: RotaGridSection[] = [
@@ -61,5 +61,53 @@ describe('RotaGrid — "More" button', () => {
       fireEvent.scroll(scroller);
     });
     expect(screen.queryByRole('button', { name: /More/ })).toBeNull();
+  });
+});
+
+// A day of `count` sessions, each with a header of times and one half-filled job.
+function sessionsOnOneDay(count: number): RotaGridSection[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `session-${index + 1}`,
+    day_label: 'Sat',
+    title: `Session ${index + 1}`,
+    subtitle: 'Weigh-in 7:00am · Lift-off 9:00am',
+    sort_order: index,
+    roles: [
+      {
+        id: `refs-${index + 1}`,
+        title: 'Refs',
+        arrive_by: '8:30am',
+        sort_order: 0,
+        capacity: 3,
+        filled: [{ key: `ref-${index + 1}`, name: 'Priya' }],
+      },
+    ],
+  }));
+}
+
+describe('RotaGrid — three sessions squeezed onto a phone', () => {
+  it('gives a grid of exactly three sessions narrower columns, each time under its label', () => {
+    render(<RotaGrid sections={sessionsOnOneDay(3)} />);
+    const header = screen.getByRole('columnheader', { name: /Session 3/ });
+    expect(header.className.split(' ')).toEqual(expect.arrayContaining(['min-w-18', 'sm:min-w-28']));
+    // The label and the time are separate pieces, so CSS can stack them on a phone.
+    expect(within(header).getByText('Weigh-in')).toBeInTheDocument();
+    expect(within(header).getByText('7:00am')).toBeInTheDocument();
+    expect(within(header).getByText('Arrive by')).toBeInTheDocument();
+    expect(within(header).getByText('8:30am')).toBeInTheDocument();
+    // The count keeps its word for a screen reader and for a wider screen.
+    expect(header).toHaveTextContent('1 / 3 filled');
+    expect(within(header).getByText('filled').className).toContain('sr-only');
+    expect(screen.getAllByText('Priya')[0].className.split(' ')).toContain('px-px');
+  });
+
+  it.each([2, 4])('leaves a grid of %i sessions at the usual size', (count) => {
+    render(<RotaGrid sections={sessionsOnOneDay(count)} />);
+    const header = screen.getByRole('columnheader', { name: /Session 2/ });
+    expect(header.className.split(' ')).toContain('min-w-28');
+    expect(header.className.split(' ')).not.toContain('min-w-18');
+    expect(within(header).getByText('Weigh-in 7:00am')).toBeInTheDocument();
+    expect(within(header).getByText('1 / 3 filled')).toBeInTheDocument();
+    expect(screen.getAllByText('Priya')[0].className.split(' ')).not.toContain('px-px');
   });
 });

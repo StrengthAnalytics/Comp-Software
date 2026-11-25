@@ -30,6 +30,9 @@ const LINE_COLOUR: Record<RotaStyle['lineColour'], string> = {
 // On a phone or small tablet (under lg) a slot has less padding, so two sessions and the job names
 // fit the screen side by side.
 const SLOT_SHAPE = 'block w-full rounded px-1 py-1 text-center text-sm lg:px-2';
+// In a grid squeezed to fit three sessions on a phone (under sm) a slot is tighter still, with
+// slightly smaller writing, so "+ Sign up" and most names stay on one line.
+const SQUEEZED_SLOT_SHAPE = 'block w-full rounded px-px py-1 text-center text-[13px] sm:px-1 sm:text-sm lg:px-2';
 // A long name is cut off on a wide screen, as on the sheet. On a small one it wraps onto a second
 // line instead: there a cut-off name would hold its column wider than the screen.
 const NAME_FIT = 'wrap-anywhere lg:truncate';
@@ -88,8 +91,10 @@ export type RotaGridClasses = {
   openSlot: string;
 };
 
-export function rotaGridClasses(style: RotaStyle): RotaGridClasses {
+// `squeezed` is for a grid that fits three sessions on a phone screen (see ROTA_PHONE_SQUEEZE_COLUMNS).
+export function rotaGridClasses(style: RotaStyle, { squeezed = false }: { squeezed?: boolean } = {}): RotaGridClasses {
   const filled = FILLED_SLOT[style.filledColour];
+  const slotShape = squeezed ? SQUEEZED_SLOT_SHAPE : SLOT_SHAPE;
   return {
     lineColour: LINE_COLOUR[style.lineColour],
     roleLine: BOTTOM_LINE[style.roleLines],
@@ -98,9 +103,9 @@ export function rotaGridClasses(style: RotaStyle): RotaGridClasses {
     banner: BANNER[style.bannerColour],
     header: HEADER[style.headerColour],
     stripe: style.stripedRows ? STRIPE : '',
-    filledSlot: `${SLOT_SHAPE} ${NAME_FIT} font-semibold ${filled.base}`,
+    filledSlot: `${slotShape} ${NAME_FIT} font-semibold ${filled.base}`,
     filledSlotHover: filled.hover,
-    openSlot: `${SLOT_SHAPE} ${OPEN_SLOT[style.openColour]}`,
+    openSlot: `${slotShape} ${OPEN_SLOT[style.openColour]}`,
   };
 }
 

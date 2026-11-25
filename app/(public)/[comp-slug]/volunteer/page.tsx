@@ -45,7 +45,7 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
   const [{ data: sectionRows }, { data: roleRows }, { data: signupRows }, { data: styleRow }] = await Promise.all([
     supabase
       .from('rota_sections')
-      .select('id, day_label, title, subtitle, sort_order')
+      .select('id, day_label, title, subtitle, sort_order, session_id')
       .eq('competition_id', compId)
       .order('sort_order', { ascending: true }),
     supabase
@@ -98,6 +98,7 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
     title: section.title,
     subtitle: section.subtitle,
     sort_order: section.sort_order,
+    fromSession: section.session_id !== null,
     roles: rolesBySection.get(section.id) ?? [],
   }));
 

@@ -71,4 +71,16 @@ describe('rotaGridClasses', () => {
     expect(classes.filledSlot).toContain('wrap-anywhere');
     expect(classes.filledSlot.split(' ')).not.toContain('truncate');
   });
+
+  it('tightens the slots of a squeezed grid on a phone only', () => {
+    const usual = rotaGridClasses(DEFAULT_ROTA_STYLE);
+    const squeezed = rotaGridClasses(DEFAULT_ROTA_STYLE, { squeezed: true });
+    for (const slot of [squeezed.filledSlot, squeezed.openSlot]) {
+      expect(slot.split(' ')).toEqual(expect.arrayContaining(['px-px', 'sm:px-1', 'sm:text-sm', 'lg:px-2']));
+    }
+    expect(usual.filledSlot.split(' ')).not.toContain('px-px');
+    // Colours and name wrapping are the same either way.
+    expect(squeezed.filledSlot).toContain('bg-emerald-400');
+    expect(squeezed.filledSlot).toContain('wrap-anywhere');
+  });
 });

@@ -19,7 +19,7 @@ import { displayRotaTime } from '@/lib/rota/time';
 import { Button } from '@/components/ui/button';
 import { RotaDialog } from '@/components/rota/rota-dialog';
 import { RotaDayLinks } from '@/components/rota/rota-day-links';
-import { RotaGrid, type RotaGridRole, type RotaGridSection } from '@/components/rota/rota-grid';
+import { RotaGrid, type RotaGridRole } from '@/components/rota/rota-grid';
 import { rotaDayName, splitRotaDays } from '@/lib/rota/grid';
 import { FILLED_SWATCH, OPEN_SWATCH, type RotaGridClasses } from '@/lib/rota/style';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
@@ -52,6 +52,8 @@ export type PublicRotaSection = {
   title: string;
   subtitle: string | null;
   sort_order: number;
+  // Whether this column was generated from a session (false for one the organiser made by hand).
+  fromSession: boolean;
   roles: PublicRotaRole[];
 };
 
@@ -463,7 +465,7 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact, lo
   );
   const slotByRole = new Map(slots.map((slot) => [slot.roleId, slot]));
 
-  const gridSections: RotaGridSection[] = ordered.map((section) => ({
+  const gridSections = ordered.map((section) => ({
     ...section,
     roles: section.roles.map((role) => ({
       ...role,
@@ -475,6 +477,7 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact, lo
   const dayLinks = days.map((day, index) => ({
     anchorId: `rota-day-${index + 1}`,
     name: rotaDayName(day),
+    sessions: day.sections.every((section) => section.fromSession) ? day.sections.length : null,
     openSlots: day.sections
       .flatMap((section) => section.roles)
       .reduce((open, role) => open + Math.max(role.capacity - role.filled.length, 0), 0),

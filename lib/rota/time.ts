@@ -50,3 +50,12 @@ export function humaniseRotaTimes(text: string | null): string | null {
     },
   );
 }
+
+const LABEL_THEN_TIME = /^(.*\S)\s+(\d{1,2}(?::[0-5]\d)?\s?[ap]m|(?:[01]?\d|2[0-3]):[0-5]\d)$/i;
+
+// Splits a header line that ends in a time of day ("Weigh-in 7:00am") into its label and its time,
+// so a narrow column can put one under the other. Null for a line that isn't a label then a time.
+export function splitLabelledTime(line: string): { label: string; time: string } | null {
+  const match = LABEL_THEN_TIME.exec(line.trim());
+  return match ? { label: match[1], time: match[2] } : null;
+}

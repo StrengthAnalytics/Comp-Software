@@ -26,6 +26,7 @@ const sections: PublicRotaSection[] = [
     title: 'AM',
     subtitle: 'Weigh-in 07:00 · Lift-off 09:00',
     sort_order: 0,
+    fromSession: true,
     roles: [
       { id: 'role-mc', title: 'MC', arrive_by: '08:30', capacity: 1, sort_order: 0, names: ['Farida'] },
       {
@@ -45,6 +46,7 @@ const sections: PublicRotaSection[] = [
     title: 'AM',
     subtitle: null,
     sort_order: 1,
+    fromSession: true,
     roles: [{ id: 'role-mc-sun', title: 'MC', arrive_by: '9:30am', capacity: 1, sort_order: 0, names: [] }],
   },
 ];
@@ -142,6 +144,7 @@ describe('PublicRotaBoard — a grid per day for phones', () => {
     expect(days.getByText(/covers 2 days/)).toBeInTheDocument();
     const sat = days.getByRole('link', { name: /Sat/ });
     expect(sat).toHaveTextContent('4 spaces to fill');
+    expect(sat).toHaveTextContent('1 session');
     const sun = days.getByRole('link', { name: /Sun/ });
     expect(sun).toHaveTextContent('1 space to fill');
     // Each link lands on that day's own grid.
@@ -185,12 +188,16 @@ describe('PublicRotaBoard — a grid per day for phones', () => {
         title: 'Set-up',
         subtitle: null,
         sort_order: 2,
+        fromSession: false,
         roles: [{ id: 'role-setup', title: 'Set-up crew', arrive_by: null, capacity: 2, sort_order: 0, names: [] }],
       },
     ]);
     const days = within(screen.getByRole('navigation', { name: 'Days on this rota' }));
     expect(days.getByText(/has 3 parts/)).toBeInTheDocument();
     expect(days.getByRole('link', { name: /Set-up/ })).toHaveTextContent('2 spaces to fill');
+    // A hand-made column isn't a session, so its button doesn't count any.
+    expect(days.getByRole('link', { name: /Set-up/ })).not.toHaveTextContent(/session/);
+    expect(days.getByRole('link', { name: /Sat/ })).toHaveTextContent('1 session');
   });
 
   it('keeps a one-day rota as the single grid, with no day links', () => {
