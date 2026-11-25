@@ -129,6 +129,20 @@ export type RotaRoleUpdateInput = z.infer<typeof rotaRoleUpdateSchema>;
 
 // --- Public sign-up (rota_signups) ----------------------------------------------------------------
 
+// A phone number: digits with the usual punctuation, and at least ROTA_SIGNUP_PHONE_MIN digits (the
+// anon insert policy on rota_signups asks for the same, migration 20261125000001).
+function phoneNumber(missingMessage?: string) {
+  return z
+    .string(missingMessage === undefined ? undefined : { message: missingMessage })
+    .trim()
+    .max(ROTA_SIGNUP_PHONE_MAX, 'That mobile number is too long.')
+    .regex(/^[+()\d\s-]+$/, 'Enter a valid mobile number.')
+    .refine(
+      (value) => value.replaceAll(/\D/g, '').length >= ROTA_SIGNUP_PHONE_MIN,
+      'Enter a valid mobile number.',
+    );
+}
+
 // A blank email reads as null; otherwise it must be a valid address. Optional on the public sign-up
 // and on the admin's "+ Add".
 const optionalEmail = z.preprocess(
@@ -148,12 +162,7 @@ export const rotaSignupSchema = z.object({
     .min(1, 'Enter your name.')
     .max(ROTA_SIGNUP_NAME_MAX, 'That name is too long.'),
   email: optionalEmail,
-  phone: z
-    .string({ message: 'Enter your mobile number.' })
-    .trim()
-    .min(ROTA_SIGNUP_PHONE_MIN, 'Enter a valid mobile number.')
-    .max(ROTA_SIGNUP_PHONE_MAX, 'That mobile number is too long.')
-    .regex(/^[+()\d\s-]+$/, 'Enter a valid mobile number.'),
+  phone: phoneNumber('Enter your mobile number.'),
   // Honeypot: a hidden field real volunteers leave blank. The submit action treats any value as a
   // bot and reports success without storing anything (mirrors the entry form's `website` trap).
   website: z.string().trim().optional(),
@@ -163,16 +172,7 @@ export type RotaSignupInput = z.infer<typeof rotaSignupSchema>;
 // --- Admin add (the rota grid's "+ Add" on an open slot) ------------------------------------------
 
 // A blank mobile reads as null; otherwise it must be valid, by the public sign-up's rules.
-const optionalPhone = z.preprocess(
-  blankToNull,
-  z
-    .string()
-    .trim()
-    .min(ROTA_SIGNUP_PHONE_MIN, 'Enter a valid mobile number.')
-    .max(ROTA_SIGNUP_PHONE_MAX, 'That mobile number is too long.')
-    .regex(/^[+()\d\s-]+$/, 'Enter a valid mobile number.')
-    .nullable(),
-);
+const optionalPhone = z.preprocess(blankToNull, phoneNumber().nullable());
 
 // The admin putting someone in a slot themselves: a name is enough (a regular helper who won't fill
 // in a form); email and mobile are optional.

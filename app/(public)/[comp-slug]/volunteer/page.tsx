@@ -113,7 +113,7 @@ export default async function VolunteerPage({ params }: { params: Promise<{ 'com
             {comp.starts_on ? `${formatDate(comp.starts_on)} · ` : ''}Volunteer rota
           </p>
           <p className="mx-auto mt-2 max-w-xl text-sm text-neutral-600">
-            Tap an open slot to sign up. Only your name shows here — your email and mobile go only to
+            Tap an open slot to sign up. Only your name shows here — your contact details go only to
             the organisers.
           </p>
         </header>

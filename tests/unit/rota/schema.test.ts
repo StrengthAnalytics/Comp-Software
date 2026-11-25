@@ -149,6 +149,12 @@ describe('rotaSignupSchema', () => {
     expect(rotaSignupSchema.safeParse({ ...base, phone: '(0114) 555-1234' }).success).toBe(true);
   });
 
+  it('needs real digits in the mobile number, not just punctuation', () => {
+    expect(rotaSignupSchema.safeParse({ ...base, phone: '-------' }).success).toBe(false);
+    expect(rotaSignupSchema.safeParse({ ...base, phone: '(01) 23-4' }).success).toBe(false);
+    expect(rotaSignupSchema.safeParse({ ...base, phone: '12 34 56' }).success).toBe(true);
+  });
+
   it('accepts an absent honeypot and carries a tripped one through for the action to catch', () => {
     expect(rotaSignupSchema.safeParse(base).success).toBe(true);
     const tripped = rotaSignupSchema.safeParse({ ...base, website: 'http://spam' });

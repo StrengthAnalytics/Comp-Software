@@ -667,7 +667,7 @@ export type Database = {
           role_id: string;
           name: string;
           // Nullable since migration 20261005000001: an admin can add a helper by name only. The
-          // public sign-up still requires both (Zod).
+          // public sign-up requires the phone; its email is optional (migration 20261125000001).
           email: string | null;
           phone: string | null;
           created_at: string;

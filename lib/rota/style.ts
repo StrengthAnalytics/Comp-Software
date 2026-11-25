@@ -30,8 +30,8 @@ const LINE_COLOUR: Record<RotaStyle['lineColour'], string> = {
 // On a phone or small tablet (under lg) a slot has less padding, so two sessions and the job names
 // fit the screen side by side.
 const SLOT_SHAPE = 'block w-full rounded px-1 py-1 text-center text-sm lg:px-2';
-// In a grid squeezed to fit three sessions on a phone (under sm) a slot is tighter still, with
-// slightly smaller writing, so "+ Sign up" and most names stay on one line.
+// In a squeezed grid (ROTA_PHONE_SQUEEZE_COLUMNS) a slot is tighter still under sm, with slightly
+// smaller writing, so "+ Sign up" and most names stay on one line.
 const SQUEEZED_SLOT_SHAPE = 'block w-full rounded px-px py-1 text-center text-[13px] sm:px-1 sm:text-sm lg:px-2';
 // A long name is cut off on a wide screen, as on the sheet. On a small one it wraps onto a second
 // line instead: there a cut-off name would hold its column wider than the screen.
@@ -91,7 +91,6 @@ export type RotaGridClasses = {
   openSlot: string;
 };
 
-// `squeezed` is for a grid that fits three sessions on a phone screen (see ROTA_PHONE_SQUEEZE_COLUMNS).
 export function rotaGridClasses(style: RotaStyle, { squeezed = false }: { squeezed?: boolean } = {}): RotaGridClasses {
   const filled = FILLED_SLOT[style.filledColour];
   const slotShape = squeezed ? SQUEEZED_SLOT_SHAPE : SLOT_SHAPE;
@@ -107,6 +106,11 @@ export function rotaGridClasses(style: RotaStyle, { squeezed = false }: { squeez
     filledSlotHover: filled.hover,
     openSlot: `${slotShape} ${OPEN_SLOT[style.openColour]}`,
   };
+}
+
+// The "12 / 15 filled" and "3 spaces to fill" pills: green once nothing is left to fill, amber until.
+export function fillPillColour(complete: boolean): string {
+  return complete ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800';
 }
 
 // Swatch classes for the Formatting tab's colour pickers (a small filled square per choice).

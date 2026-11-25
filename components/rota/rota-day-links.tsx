@@ -1,3 +1,5 @@
+import { fillPillColour } from '@/lib/rota/style';
+
 // The "which days does this rota cover?" strip at the top of the public board's phone layout: one
 // button per day, saying how many places still need someone, that jumps down the page to that day's
 // grid. Plain links to in-page anchors, so it works before (and without) any script.
@@ -42,9 +44,7 @@ export function RotaDayLinks({ days, allDated }: { days: RotaDayLink[]; allDated
                 </span>
               )}
               <span
-                className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                  day.openSlots === 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                }`}
+                className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${fillPillColour(day.openSlots === 0)}`}
               >
                 {openSlotsLabel(day.openSlots)}
               </span>

@@ -8,7 +8,7 @@ import {
   type RotaGridRoleBase,
   type RotaGridSectionBase,
 } from '@/lib/rota/grid';
-import { rotaGridClasses, type RotaGridClasses } from '@/lib/rota/style';
+import { fillPillColour, rotaGridClasses, type RotaGridClasses } from '@/lib/rota/style';
 import { humaniseRotaTimes, splitLabelledTime } from '@/lib/rota/time';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
 
@@ -40,7 +40,7 @@ type RotaGridProps = {
   renderOpen?: (role: RotaGridRole, slotIndex: number, classes: RotaGridClasses) => ReactNode;
 };
 
-function openSlotCount(role: RotaGridRole): number {
+export function openSlotCount(role: RotaGridRole): number {
   return Math.max(role.capacity - role.filled.length, 0);
 }
 
@@ -55,17 +55,44 @@ function columnFill(roles: RotaGridRole[]): { filled: number; total: number } {
   return { filled, total };
 }
 
-// One line of a column header: "Weigh-in 7:00am", "Arrive by 8:30am". In a squeezed grid on a phone
-// the time sits under its label, so a narrow column never breaks the line somewhere odd.
-function HeaderLine({ text, squeezed, className }: { text: string; squeezed: boolean; className: string }) {
-  const parts = squeezed ? splitLabelledTime(text) : null;
-  if (!parts) {
-    return <p className={className}>{text}</p>;
+// Column and cell sizes. Under lg they are narrower, so two sessions and the job names fit a phone
+// side by side; a squeezed grid (ROTA_PHONE_SQUEEZE_COLUMNS) is narrower still under sm. The
+// job-name column asks for its minimum under lg, so spare width goes to the sessions.
+const ROLE_COLUMN_SIZE = 'w-24 min-w-24 px-1.5 lg:w-auto lg:min-w-28 lg:px-2';
+const SIZES = {
+  usual: { sessionColumn: 'min-w-28 px-1 lg:min-w-36 lg:px-2', cell: 'p-1 lg:p-1.5', pill: 'px-2' },
+  squeezed: {
+    sessionColumn: 'min-w-18 px-0.5 sm:min-w-28 sm:px-1 lg:min-w-36 lg:px-2',
+    cell: 'px-px py-1 sm:p-1 lg:p-1.5',
+    pill: 'px-1.5 sm:px-2',
+  },
+};
+
+// A column-header line that is a label then a time: "Weigh-in 7:00am", "Arrive by 8:30am". In a
+// squeezed grid on a phone the time sits under its label, so a narrow column never breaks the line
+// somewhere odd.
+function HeaderLine({
+  label,
+  time,
+  squeezed,
+  className,
+}: {
+  label: string;
+  time: string;
+  squeezed: boolean;
+  className: string;
+}) {
+  if (!squeezed) {
+    return (
+      <p className={className}>
+        {label} {time}
+      </p>
+    );
   }
   return (
     <p className={`max-sm:mt-1 ${className}`}>
-      <span className="block max-sm:text-[11px] max-sm:leading-tight sm:inline">{parts.label}</span>{' '}
-      <span className="block max-sm:font-medium max-sm:text-neutral-900 sm:inline">{parts.time}</span>
+      <span className="max-sm:block max-sm:text-[11px] max-sm:leading-tight">{label}</span>{' '}
+      <span className="max-sm:block max-sm:font-medium max-sm:text-neutral-900">{time}</span>
     </p>
   );
 }
@@ -100,15 +127,54 @@ function useMoreToTheRight(scrollerRef: React.RefObject<HTMLDivElement | null>):
   return more;
 }
 
+// The faded right-hand edge and the "More" button, shown while columns are out of sight. Its own
+// component so that reaching or leaving the end of the grid re-renders these two elements, not the
+// whole table.
+function MoreToTheRight({
+  scrollerRef,
+  overBanner,
+}: {
+  scrollerRef: React.RefObject<HTMLDivElement | null>;
+  // Whether the grid's top row is a day banner, which has room for the button. Without one the top
+  // row is the column headers, so the button sits on the grid's top edge, clear of their titles.
+  overBanner: boolean;
+}) {
+  const moreToTheRight = useMoreToTheRight(scrollerRef);
+  if (!moreToTheRight) {
+    return null;
+  }
+
+  function showMore() {
+    const scroller = scrollerRef.current;
+    scroller?.scrollBy({ left: scroller.clientWidth * ROTA_SCROLL_STEP_FRACTION, behavior: 'smooth' });
+  }
+
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-0 right-0 z-30 w-10 rounded-r-lg bg-linear-to-l from-neutral-900/25 to-transparent"
+      />
+      <button
+        type="button"
+        onClick={showMore}
+        className={`absolute right-1.5 z-30 rounded-full border border-neutral-300 bg-white px-2.5 py-0.5 text-xs font-semibold text-neutral-900 shadow-md hover:bg-neutral-50 ${
+          overBanner ? 'top-1.5' : '-top-3'
+        }`}
+      >
+        More <span aria-hidden="true">&rarr;</span>
+      </button>
+    </>
+  );
+}
+
 export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, renderOpen }: RotaGridProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const moreToTheRight = useMoreToTheRight(scrollerRef);
   const grid = buildRotaGrid<RotaGridRole, RotaGridSection>(sections);
   const hasDayLabels = grid.dayGroups.some((group) => group.label !== null);
-  // Three sessions don't fit a phone at the usual column size, and one more than fits is the case
-  // worth squeezing: everything stays on screen. Four or more scroll sideways as before.
   const squeezed = grid.columns.length === ROTA_PHONE_SQUEEZE_COLUMNS;
   const classes = rotaGridClasses(look, { squeezed });
+  const sizes = SIZES[squeezed ? 'squeezed' : 'usual'];
 
   // The columns that end a day get the day line on their right; the others the session line. The
   // last column needs none — the table's own border closes it.
@@ -125,20 +191,6 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
     }
     return dayEndIndexes.has(columnIndex) ? classes.dayLine : classes.sessionLine;
   }
-
-  function showMore() {
-    const scroller = scrollerRef.current;
-    scroller?.scrollBy({ left: scroller.clientWidth * ROTA_SCROLL_STEP_FRACTION, behavior: 'smooth' });
-  }
-
-  // Narrower columns on a phone or small tablet (under lg), so two sessions and the job names fit
-  // the screen side by side. There the job-name column asks for its minimum, so spare width goes to
-  // the sessions.
-  const roleColumnSize = 'w-24 min-w-24 px-1.5 lg:w-auto lg:min-w-28 lg:px-2';
-  const sessionColumnSize = squeezed
-    ? 'min-w-18 px-0.5 sm:min-w-28 sm:px-1 lg:min-w-36 lg:px-2'
-    : 'min-w-28 px-1 lg:min-w-36 lg:px-2';
-  const cellPadding = squeezed ? 'px-px py-1 sm:p-1 lg:p-1.5' : 'p-1 lg:p-1.5';
 
   return (
     <div className="relative">
@@ -162,8 +214,11 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
                     } ${classes.lineColour}`}
                   >
                     {/* Pinned to the part of the day's banner that is on screen, so the day stays named
-                        however far the grid is scrolled — and clear of the "More" button. */}
-                    <span className="sticky left-2 right-20 z-30 inline-block">{group.label ?? ''}</span>
+                        however far the grid is scrolled: clear of the pinned job-name column on the
+                        left (ROLE_COLUMN_SIZE wide under lg; of any width above it, so the corner
+                        cell sits over the label rather than under it) and of the "More" button on the
+                        right. */}
+                    <span className="sticky left-26 right-20 z-10 inline-block lg:left-40">{group.label ?? ''}</span>
                   </th>
                 ))}
               </tr>
@@ -171,7 +226,7 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
             <tr>
               <th
                 scope="col"
-                className={`sticky left-0 z-20 py-2 text-left align-bottom text-xs font-semibold uppercase tracking-wide text-neutral-500 ${roleColumnSize} ${classes.header} ${classes.roleLine} ${classes.dayLine} ${classes.lineColour}`}
+                className={`sticky left-0 z-20 py-2 text-left align-bottom text-xs font-semibold uppercase tracking-wide text-neutral-500 ${ROLE_COLUMN_SIZE} ${classes.header} ${classes.roleLine} ${classes.dayLine} ${classes.lineColour}`}
               >
                 Role
               </th>
@@ -182,33 +237,37 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
                   <th
                     key={section.id}
                     scope="col"
-                    className={`py-2 text-center align-top font-normal ${sessionColumnSize} ${classes.header} ${classes.roleLine} ${rightLine(columnIndex)} ${classes.lineColour}`}
+                    className={`py-2 text-center align-top font-normal ${sizes.sessionColumn} ${classes.header} ${classes.roleLine} ${rightLine(columnIndex)} ${classes.lineColour}`}
                   >
                     <p className="font-semibold text-neutral-900">{section.title}</p>
                     {/* "Weigh-in 7:00am · Lift-off 9:00am" reads as two lines, as on the sheet. */}
                     {(humaniseRotaTimes(section.subtitle) ?? '')
                       .split(' · ')
                       .filter((line) => line.trim() !== '')
-                      .map((line, lineIndex) => (
-                        <HeaderLine
-                          key={`${lineIndex}-${line}`}
-                          text={line}
-                          squeezed={squeezed}
-                          className="mt-0.5 text-xs text-neutral-600"
-                        />
-                      ))}
+                      .map((line, lineIndex) => {
+                        // The subtitle is free text, so a line is only stacked when it reads as a
+                        // label then a time.
+                        const parts = squeezed ? splitLabelledTime(line) : null;
+                        const key = `${lineIndex}-${line}`;
+                        return parts ? (
+                          <HeaderLine key={key} {...parts} squeezed className="mt-0.5 text-xs text-neutral-600" />
+                        ) : (
+                          <p key={key} className="mt-0.5 text-xs text-neutral-600">
+                            {line}
+                          </p>
+                        );
+                      })}
                     {crewArriveBy ? (
                       <HeaderLine
-                        text={`Arrive by ${crewArriveBy}`}
+                        label="Arrive by"
+                        time={crewArriveBy}
                         squeezed={squeezed}
                         className="mt-0.5 text-xs font-medium text-neutral-800"
                       />
                     ) : null}
                     {fill.total > 0 ? (
                       <p
-                        className={`mt-1 inline-block rounded-full py-0.5 text-xs font-medium ${
-                          squeezed ? 'px-1.5 sm:px-2' : 'px-2'
-                        } ${complete ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
+                        className={`mt-1 inline-block rounded-full py-0.5 text-xs font-medium ${sizes.pill} ${fillPillColour(complete)}`}
                       >
                         {squeezed ? (
                           <>
@@ -253,7 +312,7 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
                     }
                     const ownTime = cellArriveBy(role, column.crewArriveBy);
                     return (
-                      <td key={column.section.id} className={`align-top ${cellPadding} ${stripe} ${cellLines}`}>
+                      <td key={column.section.id} className={`align-top ${sizes.cell} ${stripe} ${cellLines}`}>
                         {ownTime ? (
                           <p className="mb-1 text-center text-xs font-medium text-amber-700">Arrive by {ownTime}</p>
                         ) : null}
@@ -286,21 +345,7 @@ export function RotaGrid({ sections, look = DEFAULT_ROTA_STYLE, renderFilled, re
           </tbody>
         </table>
       </div>
-      {moreToTheRight ? (
-        <>
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 right-0 z-30 w-10 rounded-r-lg bg-linear-to-l from-neutral-900/25 to-transparent"
-          />
-          <button
-            type="button"
-            onClick={showMore}
-            className="absolute right-1.5 top-1.5 z-30 rounded-full border border-neutral-300 bg-white px-2.5 py-0.5 text-xs font-semibold text-neutral-900 shadow-md hover:bg-neutral-50"
-          >
-            More <span aria-hidden="true">&rarr;</span>
-          </button>
-        </>
-      ) : null}
+      <MoreToTheRight scrollerRef={scrollerRef} overBanner={hasDayLabels} />
     </div>
   );
 }

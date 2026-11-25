@@ -842,6 +842,11 @@ const ROTA_CLOSED_MESSAGE = 'This rota is not open for sign-ups right now.';
 const SLOT_FULL_MESSAGE = 'Sorry — that slot was just filled. Please pick another.';
 const SLOT_GONE_MESSAGE = 'That slot is no longer available. Please refresh the page and try again.';
 const ALREADY_SIGNED_MESSAGE = 'You are already signed up for this slot.';
+const EMAIL_ALREADY_SIGNED_MESSAGE =
+  'That email address is already signed up for this slot. If you share it with someone, leave the email blank.';
+// The one-sign-up-per-email-per-slot index (migration 20260615000001). The other unique index on
+// rota_signups is per name and mobile.
+const ROTA_SIGNUP_EMAIL_INDEX = 'rota_signups_role_email_idx';
 
 // A volunteer claiming a rota slot. Like submitEntryFormAction (ARCHITECTURE.md §3/§7) it runs on the
 // visitor's own anon session with NO adminGuard, so RLS is the real gate — the INSERT is only allowed
@@ -907,10 +912,13 @@ export async function submitRotaSignupAction(input: RotaSignupInput): Promise<Ac
       ) {
         return fail(SLOT_GONE_MESSAGE);
       }
-      // 23505 = a one-sign-up-per-person-per-slot index (same email, or same name and mobile):
-      // the same person in the same slot twice, usually a double tap.
+      // 23505 = a one-sign-up-per-person-per-slot index. Same name and mobile is the same person
+      // twice, usually a double tap. Same email can be two people who share an address, and the
+      // email is optional, so say which it was.
       if (isUniqueViolation(error)) {
-        return fail(ALREADY_SIGNED_MESSAGE);
+        return fail(
+          error.message.includes(ROTA_SIGNUP_EMAIL_INDEX) ? EMAIL_ALREADY_SIGNED_MESSAGE : ALREADY_SIGNED_MESSAGE,
+        );
       }
       // 42501 = RLS denied: the rota closed between page load and submit.
       if (error.code === '42501') {

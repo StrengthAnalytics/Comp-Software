@@ -53,6 +53,24 @@ describe('RotaGrid — "More" button', () => {
     expect(scroller.scrollBy).toHaveBeenCalledWith({ left: 210, behavior: 'smooth' });
   });
 
+  it('sits in the day banner, or on the top edge of a grid that has none', () => {
+    renderGridWithWidths(350, 600);
+    expect(screen.getByRole('button', { name: /More/ }).className.split(' ')).toContain('top-1.5');
+    cleanup();
+
+    const view = render(<RotaGrid sections={sections.map((section) => ({ ...section, day_label: null }))} />);
+    const scroller = screen.getByRole('table').parentElement;
+    if (!scroller) {
+      throw new Error('The rota table has no scroller around it');
+    }
+    Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 350 });
+    Object.defineProperty(scroller, 'scrollWidth', { configurable: true, value: 600 });
+    fireEvent.scroll(scroller);
+    // Clear of the column titles, which are the top row when there is no banner.
+    expect(screen.getByRole('button', { name: /More/ }).className.split(' ')).toContain('-top-3');
+    view.unmount();
+  });
+
   it('goes once the grid has been scrolled to its right-hand end', () => {
     const { scroller } = renderGridWithWidths(350, 600);
     expect(screen.getByRole('button', { name: /More/ })).toBeInTheDocument();

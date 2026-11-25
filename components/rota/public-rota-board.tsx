@@ -19,7 +19,7 @@ import { displayRotaTime } from '@/lib/rota/time';
 import { Button } from '@/components/ui/button';
 import { RotaDialog } from '@/components/rota/rota-dialog';
 import { RotaDayLinks } from '@/components/rota/rota-day-links';
-import { RotaGrid, type RotaGridRole } from '@/components/rota/rota-grid';
+import { openSlotCount, RotaGrid, type RotaGridRole } from '@/components/rota/rota-grid';
 import { rotaDayName, splitRotaDays } from '@/lib/rota/grid';
 import { FILLED_SWATCH, OPEN_SWATCH, type RotaGridClasses } from '@/lib/rota/style';
 import { DEFAULT_ROTA_STYLE, type RotaStyle } from '@/types/rota-style';
@@ -476,14 +476,16 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact, lo
     })),
   }));
 
-  const days = splitRotaDays(gridSections);
-  const dayLinks = days.map((day, index) => ({
+  // Each day's grid, with what its button in the day strip says.
+  const days = splitRotaDays(gridSections).map((day, index) => ({
+    dated: day.label !== null,
+    sections: day.sections,
     anchorId: `rota-day-${index + 1}`,
     name: rotaDayName(day),
     sessions: day.sections.every((section) => section.fromSession) ? day.sections.length : null,
     openSlots: day.sections
       .flatMap((section) => section.roles)
-      .reduce((open, role) => open + Math.max(role.capacity - role.filled.length, 0), 0),
+      .reduce((open, role) => open + openSlotCount(role), 0),
   }));
 
   function renderOpenSlot(role: RotaGridRole, _slotIndex: number, classes: RotaGridClasses) {
@@ -574,14 +576,9 @@ export function PublicRotaBoard({ competitionId, sections, withdrawalContact, lo
       {days.length > 1 ? (
         <>
           <div data-rota-layout="by-day" className="space-y-4 lg:hidden">
-            <RotaDayLinks days={dayLinks} allDated={days.every((day) => day.label !== null)} />
-            {days.map((day, index) => (
-              <section
-                key={dayLinks[index].anchorId}
-                id={dayLinks[index].anchorId}
-                aria-label={dayLinks[index].name}
-                className="scroll-mt-4"
-              >
+            <RotaDayLinks days={days} allDated={days.every((day) => day.dated)} />
+            {days.map((day) => (
+              <section key={day.anchorId} id={day.anchorId} aria-label={day.name} className="scroll-mt-4">
                 <RotaGrid sections={day.sections} look={look} renderOpen={renderOpenSlot} />
               </section>
             ))}
